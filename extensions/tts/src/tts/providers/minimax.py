@@ -2,15 +2,23 @@
 
 from __future__ import annotations
 
+import asyncio
 import base64
 import json
 import os
 from collections.abc import AsyncIterator
+import time
 from typing import Any
 
 import aiohttp
 
+from openagent.observability import log_event
+from openagent.observability.logging import get_logger
+from openagent.observability.metrics import PROVIDER_CALL_SECONDS
+
 from .base import TTSProvider
+
+logger = get_logger(__name__)
 
 
 DEFAULT_MINIMAX_VOICE = "Calm_Woman"
@@ -41,6 +49,10 @@ class MiniMaxProvider(TTSProvider):
         speed = kwargs.get("speed", 1.0)
         vol = kwargs.get("vol", 1.0)
         stream = bool(kwargs.get("stream", True))
+        timeout_s = float(kwargs.get("timeout_s", 20.0))
+        retries = int(kwargs.get("retries", 1))
+        start = time.perf_counter()
+        status = "ok"
         payload = {
             "model": "speech-2.8-hd",
             "text": text,
@@ -62,17 +74,55 @@ class MiniMaxProvider(TTSProvider):
             "Group-Id": str(self.group_id),
         }
         own_session = self._session is None
-        session = self._session or aiohttp.ClientSession()
+        timeout = aiohttp.ClientTimeout(total=timeout_s)
+        session = self._session or aiohttp.ClientSession(timeout=timeout)
         try:
-            async with session.post(self.api_url, headers=headers, json=payload) as response:
-                response.raise_for_status()
-                if stream:
-                    async for chunk in self._iter_streaming_audio(response):
-                        yield chunk
-                else:
-                    data = await response.json()
-                    yield self._extract_audio_from_json(data)
+            for attempt in range(retries + 1):
+                try:
+                    async with session.post(self.api_url, headers=headers, json=payload) as response:
+                        response.raise_for_status()
+                        if stream:
+                            async for chunk in self._iter_streaming_audio(response):
+                                yield chunk
+                        else:
+                            data = await response.json()
+                            yield self._extract_audio_from_json(data)
+                        return
+                except Exception as exc:
+                    status = "error"
+                    log_event(
+                        logger,
+                        30,
+                        "minimax generate attempt failed",
+                        component="provider.tts",
+                        provider="minimax",
+                        operation="generate_stream",
+                        attempt=attempt + 1,
+                        retries=retries,
+                        error=str(exc),
+                    )
+                    if attempt >= retries:
+                        raise
+                    await asyncio.sleep(min(0.2 * (2**attempt), 1.0))
         finally:
+            elapsed = time.perf_counter() - start
+            PROVIDER_CALL_SECONDS.labels(
+                extension="tts",
+                provider="minimax",
+                operation="generate_stream",
+                status=status,
+            ).observe(elapsed)
+            log_event(
+                logger,
+                20 if status == "ok" else 40,
+                "minimax generate_stream complete",
+                component="provider.tts",
+                provider="minimax",
+                operation="generate_stream",
+                status=status,
+                text_length=len(text),
+                duration_ms=round(elapsed * 1000, 3),
+            )
             if own_session:
                 await session.close()
 

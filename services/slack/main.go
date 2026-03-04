@@ -212,6 +212,10 @@ func run() error {
 		_ = listener.Close()
 		_ = os.Remove(socketPath)
 	}()
+	mcplite.LogEvent("INFO", "service listening", map[string]any{
+		"service":     "slack",
+		"socket_path": socketPath,
+	})
 
 	server := buildServer(runtime)
 	var connWG sync.WaitGroup
@@ -227,7 +231,10 @@ func run() error {
 			if errors.Is(acceptErr, net.ErrClosed) || ctx.Err() != nil {
 				break
 			}
-			log.Printf("accept failed: %v", acceptErr)
+			mcplite.LogEvent("ERROR", "accept failed", map[string]any{
+				"service": "slack",
+				"error":   acceptErr.Error(),
+			})
 			continue
 		}
 		connWG.Add(1)
@@ -330,18 +337,29 @@ func handleConn(ctx context.Context, conn net.Conn, server *mcplite.Server, rt *
 			if errors.Is(err, io.EOF) {
 				break
 			}
-			log.Printf("decode frame failed: %v", err)
+			mcplite.LogEvent("ERROR", "decode frame failed", map[string]any{
+				"service": "slack",
+				"error":   err.Error(),
+			})
 			break
 		}
 
 		reqWG.Add(1)
 		go func(f mcplite.Frame) {
 			defer reqWG.Done()
+			start := time.Now()
+			requestID := mcplite.RequestIDFromFrame(f)
+			tool := mcplite.ToolNameFromFrame(f)
+			outcome := "ok"
 			response, handleErr := server.HandleRequest(ctx, f)
 			if handleErr != nil {
+				outcome = "error"
 				id := frameID(f)
 				if id == "" {
-					log.Printf("unsupported non-request frame: %T", f)
+					mcplite.LogEvent("WARN", "unsupported frame", map[string]any{
+						"service": "slack",
+						"frame":   fmt.Sprintf("%T", f),
+					})
 					return
 				}
 				response = mcplite.ErrorResponse{
@@ -354,8 +372,22 @@ func handleConn(ctx context.Context, conn net.Conn, server *mcplite.Server, rt *
 			writeMu.Lock()
 			defer writeMu.Unlock()
 			if err := encoder.WriteFrame(response); err != nil {
-				log.Printf("write frame failed: %v", err)
+				outcome = "error"
+				mcplite.LogEvent("ERROR", "write frame failed", map[string]any{
+					"service":    "slack",
+					"request_id": requestID,
+					"tool":       tool,
+					"error":      err.Error(),
+				})
+				return
 			}
+			mcplite.LogEvent("INFO", "request handled", map[string]any{
+				"service":     "slack",
+				"request_id":  requestID,
+				"tool":        tool,
+				"outcome":     outcome,
+				"duration_ms": float64(time.Since(start).Microseconds()) / 1000.0,
+			})
 		}(frame)
 	}
 

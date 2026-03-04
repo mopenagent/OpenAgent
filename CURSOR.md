@@ -174,3 +174,12 @@ uvicorn app.main:app --host 0.0.0.0 --port 8080 --reload
 - **Goroutine per request (Go)** — Never block the accept loop. Graceful SIGTERM handling.
 - **Determinism** — Explicit, reproducible flows. Stable tool schemas. Clear LLM-readable descriptions.
 - **14B / Pi target** — Lean context, lazy loading, no heavy deps in core.
+
+## Observability Baseline (Agreed)
+
+- Add shared Python observability helpers under `openagent/observability/`.
+- Use structured logs with correlation ids for extension lifecycle, provider calls, and MCP-lite traffic.
+- Expose Prometheus metrics at `GET /metrics` from `app/main.py`.
+- Track operation latency/error for STT/TTS and MCP-lite request-response paths.
+- Keep logs privacy-safe: never log full message bodies or secrets.
+- Mirror structured request observability in Go services for parity.

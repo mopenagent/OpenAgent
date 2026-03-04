@@ -4,9 +4,16 @@ from __future__ import annotations
 
 import asyncio
 import os
+import time
 from typing import Any
 
+from openagent.observability import log_event
+from openagent.observability.logging import get_logger
+from openagent.observability.metrics import PROVIDER_CALL_SECONDS
+
 from .base import STTProvider
+
+logger = get_logger(__name__)
 
 
 class DeepgramProvider(STTProvider):
@@ -20,6 +27,11 @@ class DeepgramProvider(STTProvider):
         language = kwargs.get("language", "en")
         punctuate = bool(kwargs.get("punctuate", True))
         smart_format = bool(kwargs.get("smart_format", True))
+        timeout_s = float(kwargs.get("timeout_s", 20.0))
+        retries = int(kwargs.get("retries", 1))
+        start = time.perf_counter()
+        status = "ok"
+        last_exc: Exception | None = None
 
         def _transcribe_sync() -> str:
             from deepgram import DeepgramClient
@@ -36,7 +48,51 @@ class DeepgramProvider(STTProvider):
             response = client.listen.prerecorded.v("1").transcribe_file(payload, options)
             return self._extract_transcript(response)
 
-        return (await asyncio.to_thread(_transcribe_sync)).strip()
+        try:
+            for attempt in range(retries + 1):
+                try:
+                    result = await asyncio.wait_for(asyncio.to_thread(_transcribe_sync), timeout=timeout_s)
+                    return result.strip()
+                except Exception as exc:
+                    status = "error"
+                    last_exc = exc
+                    log_event(
+                        logger,
+                        30,
+                        "deepgram transcribe attempt failed",
+                        component="provider.stt",
+                        provider="deepgram",
+                        operation="transcribe",
+                        attempt=attempt + 1,
+                        retries=retries,
+                        error=str(exc),
+                    )
+                    if attempt >= retries:
+                        raise
+                    await asyncio.sleep(min(0.2 * (2**attempt), 1.0))
+
+            if last_exc is not None:
+                raise last_exc
+            raise RuntimeError("deepgram transcribe failed")
+        finally:
+            elapsed = time.perf_counter() - start
+            PROVIDER_CALL_SECONDS.labels(
+                extension="stt",
+                provider="deepgram",
+                operation="transcribe",
+                status=status,
+            ).observe(elapsed)
+            log_event(
+                logger,
+                20 if status == "ok" else 40,
+                "deepgram transcribe complete",
+                component="provider.stt",
+                provider="deepgram",
+                operation="transcribe",
+                status=status,
+                audio_bytes=len(audio_data),
+                duration_ms=round(elapsed * 1000, 3),
+            )
 
     @staticmethod
     def _extract_transcript(response: Any) -> str:

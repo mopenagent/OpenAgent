@@ -5,10 +5,17 @@ from __future__ import annotations
 import asyncio
 import os
 import tempfile
+import time
 from pathlib import Path
 from typing import Any
 
+from openagent.observability import log_event
+from openagent.observability.logging import get_logger
+from openagent.observability.metrics import PROVIDER_CALL_SECONDS
+
 from .base import STTProvider
+
+logger = get_logger(__name__)
 
 
 class FasterWhisperProvider(STTProvider):
@@ -25,6 +32,8 @@ class FasterWhisperProvider(STTProvider):
         self._model: Any | None = None
 
     async def transcribe(self, audio_data: bytes, **kwargs) -> str:
+        start = time.perf_counter()
+        status = "ok"
         model = await self._get_model()
         suffix = str(kwargs.get("file_suffix", ".wav"))
         path = await self._write_temp_audio(audio_data, suffix=suffix)
@@ -41,9 +50,31 @@ class FasterWhisperProvider(STTProvider):
             return " ".join(seg.text.strip() for seg in segments if getattr(seg, "text", "").strip())
 
         try:
-            return (await asyncio.to_thread(_run_transcription)).strip()
+            result = (await asyncio.to_thread(_run_transcription)).strip()
+            return result
+        except Exception:
+            status = "error"
+            raise
         finally:
             await asyncio.to_thread(self._safe_remove, path)
+            elapsed = time.perf_counter() - start
+            PROVIDER_CALL_SECONDS.labels(
+                extension="stt",
+                provider="faster-whisper",
+                operation="transcribe",
+                status=status,
+            ).observe(elapsed)
+            log_event(
+                logger,
+                20 if status == "ok" else 40,
+                "faster-whisper transcribe complete",
+                component="provider.stt",
+                provider="faster-whisper",
+                operation="transcribe",
+                status=status,
+                audio_bytes=len(audio_data),
+                duration_ms=round(elapsed * 1000, 3),
+            )
 
     async def _get_model(self):
         if self._model is not None:

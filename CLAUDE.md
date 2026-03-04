@@ -445,3 +445,17 @@ app/
 - `service.json` is the only contract — core must not depend on service internals
 - Borrow MCP vocabulary in the wire protocol but do not implement full MCP
 - When deviating from OpenClaw/Nanobot patterns, document why in comments
+
+## Observability Contract
+
+- Observability is mandatory for new core, extension, app, and service work.
+- Python side:
+  - Use `openagent/observability/logging.py` for structured logs.
+  - Use `openagent/observability/metrics.py` for counters/histograms.
+  - Propagate request correlation ids using MCP-lite frame ids.
+- App side:
+  - Keep `/metrics` endpoint enabled for Prometheus scraping.
+- Go services:
+  - Emit one structured request log with request id, tool, outcome, duration.
+  - Emit structured error logs for accept/decode/write failures.
+- Keep instrumentation lightweight and deterministic for Raspberry Pi targets.

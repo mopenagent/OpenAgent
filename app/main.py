@@ -8,11 +8,13 @@ from collections import deque
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
 from app.routes import dashboard, chat, logs, extensions, services, config, llm, provider
+from openagent.observability import configure_logging
+from openagent.observability.metrics import render_metrics
 from openagent.providers import load_provider_config, get_provider
 
 # ---------------------------------------------------------------------------
@@ -57,8 +59,8 @@ _handler.setFormatter(
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    configure_logging()
     logging.getLogger().addHandler(_handler)
-    logging.getLogger().setLevel(logging.DEBUG)
     logging.getLogger("openagent").info("Web UI started")
     app.state.log_buffer = LOG_BUFFER
     app.state.log_clients = LOG_CLIENTS
@@ -96,3 +98,9 @@ app.include_router(services.router)
 app.include_router(config.router)
 app.include_router(llm.router)
 app.include_router(provider.router)
+
+
+@app.get("/metrics")
+async def metrics() -> Response:
+    payload, content_type = render_metrics()
+    return Response(content=payload, media_type=content_type)

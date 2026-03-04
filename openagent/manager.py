@@ -8,9 +8,12 @@ from dataclasses import dataclass
 from typing import List
 
 from .interfaces import AsyncExtension
+from .observability import get_logger, log_event
+from .observability.metrics import EXTENSION_LIFECYCLE_TOTAL
 
 ENTRYPOINT_GROUP = "openagent.extensions"
 _LOADED_EXTENSIONS: dict[str, AsyncExtension] = {}
+logger = get_logger(__name__)
 
 
 @dataclass
@@ -43,13 +46,51 @@ async def load_extensions() -> List[LoadedExtension]:
     for entry in entries:
         extension_class = entry.load()
         instance = _ensure_async_extension_contract(extension_class(), entry.name)
-        await instance.initialize()
+        try:
+            await instance.initialize()
+        except Exception as exc:
+            EXTENSION_LIFECYCLE_TOTAL.labels(
+                extension=entry.name,
+                operation="initialize",
+                status="error",
+            ).inc()
+            log_event(
+                logger,
+                40,
+                "extension initialize failed",
+                component="extension.manager",
+                operation="initialize",
+                extension=entry.name,
+                error=str(exc),
+            )
+            raise
+
+        EXTENSION_LIFECYCLE_TOTAL.labels(
+            extension=entry.name,
+            operation="initialize",
+            status="ok",
+        ).inc()
         _LOADED_EXTENSIONS[entry.name] = instance
         loaded.append(LoadedExtension(name=entry.name, instance=instance))
-        print(f"Loading First-Class Extension: {entry.name}")
+        log_event(
+            logger,
+            20,
+            "extension initialized",
+            component="extension.manager",
+            operation="initialize",
+            extension=entry.name,
+            status="ok",
+        )
 
     if not loaded:
-        print(f"No extensions found in group '{ENTRYPOINT_GROUP}'.")
+        log_event(
+            logger,
+            20,
+            "no extensions discovered",
+            component="extension.manager",
+            operation="discover",
+            entrypoint_group=ENTRYPOINT_GROUP,
+        )
 
     return loaded
 

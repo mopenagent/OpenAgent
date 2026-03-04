@@ -185,3 +185,12 @@ inspire/            # Reference implementations (gitignored)
 3. Keep core changes minimal; push feature logic to extensions or services.
 4. Update/add tests in the appropriate `tests/` tree (Python) or `services/<name>/` (Go).
 5. Keep docs in sync: `README.md`, `CLAUDE.md`, `CURSOR.md`, extension/service metadata.
+
+## Observability Standards
+
+- Keep observability first-class across all verticals: `openagent/`, `extensions/`, `services/`, and `app/`.
+- Python logs should use structured JSON via `openagent/observability/` helpers.
+- Every MCP-lite request path should emit correlation id (`id`), operation, status, and duration.
+- Prometheus metrics are exposed at `/metrics` from the web app and must include extension/provider and MCP-lite request latency/error counters.
+- Avoid logging raw message text or sensitive credentials; log payload sizes, identifiers, and status instead.
+- Go services should emit structured JSON logs per request with `service`, `request_id`, `tool`, `outcome`, and `duration_ms`.

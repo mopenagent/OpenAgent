@@ -25,12 +25,10 @@ class _InvalidExtension:
         return None
 
 
-def test_load_extensions_empty(monkeypatch, capsys):
+def test_load_extensions_empty(monkeypatch):
     monkeypatch.setattr(manager.importlib.metadata, "entry_points", lambda: {})
     loaded = asyncio.run(manager.load_extensions())
-    out = capsys.readouterr().out
     assert loaded == []
-    assert "No extensions found" in out
 
 
 def test_load_extensions_select_api(monkeypatch):

@@ -3,6 +3,9 @@ from __future__ import annotations
 import asyncio
 import json
 from pathlib import Path
+import uuid
+
+import pytest
 
 from openagent.channels.mcplite import McpLiteClient
 
@@ -17,7 +20,7 @@ class _RecordingClient(McpLiteClient):
 
 
 def test_mcplite_client_request_and_event(tmp_path: Path):
-    socket_path = tmp_path / "mcplite.sock"
+    socket_path = Path("/tmp") / f"oa-mcplite-{uuid.uuid4().hex[:8]}.sock"
 
     async def handler(reader: asyncio.StreamReader, writer: asyncio.StreamWriter):
         while True:
@@ -69,7 +72,10 @@ def test_mcplite_client_request_and_event(tmp_path: Path):
         await writer.wait_closed()
 
     async def scenario():
-        server = await asyncio.start_unix_server(handler, path=str(socket_path))
+        try:
+            server = await asyncio.start_unix_server(handler, path=str(socket_path))
+        except PermissionError as exc:
+            pytest.skip(f"unix socket bind not permitted in sandbox: {exc}")
         try:
             client = _RecordingClient(socket_path=socket_path)
             await client.start()
