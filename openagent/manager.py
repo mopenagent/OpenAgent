@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import importlib.metadata
 import inspect
+import logging
 from dataclasses import dataclass
 from typing import List
 
@@ -56,7 +57,7 @@ async def load_extensions() -> List[LoadedExtension]:
             ).inc()
             log_event(
                 logger,
-                40,
+                logging.ERROR,
                 "extension initialize failed",
                 component="extension.manager",
                 operation="initialize",
@@ -74,7 +75,7 @@ async def load_extensions() -> List[LoadedExtension]:
         loaded.append(LoadedExtension(name=entry.name, instance=instance))
         log_event(
             logger,
-            20,
+            logging.INFO,
             "extension initialized",
             component="extension.manager",
             operation="initialize",
@@ -85,7 +86,7 @@ async def load_extensions() -> List[LoadedExtension]:
     if not loaded:
         log_event(
             logger,
-            20,
+            logging.INFO,
             "no extensions discovered",
             component="extension.manager",
             operation="discover",

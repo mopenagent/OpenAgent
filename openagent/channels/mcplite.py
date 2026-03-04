@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import time
 import uuid
 from pathlib import Path
@@ -44,7 +45,7 @@ class McpLiteClient:
         self._running = True
         log_event(
             logger,
-            20,
+            logging.INFO,
             "mcp client connected",
             component="mcp.client",
             operation="start",
@@ -71,7 +72,7 @@ class McpLiteClient:
         self._read_task = None
         log_event(
             logger,
-            20,
+            logging.INFO,
             "mcp client stopped",
             component="mcp.client",
             operation="stop",
@@ -126,7 +127,7 @@ class McpLiteClient:
             ).observe(elapsed)
             log_event(
                 logger,
-                40,
+                logging.ERROR,
                 "mcp request timed out",
                 component="mcp.client",
                 operation="request",
@@ -157,7 +158,7 @@ class McpLiteClient:
             ).observe(elapsed)
             log_event(
                 logger,
-                40,
+                logging.ERROR,
                 "mcp request failed",
                 component="mcp.client",
                 operation="request",
@@ -194,7 +195,7 @@ class McpLiteClient:
                 self._running = False
                 log_event(
                     logger,
-                    30,
+                    logging.WARNING,
                     "mcp socket closed by peer",
                     component="mcp.client",
                     operation="read_loop",
@@ -206,7 +207,7 @@ class McpLiteClient:
             except Exception as exc:
                 log_event(
                     logger,
-                    40,
+                    logging.ERROR,
                     "failed to parse mcp frame",
                     component="mcp.client",
                     operation="parse",

@@ -2,10 +2,6 @@
 
 from __future__ import annotations
 
-import time
-from contextlib import contextmanager
-from typing import Iterator
-
 from prometheus_client import CONTENT_TYPE_LATEST, Counter, Histogram, generate_latest
 
 EXTENSION_LIFECYCLE_TOTAL = Counter(
@@ -52,17 +48,6 @@ PROVIDER_CALL_SECONDS = Histogram(
     labelnames=("extension", "provider", "operation", "status"),
     buckets=(0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2, 5, 10, 30),
 )
-
-
-@contextmanager
-def observe_duration(histogram: Histogram, **labels: str) -> Iterator[callable]:
-    start = time.perf_counter()
-
-    def _record(status: str) -> None:
-        elapsed = time.perf_counter() - start
-        histogram.labels(status=status, **labels).observe(elapsed)
-
-    yield _record
 
 
 def render_metrics() -> tuple[bytes, str]:
