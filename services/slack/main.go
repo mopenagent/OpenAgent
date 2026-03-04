@@ -18,13 +18,16 @@ import (
 
 	"github.com/kmaneesh/openagent/services/sdk-go/mcplite"
 	"github.com/slack-go/slack"
+	"github.com/slack-go/slack/slackevents"
+	"github.com/slack-go/slack/socketmode"
 )
 
 const defaultSocketPath = "data/sockets/slack.sock"
 
 type slackRuntime struct {
-	token string
-	api   *slack.Client
+	token    string
+	appToken string
+	api      *slack.Client
 
 	started    atomic.Bool
 	connected  atomic.Bool
@@ -39,15 +42,15 @@ type slackRuntime struct {
 	events chan mcplite.EventFrame
 }
 
-func newSlackRuntime(token string) *slackRuntime {
+func newSlackRuntime(token, appToken string) *slackRuntime {
 	return &slackRuntime{
-		token:  token,
-		events: make(chan mcplite.EventFrame, 128),
+		token:    token,
+		appToken: appToken,
+		events:   make(chan mcplite.EventFrame, 128),
 	}
 }
 
 func (r *slackRuntime) start(ctx context.Context) error {
-	_ = ctx
 	if r.started.Load() {
 		return nil
 	}
@@ -71,7 +74,71 @@ func (r *slackRuntime) start(ctx context.Context) error {
 	r.authorized.Store(true)
 	r.setError("")
 	r.emitConnectionStatus()
+
+	if r.appToken != "" {
+		go r.runSocketMode(ctx)
+	}
+
 	return nil
+}
+
+// runSocketMode starts Socket Mode and emits slack.message.received for each DM/mention.
+// Requires SLACK_APP_TOKEN (xapp-...) with connections:write scope.
+func (r *slackRuntime) runSocketMode(ctx context.Context) {
+	smClient := socketmode.New(
+		slack.New(r.token, slack.OptionAppLevelToken(r.appToken)),
+	)
+
+	go func() {
+		for evt := range smClient.Events {
+			switch evt.Type {
+			case socketmode.EventTypeEventsAPI:
+				apiEvent, ok := evt.Data.(slackevents.EventsAPIEvent)
+				if !ok {
+					smClient.Ack(*evt.Request)
+					continue
+				}
+				smClient.Ack(*evt.Request)
+
+				if apiEvent.Type != slackevents.CallbackEvent {
+					continue
+				}
+				msgEvent, ok := apiEvent.InnerEvent.Data.(*slackevents.MessageEvent)
+				if !ok {
+					continue
+				}
+				// Skip bot messages and message edits/deletions.
+				if msgEvent.BotID != "" || msgEvent.SubType != "" {
+					continue
+				}
+
+				select {
+				case r.events <- mcplite.EventFrame{
+					Type:  mcplite.TypeEvent,
+					Event: "slack.message.received",
+					Data: map[string]any{
+						"channel_id": msgEvent.Channel,
+						"user_id":    msgEvent.User,
+						"text":       msgEvent.Text,
+						"ts":         msgEvent.TimeStamp,
+						"team_id":    r.teamID,
+					},
+				}:
+				default:
+				}
+
+			case socketmode.EventTypeConnected:
+				mcplite.LogEvent("INFO", "socket mode connected", map[string]any{"service": "slack"})
+			}
+		}
+	}()
+
+	if err := smClient.RunContext(ctx); err != nil && ctx.Err() == nil {
+		mcplite.LogEvent("ERROR", "socket mode error", map[string]any{
+			"service": "slack",
+			"error":   err.Error(),
+		})
+	}
 }
 
 func (r *slackRuntime) stop() {
@@ -190,8 +257,9 @@ func run() error {
 		socketPath = defaultSocketPath
 	}
 	token := firstNonEmpty(os.Getenv("SLACK_BOT_TOKEN"), os.Getenv("OPENAGENT_SLACK_BOT_TOKEN"))
+	appToken := firstNonEmpty(os.Getenv("SLACK_APP_TOKEN"), os.Getenv("OPENAGENT_SLACK_APP_TOKEN"))
 
-	runtime := newSlackRuntime(token)
+	runtime := newSlackRuntime(token, appToken)
 	if err := runtime.start(ctx); err != nil {
 		return err
 	}

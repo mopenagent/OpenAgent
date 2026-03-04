@@ -31,7 +31,8 @@ type telegramRuntime struct {
 	appHash  string
 	botToken string
 
-	client *telegram.Client
+	client     *telegram.Client
+	dispatcher tg.UpdateDispatcher
 
 	started    atomic.Bool
 	connected  atomic.Bool
@@ -44,12 +45,67 @@ type telegramRuntime struct {
 }
 
 func newTelegramRuntime(appID int, appHash, botToken string) *telegramRuntime {
-	return &telegramRuntime{
-		appID:    appID,
-		appHash:  appHash,
-		botToken: botToken,
-		events:   make(chan mcplite.EventFrame, 128),
+	dispatcher := tg.NewUpdateDispatcher()
+	rt := &telegramRuntime{
+		appID:      appID,
+		appHash:    appHash,
+		botToken:   botToken,
+		dispatcher: dispatcher,
+		events:     make(chan mcplite.EventFrame, 128),
 	}
+	rt.registerIncomingHandler()
+	return rt
+}
+
+// registerIncomingHandler hooks the UpdateDispatcher to emit telegram.message.received events
+// for every private text message the bot receives.
+func (r *telegramRuntime) registerIncomingHandler() {
+	r.dispatcher.OnNewMessage(func(ctx context.Context, entities tg.Entities, u *tg.UpdateNewMessage) error {
+		msg, ok := u.Message.(*tg.Message)
+		if !ok || msg.Out {
+			return nil
+		}
+		peerUser, ok := msg.PeerID.(*tg.PeerUser)
+		if !ok {
+			return nil // skip group/channel messages
+		}
+
+		userID := peerUser.UserID
+		var accessHash int64
+		fromName := ""
+		username := ""
+
+		if user, exists := entities.Users[userID]; exists {
+			accessHash = user.AccessHash
+			fromName = user.FirstName
+			if user.LastName != "" {
+				fromName += " " + user.LastName
+			}
+			username = user.Username
+		}
+
+		text := msg.Message
+		if text == "" {
+			return nil // skip non-text messages (stickers, media, etc.)
+		}
+
+		select {
+		case r.events <- mcplite.EventFrame{
+			Type:  mcplite.TypeEvent,
+			Event: "telegram.message.received",
+			Data: map[string]any{
+				"message_id":  msg.ID,
+				"from_id":     userID,
+				"access_hash": accessHash,
+				"from_name":   fromName,
+				"username":    username,
+				"text":        text,
+			},
+		}:
+		default:
+		}
+		return nil
+	})
 }
 
 func (r *telegramRuntime) start(ctx context.Context) error {
@@ -60,7 +116,9 @@ func (r *telegramRuntime) start(ctx context.Context) error {
 		return errors.New("missing TELEGRAM_APP_ID, TELEGRAM_APP_HASH, or TELEGRAM_BOT_TOKEN")
 	}
 
-	client := telegram.NewClient(r.appID, r.appHash, telegram.Options{})
+	client := telegram.NewClient(r.appID, r.appHash, telegram.Options{
+		UpdateHandler: r.dispatcher,
+	})
 	r.client = client
 
 	r.started.Store(true)

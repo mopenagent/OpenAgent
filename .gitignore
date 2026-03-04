@@ -67,6 +67,11 @@ go.work
 
 # Build output (binaries in service dirs)
 services/*/hello
+services/*/slack
+services/*/telegram
+
+# Cross-compiled binaries
+bin/
 
 # ---
 # IDE / editors

@@ -59,6 +59,7 @@
     }
   ],
   "events": [
-    "slack.connection.status"
+    "slack.connection.status",
+    "slack.message.received"
   ]
 }
