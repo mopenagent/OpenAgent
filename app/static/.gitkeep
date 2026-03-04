@@ -1,2 +1,4 @@
-# Place htmx.min.js here:
-# curl -Lo app/static/htmx.min.js https://unpkg.com/htmx.org/dist/htmx.min.js
+# Vendor frontend assets for offline Pi use:
+# curl -Lo app/static/htmx.min.js      https://unpkg.com/htmx.org/dist/htmx.min.js
+# curl -Lo app/static/tailwind.min.js  https://cdn.tailwindcss.com
+# curl -Lo app/static/alpine.min.js    https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js

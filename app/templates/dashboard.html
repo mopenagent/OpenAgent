@@ -5,61 +5,10 @@
 {% block content %}
 
 <!-- ── Stat cards ─────────────────────────────────────────── -->
-<div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6"
-     hx-get="/" hx-trigger="every 10s" hx-select="#stat-cards" hx-swap="outerHTML">
-  <div id="stat-cards" class="contents">
-
-    {% set cards = [
-      ("Extensions", extensions|length, "registered", "teal"),
-      ("Services",   services|length,   "discovered", "indigo"),
-      ("CPU",        stats.cpu_pct|string + " %", "", "slate"),
-      ("RAM",        stats.ram_pct|string + " %",
-                     stats.ram_used_mb|string + " / " + stats.ram_total_mb|string + " MB", "slate"),
-    ] %}
-
-    {% for label, value, sub, color in cards %}
-    <div class="bg-slate-800 border border-slate-700 rounded-xl p-4">
-      <p class="text-xs text-slate-400 mb-1">{{ label }}</p>
-      <p class="text-2xl font-bold
-                {% if color == 'teal' %}text-teal-400
-                {% elif color == 'indigo' %}text-indigo-400
-                {% else %}text-slate-100{% endif %}">
-        {{ value }}
-      </p>
-      {% if sub %}<p class="text-xs text-slate-500 mt-0.5">{{ sub }}</p>{% endif %}
-    </div>
-    {% endfor %}
-
-    <!-- Disk -->
-    <div class="bg-slate-800 border border-slate-700 rounded-xl p-4">
-      <p class="text-xs text-slate-400 mb-1">Disk</p>
-      <p class="text-2xl font-bold text-slate-100">{{ stats.disk_pct }} %</p>
-      <p class="text-xs text-slate-500 mt-0.5">
-        {{ stats.disk_used_gb }} / {{ stats.disk_total_gb }} GB
-      </p>
-    </div>
-
-    <!-- Temperature (Pi-specific) -->
-    <div class="bg-slate-800 border border-slate-700 rounded-xl p-4">
-      <p class="text-xs text-slate-400 mb-1">Temp</p>
-      {% if stats.temp_c is not none %}
-        <p class="text-2xl font-bold
-                  {% if stats.temp_c > 75 %}text-red-400
-                  {% elif stats.temp_c > 60 %}text-yellow-400
-                  {% else %}text-green-400{% endif %}">
-          {{ stats.temp_c }}&nbsp;°C
-        </p>
-      {% else %}
-        <p class="text-2xl font-bold text-slate-500">N/A</p>
-      {% endif %}
-    </div>
-
-    <!-- Uptime -->
-    <div class="bg-slate-800 border border-slate-700 rounded-xl p-4">
-      <p class="text-xs text-slate-400 mb-1">UI Uptime</p>
-      <p class="text-2xl font-bold text-slate-100">{{ stats.uptime }}</p>
-    </div>
-
+<div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+  <div id="stat-cards" class="contents"
+       hx-get="/api/stats" hx-trigger="every 10s" hx-swap="innerHTML">
+    {% include "_stats_cards.html" %}
   </div>
 </div>
 
@@ -67,15 +16,15 @@
 <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
 
   <!-- Extensions table -->
-  <div class="bg-slate-800 border border-slate-700 rounded-xl overflow-hidden">
-    <div class="px-4 py-3 border-b border-slate-700 flex items-center justify-between">
+  <div class="bg-stone-800 border border-stone-700 rounded-xl overflow-hidden">
+    <div class="px-4 py-3 border-b border-stone-700 flex items-center justify-between">
       <h2 class="text-sm font-semibold">Extensions</h2>
-      <span class="text-xs text-slate-400">Python channel integrations</span>
+      <span class="text-xs text-stone-400">Python channel integrations</span>
     </div>
     {% if extensions %}
     <table class="w-full text-sm">
       <thead>
-        <tr class="text-xs text-slate-400 border-b border-slate-700">
+        <tr class="text-xs text-stone-400 border-b border-stone-700">
           <th class="text-left px-4 py-2">Name</th>
           <th class="text-left px-4 py-2">Version</th>
           <th class="text-left px-4 py-2">Status</th>
@@ -83,9 +32,9 @@
       </thead>
       <tbody>
         {% for ext in extensions %}
-        <tr class="border-b border-slate-700/50 hover:bg-slate-700/30">
-          <td class="px-4 py-2 font-mono text-teal-400">{{ ext.name }}</td>
-          <td class="px-4 py-2 text-slate-400">{{ ext.version }}</td>
+        <tr class="border-b border-stone-700/50 hover:bg-stone-700/30">
+          <td class="px-4 py-2 font-mono text-saffron">{{ ext.name }}</td>
+          <td class="px-4 py-2 text-stone-400">{{ ext.version }}</td>
           <td class="px-4 py-2">
             <span class="inline-flex items-center gap-1.5 text-xs text-green-400">
               <span class="w-1.5 h-1.5 rounded-full bg-green-400"></span>
@@ -97,20 +46,20 @@
       </tbody>
     </table>
     {% else %}
-    <p class="px-4 py-6 text-sm text-slate-500 text-center">No extensions registered.</p>
+    <p class="px-4 py-6 text-sm text-stone-500 text-center">No extensions registered.</p>
     {% endif %}
   </div>
 
   <!-- Services table -->
-  <div class="bg-slate-800 border border-slate-700 rounded-xl overflow-hidden">
-    <div class="px-4 py-3 border-b border-slate-700 flex items-center justify-between">
+  <div class="bg-stone-800 border border-stone-700 rounded-xl overflow-hidden">
+    <div class="px-4 py-3 border-b border-stone-700 flex items-center justify-between">
       <h2 class="text-sm font-semibold">Go Services</h2>
-      <span class="text-xs text-slate-400">Compute daemons</span>
+      <span class="text-xs text-stone-400">Compute daemons</span>
     </div>
     {% if services %}
     <table class="w-full text-sm">
       <thead>
-        <tr class="text-xs text-slate-400 border-b border-slate-700">
+        <tr class="text-xs text-stone-400 border-b border-stone-700">
           <th class="text-left px-4 py-2">Name</th>
           <th class="text-left px-4 py-2">Version</th>
           <th class="text-left px-4 py-2">Status</th>
@@ -118,11 +67,11 @@
       </thead>
       <tbody>
         {% for svc in services %}
-        <tr class="border-b border-slate-700/50 hover:bg-slate-700/30">
+        <tr class="border-b border-stone-700/50 hover:bg-stone-700/30">
           <td class="px-4 py-2 font-mono text-indigo-400">{{ svc.name }}</td>
-          <td class="px-4 py-2 text-slate-400">{{ svc.version }}</td>
+          <td class="px-4 py-2 text-stone-400">{{ svc.version }}</td>
           <td class="px-4 py-2">
-            <span class="inline-flex items-center gap-1.5 text-xs text-slate-400">
+            <span class="inline-flex items-center gap-1.5 text-xs text-stone-400">
               <span class="w-1.5 h-1.5 rounded-full bg-slate-400"></span>
               {{ svc.status }}
             </span>
@@ -132,7 +81,7 @@
       </tbody>
     </table>
     {% else %}
-    <p class="px-4 py-6 text-sm text-slate-500 text-center">
+    <p class="px-4 py-6 text-sm text-stone-500 text-center">
       No services discovered. Add a Go service under <code class="font-mono">services/</code>.
     </p>
     {% endif %}

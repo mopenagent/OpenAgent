@@ -31,9 +31,11 @@ def _load_config(root: Path) -> tuple[str, str | None]:
 @router.get("/config")
 async def config_page(request: Request):
     raw, error = _load_config(request.app.state.root)
+    cfg = request.app.state.provider_config
     return templates.TemplateResponse("config.html", {
         "request": request,
         "active": "config",
         "config_raw": raw,
         "config_error": error,
+        "provider": cfg,
     })

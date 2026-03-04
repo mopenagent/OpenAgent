@@ -89,3 +89,14 @@ async def dashboard(request: Request):
         "extensions": _installed_extensions(),
         "services": _discover_services(request.app.state.root),
     })
+
+
+@router.get("/api/stats")
+async def stats_partial(request: Request):
+    """Partial for HTMX stat-card polling — returns cards only, no layout."""
+    return templates.TemplateResponse("_stats_cards.html", {
+        "request": request,
+        "stats": _system_stats(),
+        "extensions": _installed_extensions(),
+        "services": _discover_services(request.app.state.root),
+    })

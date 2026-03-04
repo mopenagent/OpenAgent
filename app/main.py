@@ -12,7 +12,8 @@ from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
-from app.routes import dashboard, chat, logs, extensions, services, config
+from app.routes import dashboard, chat, logs, extensions, services, config, llm, provider
+from openagent.providers import load_provider_config, get_provider
 
 # ---------------------------------------------------------------------------
 # Paths
@@ -62,6 +63,9 @@ async def lifespan(app: FastAPI):
     app.state.log_buffer = LOG_BUFFER
     app.state.log_clients = LOG_CLIENTS
     app.state.root = ROOT
+    provider_cfg = load_provider_config(ROOT / "config" / "openagent.yaml")
+    app.state.provider_config = provider_cfg
+    app.state.active_provider = get_provider(provider_cfg)
     yield
     logging.getLogger().removeHandler(_handler)
 
@@ -90,3 +94,5 @@ app.include_router(logs.router)
 app.include_router(extensions.router)
 app.include_router(services.router)
 app.include_router(config.router)
+app.include_router(llm.router)
+app.include_router(provider.router)

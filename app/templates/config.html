@@ -1,13 +1,102 @@
 {% extends "base.html" %}
-{% block title %}Config — OpenAgent{% endblock %}
-{% block page_title %}Configuration{% endblock %}
+{% block title %}Settings — OpenAgent{% endblock %}
+{% block page_title %}Settings{% endblock %}
 
 {% block content %}
 
-<div class="max-w-3xl">
+<div class="max-w-3xl space-y-6">
 
+  <!-- ── Provider Switcher ──────────────────────────────────────────── -->
+  <div class="bg-stone-800 border border-stone-700 rounded-xl overflow-hidden"
+       x-data="providerForm()" x-init="init()">
+
+    <div class="px-5 py-3 border-b border-stone-700 flex items-center justify-between">
+      <span class="text-sm font-semibold">LLM Provider</span>
+      <span class="text-xs text-stone-400">Hot-swap without restart</span>
+    </div>
+
+    <div class="p-5 space-y-4">
+
+      <!-- Status banners -->
+      <template x-if="saved">
+        <div class="flex items-center gap-2 text-xs text-green-400 bg-green-400/10 border border-green-400/20 rounded-lg px-3 py-2">
+          <svg class="w-3.5 h-3.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
+          </svg>
+          Provider updated — active immediately.
+        </div>
+      </template>
+      <template x-if="error">
+        <div class="flex items-center gap-2 text-xs text-red-400 bg-red-400/10 border border-red-400/20 rounded-lg px-3 py-2">
+          <svg class="w-3.5 h-3.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                  d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/>
+          </svg>
+          <span x-text="error"></span>
+        </div>
+      </template>
+
+      <!-- Kind selector -->
+      <div class="grid grid-cols-3 gap-2">
+        <template x-for="k in ['openai_compat', 'anthropic', 'openai']" :key="k">
+          <button @click="form.kind = k"
+                  :class="form.kind === k
+                    ? 'border-[#FF9933] bg-[#FF9933]/10 text-saffron'
+                    : 'border-stone-600 text-stone-400 hover:border-stone-500 hover:text-stone-300'"
+                  class="border rounded-lg px-3 py-2 text-xs font-medium transition-colors text-left">
+            <span x-text="labels[k]"></span>
+          </button>
+        </template>
+      </div>
+
+      <!-- Base URL -->
+      <div>
+        <label class="block text-xs text-stone-400 mb-1">Base URL</label>
+        <input x-model="form.base_url" type="text"
+               placeholder="http://localhost:1234/v1"
+               class="w-full bg-stone-900 border border-stone-600 rounded-lg px-3 py-2 text-sm
+                      text-stone-100 placeholder-stone-600 focus:outline-none focus:border-[#FF9933]">
+      </div>
+
+      <!-- Model + API Key -->
+      <div class="grid grid-cols-2 gap-3">
+        <div>
+          <label class="block text-xs text-stone-400 mb-1">Model</label>
+          <input x-model="form.model" type="text"
+                 placeholder="auto-detect"
+                 class="w-full bg-stone-900 border border-stone-600 rounded-lg px-3 py-2 text-sm
+                        text-stone-100 placeholder-stone-600 focus:outline-none focus:border-[#FF9933]">
+        </div>
+        <div>
+          <label class="block text-xs text-stone-400 mb-1">API Key</label>
+          <input x-model="form.api_key" type="password"
+                 placeholder="sk-… (optional)"
+                 class="w-full bg-stone-900 border border-stone-600 rounded-lg px-3 py-2 text-sm
+                        text-stone-100 placeholder-stone-600 focus:outline-none focus:border-[#FF9933]">
+        </div>
+      </div>
+
+      <!-- Save button -->
+      <div class="flex justify-end">
+        <button @click="save()"
+                :disabled="saving"
+                class="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium
+                       bg-[#FF9933] text-stone-950 hover:bg-amber-400 disabled:opacity-50
+                       transition-colors">
+          <svg x-show="saving" class="w-3.5 h-3.5 animate-spin" fill="none" viewBox="0 0 24 24">
+            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"></path>
+          </svg>
+          <span x-text="saving ? 'Saving…' : 'Save'"></span>
+        </button>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- ── YAML viewer ────────────────────────────────────────────────── -->
   {% if config_error %}
-  <div class="mb-4 flex items-start gap-3 bg-yellow-400/10 border border-yellow-400/20
+  <div class="flex items-start gap-3 bg-yellow-400/10 border border-yellow-400/20
               rounded-xl px-4 py-3 text-sm text-yellow-400">
     <svg class="w-4 h-4 mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
       <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
@@ -17,22 +106,22 @@
   </div>
   {% endif %}
 
-  <div class="bg-slate-800 border border-slate-700 rounded-xl overflow-hidden">
-    <div class="px-5 py-3 border-b border-slate-700 flex items-center justify-between">
-      <span class="text-sm font-medium text-slate-300">config/openagent.yaml</span>
-      <span class="text-xs text-slate-500">Read-only — edit the file directly</span>
+  <div class="bg-stone-800 border border-stone-700 rounded-xl overflow-hidden">
+    <div class="px-5 py-3 border-b border-stone-700 flex items-center justify-between">
+      <span class="text-sm font-medium text-stone-300">config/openagent.yaml</span>
+      <span class="text-xs text-stone-500">Read-only — edit the file directly</span>
     </div>
 
     {% if config_raw %}
-    <pre class="p-5 text-xs font-mono leading-5 overflow-x-auto text-slate-300 whitespace-pre-wrap break-words">{{ config_raw | e }}</pre>
+    <pre class="p-5 text-xs font-mono leading-5 overflow-x-auto text-stone-300 whitespace-pre-wrap break-words">{{ config_raw | e }}</pre>
     {% else %}
     <div class="px-5 py-12 text-center">
-      <p class="text-slate-400 text-sm mb-2">No configuration file found.</p>
-      <p class="text-slate-500 text-xs">
+      <p class="text-stone-400 text-sm mb-2">No configuration file found.</p>
+      <p class="text-stone-500 text-xs">
         Copy
-        <code class="font-mono bg-slate-700 px-1.5 py-0.5 rounded">config/openagent.yaml.example</code>
+        <code class="font-mono bg-stone-700 px-1.5 py-0.5 rounded">config/openagent.yaml.example</code>
         to
-        <code class="font-mono bg-slate-700 px-1.5 py-0.5 rounded">config/openagent.yaml</code>
+        <code class="font-mono bg-stone-700 px-1.5 py-0.5 rounded">config/openagent.yaml</code>
         to get started.
       </p>
     </div>
@@ -40,4 +129,63 @@
   </div>
 
 </div>
+
+<script>
+function providerForm() {
+  return {
+    form: {
+      kind:     '{{ provider.kind }}',
+      base_url: '{{ provider.base_url }}',
+      model:    '{{ provider.model }}',
+      api_key:  '',
+    },
+    labels: {
+      openai_compat: 'OpenAI-compatible',
+      anthropic:     'Anthropic / Claude',
+      openai:        'OpenAI / Codex',
+    },
+    saving: false,
+    saved:  false,
+    error:  null,
+
+    init() {
+      // Pre-fill model from LLM health if blank
+      if (!this.form.model) {
+        const stored = localStorage.getItem('llm_model')
+        if (stored) { this.form.model = stored; return }
+        fetch('/api/llm/health')
+          .then(r => r.json())
+          .then(d => { if (d.ok && d.models.length) this.form.model = d.models[0] })
+          .catch(() => {})
+      }
+    },
+
+    async save() {
+      this.saving = true
+      this.saved  = false
+      this.error  = null
+      try {
+        const body = { ...this.form }
+        if (!body.api_key) delete body.api_key
+        const r = await fetch('/api/config/provider', {
+          method:  'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body:    JSON.stringify(body),
+        })
+        if (!r.ok) throw new Error(`HTTP ${r.status}`)
+        const d = await r.json()
+        if (d.ok) {
+          this.saved = true
+          setTimeout(() => { this.saved = false }, 3000)
+        }
+      } catch (e) {
+        this.error = e.message
+      } finally {
+        this.saving = false
+      }
+    },
+  }
+}
+</script>
+
 {% endblock %}

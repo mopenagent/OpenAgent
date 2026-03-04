@@ -5,20 +5,20 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>{% block title %}OpenAgent{% endblock %}</title>
 
-  <!-- Tailwind CSS (CDN — vendor for offline Pi use) -->
-  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Tailwind CSS (vendored — app/static/tailwind.min.js) -->
+  <script src="/static/tailwind.min.js"></script>
   <script>
     tailwind.config = {
       theme: {
         extend: {
-          colors: { brand: "#2dd4bf" }
+          colors: { brand: "#FF9933", saffron: "#FF9933" }
         }
       }
     }
   </script>
 
-  <!-- Alpine.js (CDN — vendor for offline Pi use) -->
-  <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+  <!-- Alpine.js (vendored — app/static/alpine.min.js) -->
+  <script defer src="/static/alpine.min.js"></script>
 
   <!-- HTMX (vendored — place htmx.min.js in app/static/) -->
   <script src="/static/htmx.min.js"></script>
@@ -26,15 +26,31 @@
   <link rel="stylesheet" href="/static/app.css">
 </head>
 
-<body class="h-full bg-slate-900 text-slate-100 flex overflow-hidden">
+<body class="h-full bg-stone-950 text-stone-100 flex overflow-hidden">
 
   <!-- ── Sidebar ─────────────────────────────────────────── -->
-  <aside class="w-56 flex-shrink-0 bg-slate-800 border-r border-slate-700 flex flex-col">
+  <aside x-data="{
+           collapsed: localStorage.getItem('sb') === '1',
+           toggle() { this.collapsed = !this.collapsed; localStorage.setItem('sb', this.collapsed ? '1' : '0') }
+         }"
+         :class="collapsed ? 'w-14' : 'w-56'"
+         class="flex-shrink-0 bg-stone-900 border-r border-stone-800 flex flex-col transition-all duration-200 overflow-hidden">
 
-    <!-- Logo -->
-    <div class="px-5 py-4 border-b border-slate-700 flex items-center gap-2">
-      <span class="text-teal-400 font-bold text-lg tracking-tight">OpenAgent</span>
-      <span class="text-slate-500 text-xs">POC</span>
+    <!-- Logo + collapse button -->
+    <div class="flex items-center h-14 border-b border-stone-800 flex-shrink-0"
+         :class="collapsed ? 'justify-center' : 'px-4 gap-2'">
+      <span x-show="!collapsed"
+            class="text-saffron font-bold text-lg tracking-tight flex-1 truncate">OpenAgent</span>
+      <button @click="toggle()"
+              title="Toggle sidebar"
+              class="w-8 h-8 flex items-center justify-center rounded-lg text-saffron
+                     hover:bg-stone-800 transition-colors flex-shrink-0">
+        <svg class="w-4 h-4 transition-transform duration-200" :class="collapsed ? 'rotate-180' : ''"
+             fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                d="M11 19l-7-7 7-7m8 14l-7-7 7-7"/>
+        </svg>
+      </button>
     </div>
 
     <!-- Nav links -->
@@ -44,36 +60,87 @@
         ("chat",       "/chat",      "M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"),
         ("logs",       "/logs",      "M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"),
         ("extensions", "/extensions","M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z"),
-        ("services",   "/services",  "M5 12h14M5 12a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v4a2 2 0 01-2 2M5 12a2 2 0 00-2 2v4a2 2 0 002 2h14a2 2 0 002-2v-4a2 2 0 00-2-2"),
-        ("config",     "/config",    "M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z M15 12a3 3 0 11-6 0 3 3 0 016 0z")
+        ("services",   "/services",  "M5 12h14M5 12a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v4a2 2 0 01-2 2M5 12a2 2 0 00-2 2v4a2 2 0 002 2h14a2 2 0 002-2v-4a2 2 0 00-2-2")
       ] %}
       {% for key, href, icon_path in nav %}
         {% set is_active = (active == key) %}
         <a href="{{ href }}"
-           class="flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors
-                  {% if is_active %}bg-teal-500/10 text-teal-400{% else %}text-slate-400 hover:bg-slate-700 hover:text-slate-100{% endif %}">
+           :class="collapsed ? 'justify-center px-0' : 'px-3'"
+           class="flex items-center gap-3 py-2 rounded-lg text-sm font-medium transition-colors
+                  {% if is_active %}bg-[#FF9933]/10 text-saffron{% else %}text-stone-400 hover:bg-stone-800 hover:text-stone-100{% endif %}">
           <svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" d="{{ icon_path }}"/>
           </svg>
-          <span class="capitalize">{{ key }}</span>
+          <span x-show="!collapsed" class="capitalize truncate">{{ key }}</span>
         </a>
       {% endfor %}
     </nav>
 
-    <!-- Footer -->
-    <div class="px-4 py-3 border-t border-slate-700 text-xs text-slate-500">
-      No auth &middot; POC mode
+    <!-- Settings — pinned to bottom -->
+    <div class="px-2 py-2 border-t border-stone-800 flex-shrink-0">
+      <a href="/config"
+         :class="collapsed ? 'justify-center px-0' : 'px-3'"
+         class="flex items-center gap-3 py-2 rounded-lg text-sm font-medium transition-colors
+                {% if active == 'config' %}bg-[#FF9933]/10 text-saffron{% else %}text-stone-400 hover:bg-stone-800 hover:text-stone-100{% endif %}">
+        <svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round"
+                d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
+        </svg>
+        <span x-show="!collapsed">Settings</span>
+      </a>
     </div>
+
   </aside>
 
   <!-- ── Main content ──────────────────────────────────────── -->
   <main class="flex-1 flex flex-col overflow-hidden">
 
     <!-- Page header -->
-    <header class="flex-shrink-0 px-6 py-4 border-b border-slate-700 bg-slate-800/50">
-      <h1 class="text-base font-semibold text-slate-100 capitalize">
+    <header class="flex-shrink-0 px-6 py-4 border-b border-stone-800 bg-stone-900/50 flex items-center justify-between gap-4">
+      <h1 class="text-base font-semibold text-saffron capitalize">
         {% block page_title %}{% endblock %}
       </h1>
+
+      <!-- LLM health indicator -->
+      <div x-data="llmHealth()" x-init="init()" class="flex items-center gap-2 flex-shrink-0">
+
+        <!-- status dot — always visible -->
+        <span class="w-2 h-2 rounded-full flex-shrink-0 transition-colors"
+              :class="{
+                'bg-green-400 animate-pulse': status === 'ok',
+                'bg-red-400':                status === 'error',
+                'bg-stone-600 animate-pulse': status === 'checking'
+              }"></span>
+
+        <!-- Online: label + dropdown (model names only inside) -->
+        <template x-if="status === 'ok'">
+          <div class="relative flex items-center gap-1" x-data="{ open: false }">
+            <button @click="open = !open"
+                    class="flex items-center gap-1 text-xs font-medium text-green-400 hover:text-saffron transition-colors">
+              <span>Online</span>
+              <svg class="w-3 h-3 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
+              </svg>
+            </button>
+            <div x-show="open" x-cloak @click.outside="open = false"
+                 class="absolute right-0 top-full mt-1 w-64 bg-stone-900 border border-stone-700 rounded-lg shadow-xl z-50 py-1 overflow-y-auto max-h-52">
+              <template x-for="m in models" :key="m">
+                <button @click="pick(m); open = false"
+                        class="w-full text-left px-3 py-1.5 text-xs transition-colors hover:bg-stone-800"
+                        :class="m === selected ? 'text-saffron' : 'text-stone-300'">
+                  <span x-text="m"></span>
+                </button>
+              </template>
+            </div>
+          </div>
+        </template>
+
+        <!-- Offline -->
+        <template x-if="status === 'error'">
+          <span class="text-xs font-medium text-red-400">Offline</span>
+        </template>
+
+      </div>
     </header>
 
     <!-- Scrollable content area -->
@@ -81,6 +148,46 @@
       {% block content %}{% endblock %}
     </div>
   </main>
+
+
+<script>
+  function llmHealth() {
+    return {
+      status: 'checking',
+      models: [],
+      selected: localStorage.getItem('llm_model') || '',
+
+      async init() {
+        await this.check()
+        setInterval(() => this.check(), 30000)
+      },
+
+      async check() {
+        try {
+          const r = await fetch('/api/llm/health')
+          const d = await r.json()
+          if (d.ok && d.models.length > 0) {
+            this.models = d.models
+            if (!this.selected || !d.models.includes(this.selected)) {
+              this.selected = d.models[0]
+            }
+            localStorage.setItem('llm_model', this.selected)
+            this.status = 'ok'
+          } else {
+            this.status = 'error'
+          }
+        } catch {
+          this.status = 'error'
+        }
+      },
+
+      pick(model) {
+        this.selected = model
+        localStorage.setItem('llm_model', model)
+      },
+    }
+  }
+</script>
 
 </body>
 </html>

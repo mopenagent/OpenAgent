@@ -1,0 +1,44 @@
+{% set cards = [
+  ("Extensions", extensions|length, "registered", "saffron"),
+  ("Services",   services|length,   "discovered", "indigo"),
+  ("CPU",        stats.cpu_pct|string + " %", "", "plain"),
+  ("RAM",        stats.ram_pct|string + " %",
+                 stats.ram_used_mb|string + " / " + stats.ram_total_mb|string + " MB", "plain"),
+] %}
+
+{% for label, value, sub, color in cards %}
+<div class="bg-stone-800 border border-stone-700 rounded-xl p-4">
+  <p class="text-xs text-stone-400 mb-1">{{ label }}</p>
+  <p class="text-2xl font-bold
+            {% if color == 'saffron' %}text-saffron
+            {% elif color == 'indigo' %}text-indigo-400
+            {% else %}text-stone-100{% endif %}">{{ value }}</p>
+  {% if sub %}<p class="text-xs text-stone-500 mt-0.5">{{ sub }}</p>{% endif %}
+</div>
+{% endfor %}
+
+<!-- Disk -->
+<div class="bg-stone-800 border border-stone-700 rounded-xl p-4">
+  <p class="text-xs text-stone-400 mb-1">Disk</p>
+  <p class="text-2xl font-bold text-stone-100">{{ stats.disk_pct }} %</p>
+  <p class="text-xs text-stone-500 mt-0.5">{{ stats.disk_used_gb }} / {{ stats.disk_total_gb }} GB</p>
+</div>
+
+<!-- Temperature -->
+<div class="bg-stone-800 border border-stone-700 rounded-xl p-4">
+  <p class="text-xs text-stone-400 mb-1">Temp</p>
+  {% if stats.temp_c is not none %}
+    <p class="text-2xl font-bold
+              {% if stats.temp_c > 75 %}text-red-400
+              {% elif stats.temp_c > 60 %}text-yellow-400
+              {% else %}text-green-400{% endif %}">{{ stats.temp_c }}&nbsp;°C</p>
+  {% else %}
+    <p class="text-2xl font-bold text-stone-500">N/A</p>
+  {% endif %}
+</div>
+
+<!-- Uptime -->
+<div class="bg-stone-800 border border-stone-700 rounded-xl p-4">
+  <p class="text-xs text-stone-400 mb-1">UI Uptime</p>
+  <p class="text-2xl font-bold text-stone-100">{{ stats.uptime }}</p>
+</div>
