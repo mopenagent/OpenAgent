@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "WebFetch(domain:github.com)",
+      "WebFetch(domain:docs.agno.com)",
+      "WebFetch(domain:www.digitalocean.com)",
+      "WebFetch(domain:raw.githubusercontent.com)"
+    ]
+  }
+}
