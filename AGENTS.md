@@ -43,6 +43,7 @@ The two planes communicate via **MCP-lite**: tagged JSON frames over Unix Domain
 - Extensions must be independently installable and register via entry points in `openagent.extensions`.
 - Extensions must be first-class async and event-driven.
 - Do not put CPU/IO-heavy compute in Python extensions — that goes in Go services.
+- **Workflow Orchestrator:** Python acts as a workflow orchestrator. A deterministic chain (e.g. WhatsApp -> STT -> LLM) saves tokens, memory, and latency. The LLM is just one node in Python's workflow graph.
 
 ### 3. Go services = compute and data
 - New compute-heavy or data-intensive capabilities go in `services/<name>/`.
@@ -55,6 +56,7 @@ The two planes communicate via **MCP-lite**: tagged JSON frames over Unix Domain
 - `service.json` is the schema-first contract between core and service.
 - Core must not depend on service internals — only on the manifest and the wire protocol.
 - A service can be rewritten in any language without changing core, as long as the manifest and protocol are honoured.
+- **Zero-Copy Artifact Passing:** Services write raw binary data directly to disk (`data/artifacts/`). They pass only lightweight JSON strings with the file path back to Python over the MCP-lite socket (`{"path": "/data/artifacts/xxx.mp3"}`). No heavy binary data over sockets. Python routes this artifact between services.
 
 ### 5. Tool-oriented design
 - Expose capabilities as tools the LLM can call.

@@ -163,6 +163,7 @@ InboundMessage (from channel extension)
 - Truncate large tool results to 500 chars (configurable)
 - Strip context tags before saving to history
 - Core loop is stateless — all state lives in `SessionManager`
+- **Zero-Copy Artifact Passing:** When dense data is generated or received by a service (e.g. media), the service writes the raw binary to disk (`data/artifacts/`). Python routes the small JSON artifact path payload, maintaining decoupling without IPC serialization taxes. Python is the absolute central router for all inter-service workflows (no east-west mesh between Go daemons).
 
 ### Go Services — Service Pattern
 
@@ -327,6 +328,9 @@ services:
 |---|---|---|
 | SQLite | Session history, agent state | `data/sessions.db` |
 | LanceDB | Semantic memory (vector search) | `data/memory/` |
+
+**LanceDB Note:** Vector search uses a direct Python client wrapper to access LanceDB's fast native Rust core. This avoids JSON IPC serialization overhead on massive vector arrays and keeps the single-node setup lean. We only consider decoupling LanceDB into a Go service if rigorous profiling shows it aggressively blocking the `asyncio` event loop.
+
 | Filesystem | Artifacts, media | `data/artifacts/` |
 | Unix sockets | Service IPC files | `data/sockets/*.sock` |
 

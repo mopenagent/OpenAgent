@@ -17,7 +17,8 @@ OpenAgent uses a **custom ReAct loop** and thin provider layer (no framework dep
 3. **Service-first for compute** — New heavy capabilities go in `services/<name>/` as Go daemons, not in Python extensions.
 4. **First-class async** — Python core and all extensions are async-first. No blocking I/O in Python extension code.
 5. **Tool-oriented** — Capabilities are exposed as tools the LLM can call. Python tools run in-process; Go service tools are declared in `service.json` and proxied through `ServiceManager`.
-6. **Offline and low-power friendly** — Designed for a 14B local model on Raspberry Pi. Keep core lean, keep context concise, lazy-load everything heavy.
+6. **Offline and low-power friendly** — Designed for a 14B local model on Raspberry Pi. Keep core lean, keep context concise, lazy-load everything heavy. Vector search (LanceDB) executes directly via Python to leverage Rust core without JSON IPC serialization tax.
+7. **Workflow Orchestrator (Zero-Copy Artifacts)** — Python acts as a workflow router. Go services dump heavy binaries to `data/artifacts/` and return a file path. Python pipes that path as an argument to the next step. LLMs are treated as non-deterministic nodes in a larger deterministic workflow graph. No direct Go-to-Go (East-West) communication.
 
 ## Reference Implementations
 
