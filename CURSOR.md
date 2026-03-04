@@ -35,9 +35,10 @@ Key files:
 ## Repository Layout
 
 ```
-src/openagent/      # Core Python — orchestration, discovery, interfaces ONLY
+openagent/      # Core Python — orchestration, discovery, interfaces ONLY
 extensions/         # Python channel/media integrations (independently installable)
 services/           # Go service daemons (compute/data tools)
+app/                # Minimalist web UI — FastAPI 3.x + HTMX, no auth (POC/Pi only)
 tests/              # Python tests
 data/               # Runtime: sessions.db, memory/, sockets/, artifacts/
 config/             # openagent.yaml
@@ -48,10 +49,10 @@ inspire/            # Reference implementations (gitignored)
 
 | Component | Location | Language | Pattern |
 |---|---|---|---|
-| Agent loop, orchestration | `src/openagent/agent/` | Python | Nanobot loop.py |
-| LLM provider registry | `src/openagent/providers/` | Python | Nanobot ProviderRegistry |
-| Service lifecycle manager | `src/openagent/services/` | Python | ServiceManager |
-| Message bus | `src/openagent/bus/` | Python | Nanobot bus pattern |
+| Agent loop, orchestration | `openagent/agent/` | Python | Nanobot loop.py |
+| LLM provider registry | `openagent/providers/` | Python | Nanobot ProviderRegistry |
+| Service lifecycle manager | `openagent/services/` | Python | ServiceManager |
+| Message bus | `openagent/bus/` | Python | Nanobot bus pattern |
 | Channel integrations | `extensions/` | Python | AsyncExtension + entry points |
 | Media (TTS, STT) | `extensions/` | Python | Provider pattern |
 | Compute/data tools | `services/` | Go | MCP-lite daemon + service.json |
@@ -108,7 +109,19 @@ When editing a Python extension, change only files under `extensions/<name>/`:
 - `src/<component>.py` — component logic (connector, bridge, schema, etc.)
 - `tests/` — extension tests
 
-Do not change `src/openagent/` or other extensions.
+Do not change `openagent/` or other extensions.
+
+## Files to Change: Web UI
+
+When editing the web UI, change only files under `app/`:
+
+- `app/main.py` — FastAPI app instance, route registration, lifespan
+- `app/routes/<page>.py` — Route handler for each page
+- `app/templates/<page>.html` — Jinja2 template for each page
+- `app/templates/base.html` — Shared layout (nav, sidebar, content slot)
+- `app/static/` — CSS and vendored HTMX JS
+
+Do not add FastAPI routes or UI logic to `openagent/`. The UI is a consumer of core, not part of it.
 
 ## Files to Change: Go Services
 
@@ -120,7 +133,7 @@ When editing a Go service, change only files under `services/<name>/`:
 - `bin/` — compiled binaries (gitignored)
 - `*_test.go` — Go unit tests
 
-Do not change `src/openagent/` or any extension when working on a service.
+Do not change `openagent/` or any extension when working on a service.
 
 ## Development Conventions
 
@@ -139,6 +152,13 @@ Do not change `src/openagent/` or any extension when working on a service.
 - Run tests: `cd services/<name> && go test ./...`
 
 **Config:** `config/openagent.yaml` — primary config. Env vars override with `OPENAGENT_` prefix.
+
+**Web UI:**
+```bash
+pip install -e app/
+uvicorn app.main:app --host 0.0.0.0 --port 8080 --reload
+# visit http://<pi-ip>:8080
+```
 
 ## When Editing This Project
 

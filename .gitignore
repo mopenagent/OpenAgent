@@ -16,4 +16,5 @@ env/
 services/*/hello
 
 # Local
+data/
 inspire/

@@ -1,94 +1,193 @@
 # OpenAgent
 
-A **deterministic**, open-claw-style open agent with a minimal core and pluggable extensions. Built to run well with **offline 14B-parameter models** by moving most functionality into extensions and tools.
+A deterministic, open-claw-style agent platform with a **Python + Go hybrid architecture**. The Python control plane orchestrates multi-agent pipelines via a local LLM. Go services handle compute-intensive work as managed daemons. Built to run on **Raspberry Pi** and other low-power hardware with offline 14B-parameter models.
 
-## What is OpenAgent?
+## Architecture
 
-OpenAgent is a small orchestrator that discovers and loads **extensions** (e.g. WhatsApp, Discord). Rich behavior lives in extensions and **tools** that the model can call, so the core stays minimal and a smaller local model can still deliver capable behavior by delegating to well-defined interfaces.
+```
+Python Control Plane (Brain)          Go Services (Hands)
+─────────────────────────────         ───────────────────
+ Channel extensions                    Long-lived daemons
+  WhatsApp, Discord        ──JSON──►   Heavy compute/data
+ Agent loop + LLM calls    ◄──UDS──    Managed by Python
+ Session + memory
+```
 
-- **Deterministic** — Predictable, reproducible execution paths.
-- **Extension-first** — Integrations and features live in installable extensions, not in the core.
-- **Async-first** — All extensions use `async`/`await`; no blocking in extension code.
-- **Tool-oriented** — Capabilities are exposed as tools for the 14B model to invoke.
-- **Offline-friendly** — Designed for local inference with a 14B model.
+Two clear planes, one socket each, no REST overhead:
+- **Python extensions** → channels and media (WhatsApp, Discord, TTS, STT)
+- **Go services** → compute and data-intensive tools
+- **MCP-lite protocol** → tagged JSON frames over Unix Domain Sockets
 
 ## Requirements
 
 - **Python 3.11+**
+- **Go 1.21+** (for building Go services)
+- A local LLM via an OpenAI-compatible endpoint (e.g. [Ollama](https://ollama.com))
 
 ## Installation
-
-Clone the repository and install the core and any extensions you need:
 
 ```bash
 git clone https://github.com/kmaneesh/OpenAgent.git
 cd OpenAgent
 
-# Core (required)
-pip install -e .
+# Install core and all Python extensions
+pip install -r requirements.txt
 
-# Extensions (optional; install as needed)
+# Or selectively
+pip install -e .
 pip install -e extensions/whatsapp
 pip install -e extensions/discord
+pip install -e extensions/tts
+pip install -e extensions/stt
 ```
 
 ## Quick Start
 
-Run the agent (loads all installed extensions):
-
 ```bash
-python -m openagent.main
-# or
+# Copy and edit the config
+cp config/openagent.yaml.example config/openagent.yaml
+
+# Run
 openagent
+# or
+python -m openagent.main
+
+# Verify extensions are registered
+python -c "import importlib.metadata as m; print(m.entry_points(group='openagent.extensions'))"
 ```
 
-Verify which extensions are registered:
+## Configuration
 
-```bash
-python -c "import importlib.metadata as m; print(m.entry_points(group='openagent.extensions'))"
+OpenAgent is configured via `config/openagent.yaml`. Environment variables with the `OPENAGENT_` prefix override file values.
+
+```yaml
+providers:
+  fast:
+    base_url: http://localhost:11434/v1   # Ollama default
+    model: qwen2.5:7b
+    api_key: ollama
+  strong:
+    base_url: http://localhost:11434/v1
+    model: qwen2.5:14b
+    api_key: ollama
+
+agents:
+  supervisor:
+    model: strong
+    max_iterations: 40
+
+memory:
+  sqlite_path: data/sessions.db
+  lancedb_path: data/memory/
 ```
 
 ## Project Structure
 
 ```
 OpenAgent/
-├── src/openagent/          # Core: entry point, extension manager, interfaces
-├── extensions/
-│   ├── whatsapp/           # WhatsApp extension
-│   └── discord/            # Discord extension
-├── tests/                  # Tests for core and extensions
-├── pyproject.toml          # Core package config
-└── README.md
+├── openagent/          # Core: orchestration, discovery, interfaces
+│   ├── interfaces.py       # AsyncExtension protocol
+│   ├── manager.py          # Extension discovery (entry points)
+│   ├── agent/              # Agent loop, context, session, memory
+│   ├── providers/          # LLM provider registry
+│   ├── services/           # ServiceManager — Go daemon lifecycle
+│   └── bus/                # Message bus (channel → agent → response)
+│
+├── extensions/             # Python channel/media integrations
+│   ├── whatsapp/           # WhatsApp (Neonize)
+│   ├── discord/            # Discord bot
+│   ├── tts/                # Text-to-speech (EdgeTTS, MiniMax)
+│   └── stt/                # Speech-to-text (faster-whisper, Deepgram)
+│
+├── services/               # Go service daemons
+│   └── <name>/             # Self-contained Go module
+│       ├── main.go         # UDS server + MCP-lite handler
+│       ├── service.json    # Service manifest (tool schemas, binary paths)
+│       └── go.mod
+│
+├── app/                    # Minimalist web UI (FastAPI + HTMX)
+│   ├── main.py             # FastAPI app
+│   ├── routes/             # One module per page
+│   ├── templates/          # Jinja2 HTML templates
+│   └── static/             # CSS + vendored HTMX
+│
+├── tests/                  # Python tests
+├── config/                 # openagent.yaml
+├── data/                   # Runtime: sessions.db, memory/, sockets/
+└── inspire/                # Reference implementations (gitignored)
 ```
 
-The core only discovers and initializes extensions; it does not contain domain logic. Each extension has its own `pyproject.toml` and registers via the `openagent.extensions` entry point group.
+## Python Extensions
 
-## Extensions
+Extensions handle channels and media. Each is independently installable.
 
-| Extension   | Description                    | Install from        |
-|------------|---------------------------------|---------------------|
-| **whatsapp** | WhatsApp integration (neonize) | `extensions/whatsapp` |
-| **discord**  | Discord bot integration        | `extensions/discord`  |
+| Extension | Description | Dependencies |
+|-----------|-------------|--------------|
+| **whatsapp** | WhatsApp messaging via Neonize | neonize |
+| **discord** | Discord bot integration | discord.py, aiohttp |
+| **tts** | Text-to-speech (EdgeTTS / MiniMax) | edge-tts, aiohttp |
+| **stt** | Speech-to-text (faster-whisper / Deepgram) | faster-whisper, deepgram-sdk |
 
-Install with `pip install -e extensions/<name>`. Extensions are discovered at runtime; no need to register them in the core.
+## Go Services
+
+Services run as long-lived daemons managed by `ServiceManager`. Python spawns them, connects via Unix socket, and can start/stop/restart/inspect them at runtime.
+
+| Service | Description | Status |
+|---------|-------------|--------|
+| *(first service — establishes pattern)* | Simple compute tool | Planned |
+| **whatsapp** | Native WhatsApp via whatsmeow | Planned (migrating from Python extension) |
+
+Build a service:
+```bash
+cd services/my-service
+go build -o bin/my-service .
+
+# Cross-compile for Raspberry Pi
+GOOS=linux GOARCH=arm64 go build -o bin/my-service-linux-arm64 .
+```
 
 ## Development
 
-- **Run tests**
+**Python tests:**
+```bash
+pytest                              # all tests
+pytest tests/openagent/             # core only
+pytest extensions/whatsapp/tests/   # extension tests
+```
 
-  From the repo root:
+**Adding a new Python extension (channel/media):**
+1. Create `extensions/<name>/` with its own `pyproject.toml`
+2. Implement `BaseAsyncExtension` in `src/plugin.py`
+3. Register via entry point in `openagent.extensions` group
+4. Install: `pip install -e extensions/<name>`
 
-  ```bash
-  pytest
-  ```
+**Adding a new Go service (compute/data):**
+1. Create `services/<name>/` with `go.mod` and `main.go`
+2. Implement MCP-lite protocol: handle `tools.list`, `tool.call`, `ping` on a Unix socket
+3. Write `service.json` manifest declaring tool schemas and binary paths
+4. Build for all targets; `ServiceManager` picks up the manifest automatically
 
-- **Add a new extension**
+## Web UI
 
-  1. Create a package under `extensions/<name>/` with its own `pyproject.toml`.
-  2. Declare an entry point in the `openagent.extensions` group pointing to a class that implements the `Extension` protocol (`initialize()` async).
-  3. Depend on `openagent-core` and install with `pip install -e extensions/<name>`.
+A minimalist admin interface for monitoring and interacting with the agent. No authentication — designed for an isolated Raspberry Pi on a private network.
 
-Extensions must be **first-class async**: use `async def` for lifecycle and handlers, and avoid blocking the event loop.
+```bash
+pip install -e app/
+uvicorn app.main:app --host 0.0.0.0 --port 8080
+```
+
+Visit `http://<pi-ip>:8080`.
+
+| Page | URL | Description |
+|------|-----|-------------|
+| Dashboard | `/` | Agent status, extension health, service health |
+| Chat | `/chat` | Send messages, stream responses in real time |
+| Logs | `/logs` | Live log stream |
+| Extensions | `/extensions` | Loaded Python extensions and status |
+| Services | `/services` | Go services with status and restart controls |
+| Config | `/config` | Read-only view of `openagent.yaml` |
+
+Stack: FastAPI 3.x · Jinja2 · HTMX · Tailwind CSS (CDN) · WebSockets · SSE
 
 ## License
 
