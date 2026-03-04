@@ -1,20 +1,41 @@
-"""Provider base types — Message dataclass + Provider Protocol."""
+"""Provider base types — Message, ToolCall, LLMResponse, Provider Protocol."""
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import AsyncIterator, Literal, Protocol, runtime_checkable
+from typing import Any, AsyncIterator, Literal, Protocol, runtime_checkable
 
 
 @dataclass
 class Message:
-    role: Literal["system", "user", "assistant"]
+    role: Literal["system", "user", "assistant", "tool"]
     content: str
+    tool_call_id: str = ""   # set when role == "tool" (result injection)
+    tool_name: str = ""      # set when role == "tool"
+
+
+@dataclass
+class ToolCall:
+    """A single tool invocation requested by the LLM."""
+    id: str
+    name: str
+    arguments: dict[str, Any]
+
+
+@dataclass
+class LLMResponse:
+    """Full response from a chat() call — text and/or tool calls."""
+    content: str
+    tool_calls: list[ToolCall] = field(default_factory=list)
+
+    @property
+    def has_tool_calls(self) -> bool:
+        return bool(self.tool_calls)
 
 
 @runtime_checkable
 class Provider(Protocol):
-    """Streaming-first LLM provider interface."""
+    """LLM provider interface — streaming text and agentic tool-calling."""
 
     async def stream(
         self, messages: list[Message], **kwargs
@@ -23,5 +44,18 @@ class Provider(Protocol):
         ...
 
     async def complete(self, messages: list[Message], **kwargs) -> str:
-        """Return the full response (collects the stream)."""
+        """Return the full text response (no tool calling)."""
+        ...
+
+    async def chat(
+        self,
+        messages: list[Message],
+        tools: list[dict[str, Any]] | None = None,
+        **kwargs,
+    ) -> LLMResponse:
+        """Send a chat request with optional tool schemas.
+
+        Returns the text content and any tool_calls the model emitted.
+        When ``tools`` is None or empty the model will not use tools.
+        """
         ...

@@ -271,3 +271,50 @@ async def test_service_manager_full_lifecycle(tmp_path: Path) -> None:
     services = mgr.list_services()
     assert services[0].status == ServiceStatus.STOPPED
     assert mgr.get_client("mock") is None
+
+
+@pytest.mark.asyncio
+async def test_service_manager_restarts_after_crash(tmp_path: Path) -> None:
+    """Killing the process causes the watchdog to restart it (restart_count == 1)."""
+    script = tmp_path / "mock_svc2.py"
+    script.write_text(f"#!{sys.executable}\n" + _MOCK_SERVICE)
+    script.chmod(0o755)
+
+    platform_key = _current_platform()
+    socket_path = "/tmp/oa_test_mock2.sock"
+
+    _make_manifest(
+        tmp_path,
+        "mock2",
+        extra={
+            "binary": {platform_key: str(script)},
+            "socket": socket_path,
+            "health": {"interval_ms": 5000, "timeout_ms": 500, "restart_backoff_ms": [100]},
+        },
+    )
+
+    mgr = ServiceManager(root=tmp_path)
+    await mgr.start()
+
+    async def _wait_running(count: int = 0) -> bool:
+        for _ in range(40):
+            svcs = mgr.list_services()
+            if svcs and svcs[0].status == ServiceStatus.RUNNING and svcs[0].restart_count == count:
+                return True
+            await asyncio.sleep(0.1)
+        return False
+
+    assert await _wait_running(0), "service did not reach RUNNING"
+
+    # Kill the process — watchdog should detect exit and restart
+    svc = mgr.list_services()[0]
+    assert svc._process is not None
+    svc._process.terminate()
+
+    # Wait for restart (restart_count becomes 1) and service to be RUNNING again
+    assert await _wait_running(1), f"service did not restart; status={svc.status}, error={svc.last_error}"
+
+    assert svc.status == ServiceStatus.RUNNING
+    assert mgr.get_client("mock2") is not None
+
+    await mgr.stop()

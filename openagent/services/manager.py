@@ -227,9 +227,16 @@ class ServiceManager:
         backoff = svc.manifest.health.restart_backoff_ms
         attempt = 0
         while self._running:
+            health_task: asyncio.Task[None] | None = None
             try:
                 await self._launch(svc)
                 attempt = 0  # reset on successful start
+                # Run health ping loop concurrently while the process is alive.
+                # If it detects a timeout it calls process.terminate(), which
+                # unblocks the process.wait() below.
+                health_task = asyncio.create_task(
+                    self._health_loop(svc), name=f"svcmgr.health.{svc.name}"
+                )
                 assert svc._process is not None
                 await svc._process.wait()
                 rc = svc._process.returncode
@@ -265,6 +272,14 @@ class ServiceManager:
                     error=str(exc),
                     attempt=attempt,
                 )
+            finally:
+                # Always cancel the health task when this launch attempt ends
+                if health_task is not None and not health_task.done():
+                    health_task.cancel()
+                    try:
+                        await health_task
+                    except (asyncio.CancelledError, Exception):
+                        pass
 
             # Disconnect client before sleeping
             if svc.client:
@@ -284,6 +299,34 @@ class ServiceManager:
 
         await self._teardown(svc)
         svc.status = ServiceStatus.STOPPED
+
+    async def _health_loop(self, svc: ManagedService) -> None:
+        """Periodically ping the service; terminate the process on timeout."""
+        interval_s = svc.manifest.health.interval_ms / 1000.0
+        timeout_s = svc.manifest.health.timeout_ms / 1000.0
+        while self._running:
+            await asyncio.sleep(interval_s)
+            if not svc.client or not svc.client.running:
+                break
+            try:
+                await svc.client.request({"type": "ping"}, timeout_s=timeout_s)
+            except TimeoutError:
+                log_event(
+                    logger,
+                    logging.ERROR,
+                    "health ping timed out — terminating service",
+                    component="service_manager",
+                    operation="health_loop",
+                    service=svc.name,
+                    timeout_s=timeout_s,
+                )
+                svc.last_error = f"health ping timed out after {timeout_s}s"
+                if svc._process and svc._process.returncode is None:
+                    svc._process.terminate()
+                break
+            except Exception:
+                # Client disconnected — process likely already dead, watchdog handles it
+                break
 
     # ------------------------------------------------------------------
     # Launch one service

@@ -8,7 +8,7 @@ from openagent.channels.telegram import TelegramServiceChannel
 
 
 def test_telegram_service_channel_flow(tmp_path: Path):
-    socket_path = tmp_path / "telegram.sock"
+    socket_path = Path("/tmp/oa_test_telegram.sock")
 
     async def handler(reader: asyncio.StreamReader, writer: asyncio.StreamWriter):
         while True:

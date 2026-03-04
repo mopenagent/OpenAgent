@@ -6,37 +6,26 @@ import logging
 
 from openagent.observability import get_logger, log_event
 
-from .agno import Agno, agno_available
 from .anthropic import AnthropicProvider
-from .base import Message, Provider
+from .base import LLMResponse, Message, Provider, ToolCall
 from .config import ProviderConfig, load_provider_config
 from .openai import OpenAIProvider
 from .openai_compat import OpenAICompatProvider
 
 logger = get_logger(__name__)
-_AGNO_AVAILABLE = agno_available()
 
 
 def get_provider(
     cfg: ProviderConfig,
-) -> OpenAICompatProvider | AnthropicProvider | OpenAIProvider | Agno:
-    """Return a provider instance for the given config."""
-    if _AGNO_AVAILABLE:
-        log_event(
-            logger,
-            logging.INFO,
-            "using agno-backed provider",
-            component="providers",
-            provider_kind=cfg.kind,
-        )
-        return Agno(cfg)
-
+) -> AnthropicProvider | OpenAIProvider | OpenAICompatProvider:
+    """Return the appropriate provider for the given config."""
     log_event(
         logger,
-        logging.WARNING,
-        "agno unavailable, using legacy provider",
+        logging.INFO,
+        "initialising provider",
         component="providers",
         provider_kind=cfg.kind,
+        model=cfg.model,
     )
     match cfg.kind:
         case "anthropic":
@@ -48,13 +37,14 @@ def get_provider(
 
 
 __all__ = [
+    "LLMResponse",
     "Message",
     "Provider",
     "ProviderConfig",
+    "ToolCall",
     "load_provider_config",
     "get_provider",
     "OpenAICompatProvider",
     "AnthropicProvider",
     "OpenAIProvider",
-    "Agno",
 ]

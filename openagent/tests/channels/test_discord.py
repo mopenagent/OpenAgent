@@ -8,7 +8,7 @@ from openagent.channels.discord import DiscordServiceChannel
 
 
 def test_discord_service_channel_flow(tmp_path: Path):
-    socket_path = tmp_path / "discord.sock"
+    socket_path = Path("/tmp/oa_test_discord.sock")
 
     async def handler(reader: asyncio.StreamReader, writer: asyncio.StreamWriter):
         while True:

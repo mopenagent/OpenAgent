@@ -7,6 +7,7 @@ import json
 import logging
 import time
 import uuid
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -31,6 +32,7 @@ class McpLiteClient:
         self._pending: dict[str, asyncio.Future[proto.FrameModel]] = {}
         self._write_lock = asyncio.Lock()
         self._running = False
+        self._event_handlers: list[Callable[[proto.EventFrame], None]] = []
 
     @property
     def socket_path(self) -> str:
@@ -228,5 +230,17 @@ class McpLiteClient:
                 future.set_result(frame)
             set_request_id(None)
 
+    def add_event_handler(self, handler: Callable[[proto.EventFrame], None]) -> None:
+        """Register a callback invoked for every EventFrame received.
+
+        Use this instead of subclassing when you need to attach behaviour to
+        an existing client instance (e.g. from ServiceManager).  Subclasses
+        that override ``on_event`` without calling ``super()`` will bypass
+        registered handlers.
+        """
+        self._event_handlers.append(handler)
+
     def on_event(self, frame: proto.EventFrame) -> None:
-        """Override in subclasses to handle event frames."""
+        """Called for each EventFrame. Override in subclasses OR use add_event_handler()."""
+        for handler in self._event_handlers:
+            handler(frame)
