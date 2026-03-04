@@ -2,63 +2,150 @@
 
 ## What We're Building
 
-**OpenAgent** is a **deterministic**, **open-claw-style** open agent: a small core orchestrator that offloads most behavior into **extensions** and **tools**. The design targets compatibility with **offline 14B-parameter models** by keeping the core logic minimal and moving heavy or domain-specific work into pluggable, discoverable components.
+**OpenAgent** is a **deterministic**, **extension-first** hybrid Python + Go agent platform. It orchestrates multi-agent pipelines using offline 14B-parameter models on low-power hardware (Raspberry Pi primary target).
+
+The architecture has two planes:
+- **Python Control Plane (Brain)** — LLM interfacing, multi-agent orchestration, channel integrations, stateless async core loop.
+- **Go Services (Hands)** — Long-lived daemon processes for CPU/IO-intensive work. Python spawns, monitors, and manages them. They communicate via MCP-lite (tagged JSON over Unix sockets).
 
 ## Design Principles
 
-1. **Deterministic behavior** — The agent’s decisions and execution paths are predictable and reproducible where possible, which helps debugging and aligns with smaller local models.
-2. **Extension-first** — First-class features (Discord, WhatsApp, integrations, toolkits) live in **extensions**, not in the core. The core only discovers, loads, and coordinates them.
-3. **First-class async** — All extensions are async-first. Extension lifecycle, handlers, and tool invocations use `async`/`await`; no synchronous blocking in extension code. The core supports async discovery and initialization.
-4. **Tool-oriented** — Rich functionality is exposed as **tools** that the 14B model can call. This reduces the need for large in-context reasoning and keeps the model’s role focused on planning and tool use.
-5. **Offline-friendly** — The system is built to run with a local 14B model. Extensions and tools provide structure and capabilities so the smaller model can behave like a larger one by delegating to well-defined interfaces.
+1. **Deterministic behavior** — Explicit control flow, reproducible execution paths. Aligns with smaller local models where reliability matters more than flexibility.
+2. **Two planes, clear boundary** — Python extensions handle channels (WhatsApp, Discord) and media (TTS, STT). Go services handle compute and data-intensive work. Never mix them.
+3. **Service-first for compute** — New heavy capabilities go in `services/<name>/` as Go daemons, not in Python extensions.
+4. **First-class async** — Python core and all extensions are async-first. No blocking I/O in Python extension code.
+5. **Tool-oriented** — Capabilities are exposed as tools the LLM can call. Python tools run in-process; Go service tools are declared in `service.json` and proxied through `ServiceManager`.
+6. **Offline and low-power friendly** — Designed for a 14B local model on Raspberry Pi. Keep core lean, keep context concise, lazy-load everything heavy.
 
-## Reference: OpenClaw
+## Reference Implementations
 
-OpenClaw reference code lives at **`/Users/maneesh/Downloads/openclaw`**. When implementing agent logic, orchestration, or tool/extension patterns, refer to that TypeScript codebase for logic and guidance. Use it as the source of truth for behavior and structure; reimplement patterns in Python as needed for this project.
+| Reference | Language | Role | Path |
+|-----------|----------|------|------|
+| **OpenClaw** | TypeScript | Functionality — agent logic, orchestration, tool/extension patterns | `inspire/openclaw/` |
+| **Nanobot** | Python | Structure — project layout, agent loop, provider registry, config schema | `inspire/nanobot/` |
+| **Picoclaw** | Go | Multi-agent registry, service daemon patterns | `inspire/picoclaw/` |
+
+Key files:
+- Agent loop: `inspire/nanobot/nanobot/agent/loop.py`
+- Tool ABC: `inspire/nanobot/nanobot/agent/tools/base.py`
+- Provider registry: `inspire/nanobot/nanobot/providers/registry.py`
+- Config schema: `inspire/nanobot/nanobot/config/schema.py`
+- Multi-agent registry: `inspire/picoclaw/pkg/agent/registry.go`
 
 ## Repository Layout
 
-- **`src/openagent/`** — Core package: entry point, extension manager, and shared interfaces. No domain logic; only discovery and lifecycle.
-- **`extensions/*`** — Independently installable extensions (e.g. `whatsapp`, `discord`). Each has its own `pyproject.toml` and registers via the `openagent.extensions` entry point group.
-- **`tests/`** — Tests for core and for each extension.
+```
+src/openagent/      # Core Python — orchestration, discovery, interfaces ONLY
+extensions/         # Python channel/media integrations (independently installable)
+services/           # Go service daemons (compute/data tools)
+tests/              # Python tests
+data/               # Runtime: sessions.db, memory/, sockets/, artifacts/
+config/             # openagent.yaml
+inspire/            # Reference implementations (gitignored)
+```
 
-## Files to change: extensions/discord
+## What Lives Where
 
-When editing the Discord extension, change only files under **`extensions/discord/`**:
-
-- **`extensions/discord/pyproject.toml`** — Package metadata, dependencies, entry point (`discord_plugin:DiscordExtension`), and py-modules.
-- **`extensions/discord/src/discord_plugin.py`** — Extension entry point; implements `Extension` (e.g. `DiscordExtension`).
-- **`extensions/discord/src/discord_connector.py`** — Discord connection / client logic.
-- **`extensions/discord/src/discord_bridge.py`** — Bridge between OpenAgent and Discord (events, messages).
-- **`extensions/discord/src/discord_schema.py`** — Data structures / schemas for Discord payloads.
-- **`extensions/discord/tests/conftest.py`** — Pytest fixtures for Discord tests.
-- **`extensions/discord/tests/test_plugin.py`** — Tests for the plugin/extension.
-- **`extensions/discord/tests/test_connector.py`** — Tests for the connector.
-- **`extensions/discord/tests/test_bridge.py`** — Tests for the bridge.
-
-Do not change core (`src/openagent/`) or other extensions when working on Discord.
+| Component | Location | Language | Pattern |
+|---|---|---|---|
+| Agent loop, orchestration | `src/openagent/agent/` | Python | Nanobot loop.py |
+| LLM provider registry | `src/openagent/providers/` | Python | Nanobot ProviderRegistry |
+| Service lifecycle manager | `src/openagent/services/` | Python | ServiceManager |
+| Message bus | `src/openagent/bus/` | Python | Nanobot bus pattern |
+| Channel integrations | `extensions/` | Python | AsyncExtension + entry points |
+| Media (TTS, STT) | `extensions/` | Python | Provider pattern |
+| Compute/data tools | `services/` | Go | MCP-lite daemon + service.json |
 
 ## Extension Contract
 
-Extensions implement the `Extension` protocol from `openagent.interfaces` and are **first-class async**:
+Python extensions implement `AsyncExtension` from `openagent.interfaces`:
 
-- `initialize()` is async (e.g. `async def initialize(self) -> None`) — Run startup logic when the extension is loaded. No blocking calls; use `await` for I/O or other async work.
-- Handlers, tool implementations, and any extension entry points are async. The core awaits them; extensions must not block the event loop.
+```python
+async def initialize(self) -> None: ...   # startup — no blocking
+async def shutdown(self) -> None: ...     # graceful stop
+def get_status(self) -> dict[str, Any]: ...
+```
 
-Discovery is done via Python entry points (`openagent.extensions`). The core does not hard-code extension names; it discovers whatever is installed.
+Extend `BaseAsyncExtension`. Register via `pyproject.toml` entry point:
+
+```toml
+[project.entry-points."openagent.extensions"]
+my-ext = "plugin:MyExtension"
+```
+
+Extension source layout: flat at `extensions/<name>/src/` — no nested package folders.
+
+## Service Contract
+
+Go services implement the **MCP-lite** wire protocol over a Unix Domain Socket:
+
+```
+Socket:  data/sockets/<name>.sock
+Frames:  newline-delimited JSON, bidirectional
+
+Agent → Service:
+  {"id":"<uuid>","type":"tools.list"}
+  {"id":"<uuid>","type":"tool.call","tool":"<name>","params":{...}}
+  {"id":"<uuid>","type":"ping"}
+
+Service → Agent:
+  {"id":"<uuid>","type":"tools.list.ok","tools":[...]}
+  {"id":"<uuid>","type":"tool.result","result":"...","error":null}
+  {"id":"<uuid>","type":"pong","status":"ready"}
+  {"type":"event","event":"<name>","data":{...}}   ← unprompted push, no id
+```
+
+Service manifest (`service.json`) declares: name, binary paths per arch, socket path, health config, tool schemas, event types.
+
+`ServiceManager` in core: reads manifests → spawns binary → connects socket → registers tools → health-checks → restarts on crash.
+
+## Files to Change: Extensions
+
+When editing a Python extension, change only files under `extensions/<name>/`:
+
+- `pyproject.toml` — package metadata, dependencies, entry point
+- `src/plugin.py` — extension entry point, implements `AsyncExtension`
+- `src/<component>.py` — component logic (connector, bridge, schema, etc.)
+- `tests/` — extension tests
+
+Do not change `src/openagent/` or other extensions.
+
+## Files to Change: Go Services
+
+When editing a Go service, change only files under `services/<name>/`:
+
+- `main.go` — UDS server, MCP-lite protocol handler
+- `service.json` — service manifest (the only contract with Python core)
+- `go.mod` / `go.sum` — Go module definition
+- `bin/` — compiled binaries (gitignored)
+- `*_test.go` — Go unit tests
+
+Do not change `src/openagent/` or any extension when working on a service.
 
 ## Development Conventions
 
-- **Python ≥ 3.11**
-- Core: `pip install -e .` then run with `python -m openagent.main` or `openagent`
-- Extensions: install with `pip install -e extensions/<name>` (e.g. `extensions/whatsapp`, `extensions/discord`)
-- Verify registration:  
-  `python -c "import importlib.metadata as m; print(m.entry_points(group='openagent.extensions'))"`
+**Python:**
+- Python ≥ 3.11
+- `pip install -r requirements.txt` for all extensions
+- Run: `python -m openagent.main` or `openagent`
+- Verify extensions: `python -c "import importlib.metadata as m; print(m.entry_points(group='openagent.extensions'))"`
+- `aiohttp` for HTTP — never `requests` or OpenAI SDK
+- `asyncio.to_thread()` for sync libs in async context
+
+**Go:**
+- Go ≥ 1.21
+- Build: `cd services/<name> && go build -o bin/<name> .`
+- Cross-compile for Pi: `GOOS=linux GOARCH=arm64 go build -o bin/<name>-linux-arm64 .`
+- Run tests: `cd services/<name> && go test ./...`
+
+**Config:** `config/openagent.yaml` — primary config. Env vars override with `OPENAGENT_` prefix.
 
 ## When Editing This Project
 
-- **Core** — Keep it minimal. Add orchestration, discovery, and interfaces; avoid domain-specific logic and heavy dependencies.
-- **New features** — Prefer a new extension under `extensions/` and new tools within that extension (or a dedicated tools extension) rather than expanding the core.
-- **Async only** — Extensions must be first-class async: use `async def` for lifecycle and handlers, and avoid synchronous blocking (e.g. no blocking HTTP or sleep in extension code).
-- **Determinism** — When adding behavior, prefer explicit, reproducible flows and tool calls over non-deterministic or opaque steps.
-- **14B target** — Design tools and prompts so a 14B offline model can reliably choose and invoke tools; keep tool schemas and docstrings clear and stable.
+- **Core** — Keep it minimal. Add orchestration and interfaces; avoid domain logic and heavy dependencies.
+- **New channel/media feature** — New Python extension under `extensions/`.
+- **New compute/data feature** — New Go service under `services/` with `service.json`.
+- **Async only (Python)** — All extension lifecycle and handlers must be `async def`. No blocking.
+- **Goroutine per request (Go)** — Never block the accept loop. Graceful SIGTERM handling.
+- **Determinism** — Explicit, reproducible flows. Stable tool schemas. Clear LLM-readable descriptions.
+- **14B / Pi target** — Lean context, lazy loading, no heavy deps in core.
