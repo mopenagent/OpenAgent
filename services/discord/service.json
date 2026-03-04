@@ -1,0 +1,65 @@
+{
+  "name": "discord",
+  "description": "Discord bot service using discordgo over MCP-lite.",
+  "version": "0.1.0",
+  "binary": {
+    "linux/arm64": "bin/discord-linux-arm64",
+    "linux/amd64": "bin/discord-linux-amd64",
+    "darwin/arm64": "bin/discord-darwin-arm64"
+  },
+  "socket": "data/sockets/discord.sock",
+  "health": {
+    "interval_ms": 5000,
+    "timeout_ms": 1000,
+    "restart_backoff_ms": [
+      1000,
+      2000,
+      5000,
+      10000,
+      30000
+    ]
+  },
+  "tools": [
+    {
+      "name": "discord.status",
+      "description": "Return current Discord service status.",
+      "params": {
+        "type": "object",
+        "properties": {}
+      }
+    },
+    {
+      "name": "discord.link_state",
+      "description": "Return current Discord connection and auth state.",
+      "params": {
+        "type": "object",
+        "properties": {}
+      }
+    },
+    {
+      "name": "discord.send_message",
+      "description": "Send a message to a Discord channel.",
+      "params": {
+        "type": "object",
+        "properties": {
+          "channel_id": {
+            "type": "string",
+            "description": "Discord channel ID."
+          },
+          "text": {
+            "type": "string",
+            "description": "Message text."
+          }
+        },
+        "required": [
+          "channel_id",
+          "text"
+        ]
+      }
+    }
+  ],
+  "events": [
+    "discord.connection.status",
+    "discord.message.received"
+  ]
+}

@@ -3,6 +3,8 @@ package mcplite
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"io"
 	"strings"
 	"testing"
 )
@@ -112,5 +114,25 @@ func TestServerHandleRequest(t *testing.T) {
 	}
 	if result.Error != nil {
 		t.Fatalf("unexpected error: %v", *result.Error)
+	}
+}
+
+func TestDecodeFrameErrors(t *testing.T) {
+	if _, err := DecodeFrame([]byte("")); err == nil {
+		t.Fatal("expected empty frame error")
+	}
+	if _, err := DecodeFrame([]byte("{bad")); err == nil {
+		t.Fatal("expected json decode error")
+	}
+	if _, err := DecodeFrame([]byte(`{"type":"unknown"}`)); err == nil {
+		t.Fatal("expected unsupported frame type error")
+	}
+}
+
+func TestDecoderEOF(t *testing.T) {
+	decoder := NewDecoder(strings.NewReader(""))
+	_, err := decoder.Next()
+	if !errors.Is(err, io.EOF) {
+		t.Fatalf("expected EOF, got %v", err)
 	}
 }

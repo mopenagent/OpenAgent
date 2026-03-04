@@ -1,8 +1,12 @@
 package main
 
 import (
+	"bufio"
 	"context"
+	"encoding/json"
+	"net"
 	"testing"
+	"time"
 
 	"github.com/kmaneesh/openagent/services/sdk-go/mcplite"
 )
@@ -45,5 +49,50 @@ func TestServerHandlesToolCall(t *testing.T) {
 	}
 	if result.Error != nil {
 		t.Fatalf("unexpected tool error: %q", *result.Error)
+	}
+}
+
+func TestHandleConnRoundTrip(t *testing.T) {
+	server := buildServer()
+	left, right := net.Pipe()
+	defer left.Close()
+	defer right.Close()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go handleConn(ctx, left, server)
+
+	_, err := right.Write([]byte(`{"id":"1","type":"ping"}` + "\n"))
+	if err != nil {
+		t.Fatalf("write request failed: %v", err)
+	}
+
+	_ = right.SetReadDeadline(time.Now().Add(2 * time.Second))
+	line, err := bufio.NewReader(right).ReadString('\n')
+	if err != nil {
+		t.Fatalf("read response failed: %v", err)
+	}
+
+	var raw map[string]any
+	if err := json.Unmarshal([]byte(line), &raw); err != nil {
+		t.Fatalf("json decode failed: %v", err)
+	}
+	if raw["type"] != "pong" {
+		t.Fatalf("expected pong response, got %+v", raw)
+	}
+}
+
+func TestFrameID(t *testing.T) {
+	if got := frameID(mcplite.ToolListRequest{ID: "1", Type: mcplite.TypeToolsList}); got != "1" {
+		t.Fatalf("unexpected tool list id: %q", got)
+	}
+	if got := frameID(mcplite.ToolCallRequest{ID: "2", Type: mcplite.TypeToolCall}); got != "2" {
+		t.Fatalf("unexpected tool call id: %q", got)
+	}
+	if got := frameID(mcplite.PingRequest{ID: "3", Type: mcplite.TypePing}); got != "3" {
+		t.Fatalf("unexpected ping id: %q", got)
+	}
+	if got := frameID(mcplite.EventFrame{Type: mcplite.TypeEvent, Event: "x", Data: map[string]any{}}); got != "" {
+		t.Fatalf("expected empty id, got %q", got)
 	}
 }
