@@ -1,0 +1,48 @@
+{
+  "name": "shell",
+  "description": "Shell and Python execution service using os/exec over MCP-lite.",
+  "version": "0.1.0",
+  "binary": {
+    "linux/arm64": "bin/shell-linux-arm64",
+    "linux/amd64": "bin/shell-linux-amd64",
+    "darwin/arm64": "bin/shell-darwin-arm64"
+  },
+  "socket": "data/sockets/shell.sock",
+  "health": {
+    "interval_ms": 5000,
+    "timeout_ms": 1000,
+    "restart_backoff_ms": [1000, 2000, 5000, 10000, 30000]
+  },
+  "tools": [
+    {
+      "name": "shell.exec",
+      "description": "Execute a shell command or argv with timeout and bounded output.",
+      "params": {
+        "type": "object",
+        "properties": {
+          "command": {"type": "string", "description": "Command string. Use with use_shell=true or simple whitespace split."},
+          "argv": {"type": "array", "items": {"type": "string"}, "description": "Preferred explicit argv; first item is executable."},
+          "use_shell": {"type": "boolean", "description": "Run command through /bin/sh -lc. Default false."},
+          "cwd": {"type": "string", "description": "Working directory relative to service root."},
+          "timeout_s": {"type": "number", "description": "Execution timeout seconds (default 30, max 300)."}
+        }
+      }
+    },
+    {
+      "name": "python.run",
+      "description": "Execute Python code or script path via python3 with timeout and bounded output.",
+      "params": {
+        "type": "object",
+        "properties": {
+          "code": {"type": "string", "description": "Python code string to run with -c."},
+          "script_path": {"type": "string", "description": "Path to script file relative to service root."},
+          "args": {"type": "array", "items": {"type": "string"}, "description": "Arguments passed to python code/script."},
+          "python_bin": {"type": "string", "description": "Python executable name/path. Default python3."},
+          "cwd": {"type": "string", "description": "Working directory relative to service root."},
+          "timeout_s": {"type": "number", "description": "Execution timeout seconds (default 30, max 300)."}
+        }
+      }
+    }
+  ],
+  "events": []
+}
