@@ -12,14 +12,14 @@ Python is the control plane (extensions, orchestration, routing). Go services ar
 - **Session manager** — `SessionBackend` protocol, SQLite impl, optional summarisation (`openagent/session/`)
 - **Tool registry** — dispatches to Go services via MCP-lite (`openagent/agent/tools.py`)
 - **Provider layer** — Anthropic, OpenAI, OpenAI-compat (httpx-based, no SDK)
-- **MCP-lite** — Python client + Go SDK (`openagent/channels/mcplite.py`, `services/sdk-go/mcplite/`)
+- **MCP-lite** — Python client + Go SDK (`openagent/platforms/mcplite.py`, `services/sdk-go/mcplite/`)
 - **Heartbeat** — periodic health/summary polling (`openagent/heartbeat/`)
-- **Channel adapters** — Discord, Telegram, WhatsApp, Slack (Python MCP-lite clients)
+- **platform adapters** — Discord, Telegram, WhatsApp, Slack (Python MCP-lite clients)
 - **Go services** — `hello`, `filesystem`, `shell`, `discord`, `telegram`, `slack`, `whatsapp`
 - **Web UI** — FastAPI + HTMX (dashboard, chat, logs, extensions, services, config)
 
 **In progress:**
-- Full chat path wiring (agent loop ↔ channel events ↔ web UI)
+- Full chat path wiring (agent loop ↔ platform events ↔ web UI)
 - Config schema extension (agents, bindings, session, tools)
 
 ## Architecture
@@ -27,13 +27,13 @@ Python is the control plane (extensions, orchestration, routing). Go services ar
 ```
 Python Control Plane (Brain)          Go Services (Hands)
 ─────────────────────────────         ───────────────────
- Channel/media extensions              Long-lived daemons
+ platform/media extensions              Long-lived daemons
  Provider calls + orchestration ──JSON──► Compute/data integrations
  Message bus + health/heartbeat ◄─UDS──  Managed by ServiceManager
 ```
 
 Two clear planes, one socket each, no REST overhead:
-- **Python extensions** for channel/media integration
+- **Python extensions** for platform/media integration
 - **Go services** for compute/data-heavy and long-lived connectors
 - **MCP-lite** newline-delimited JSON frames over Unix Domain Sockets
 
@@ -114,12 +114,12 @@ OpenAgent/
 │   ├── manager.py          # Extension discovery (entry points)
 │   ├── providers/          # LLM provider registry
 │   ├── services/           # ServiceManager — Go daemon lifecycle
-│   ├── bus/                # Message bus (channel → agent → response)
+│   ├── bus/                # Message bus (platform → agent → response)
 │   ├── heartbeat/          # Periodic health/summary polling
 │   ├── observability/      # Logging, metrics helpers, context
 │   └── tests/              # Core Python tests
 │
-├── extensions/             # Python channel/media integrations
+├── extensions/             # Python platform/media integrations
 │   ├── whatsapp/           # WhatsApp (Neonize)
 │   ├── discord/            # Discord bot
 │   ├── tts/                # Text-to-speech (EdgeTTS, MiniMax)
@@ -149,7 +149,7 @@ OpenAgent/
 
 ## Python Extensions
 
-Extensions handle channels and media. Each is independently installable.
+Extensions handle platforms and media. Each is independently installable.
 
 | Extension | Description | Dependencies |
 |-----------|-------------|--------------|
@@ -205,7 +205,7 @@ for d in services/*; do
 done
 ```
 
-**Adding a new Python extension (channel/media):**
+**Adding a new Python extension (platform/media):**
 1. Create `extensions/<name>/` with its own `pyproject.toml`
 2. Implement `BaseAsyncExtension` in `src/plugin.py`
 3. Register via entry point in `openagent.extensions` group

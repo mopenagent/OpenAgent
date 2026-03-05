@@ -26,20 +26,26 @@ OpenAgent has two distinct planes. Do not mix their responsibilities.
 
 | Plane | Language | Location | Responsibility |
 |---|---|---|---|
-| Control Plane (Brain) | Python | `openagent/`, `extensions/` | LLM interfacing, orchestration, channel integrations |
+| Control Plane (Brain) | Python | `openagent/`, `extensions/` | LLM interfacing, orchestration, platform integrations |
 | Data Plane (Hands) | Go (or compiled) | `services/` | Long-lived service daemons for compute/data-intensive work |
 
 The two planes communicate via **MCP-lite**: tagged JSON frames over Unix Domain Sockets (`data/sockets/<name>.sock`).
 
 ## Architecture Rules
 
-### 1. Keep core minimal
+### 1. Communication Protocol (User Preference)
+- Whenever the user sends an input where their intention needs clarification or the context needs expansion, **do not assume the correct path.**
+- Ask clarifying questions **one by one** (1-by-1).
+- Provide possible **options/paths** for the user to choose from.
+- Record and apply this explicitly in every conversation.
+
+### 2. Keep core minimal
 - Core lives in `openagent/`.
 - Core is responsible for: extension discovery, service discovery, lifecycle management, shared interfaces, message bus, and agent loop orchestration.
 - Do not add domain-specific logic or heavy third-party dependencies to core.
 
-### 2. Python extensions = channel integrations only
-- Extensions under `extensions/<name>/` are for **channels and media** (WhatsApp, Discord, TTS, STT).
+### 2. Python extensions = platform integrations only
+- Extensions under `extensions/<name>/` are for **platforms and media** (WhatsApp, Discord, TTS, STT).
 - Extensions must be independently installable and register via entry points in `openagent.extensions`.
 - Extensions must be first-class async and event-driven.
 - Do not put CPU/IO-heavy compute in Python extensions — that goes in Go services.
@@ -57,6 +63,11 @@ The two planes communicate via **MCP-lite**: tagged JSON frames over Unix Domain
 - Core must not depend on service internals — only on the manifest and the wire protocol.
 - A service can be rewritten in any language without changing core, as long as the manifest and protocol are honoured.
 - **Zero-Copy Artifact Passing:** Services write raw binary data directly to disk (`data/artifacts/`). They pass only lightweight JSON strings with the file path back to Python over the MCP-lite socket (`{"path": "/data/artifacts/xxx.mp3"}`). No heavy binary data over sockets. Python routes this artifact between services.
+
+### 5. AgentLoop Middleware (Hooks)
+- Use `AgentMiddleware` to intercept `InboundMessage`s before or after LLM processing.
+- Middleware hooks are **manually wired** when instantiating the `AgentLoop`.
+- Perfect for cross-cutting processing like auto-transcribing audio (STT), computer vision parsing, or strict logging without polluting the ReAct core.
 
 ### 5. Tool-oriented design
 - Expose capabilities as tools the LLM can call.
@@ -113,8 +124,8 @@ Service → Agent:  {"id":"<uuid>","type":"tools.list.ok","tools":[...]}
 
 ```
 openagent/      # Core Python (minimal)
-  tests/             # Core Python tests (including channels/)
-extensions/         # Python channel integrations (independently installable)
+  tests/             # Core Python tests (including platforms/)
+extensions/         # Python platform integrations (independently installable)
   <name>/tests/      # Extension-local tests (self-contained verticals)
 services/           # Go service daemons (each with go.mod + service.json)
 app/                # Minimalist web UI (FastAPI + HTMX, no auth — POC only)
@@ -139,7 +150,7 @@ inspire/            # Reference implementations (gitignored)
 
 ## Naming Rules
 
-- **extension** — Python channel/media integration (`extensions/`)
+- **extension** — Python platform/media integration (`extensions/`)
 - **service** — Go (or compiled) long-lived daemon (`services/`)
 - **tool** — Python in-process callable or Go service capability declared in `service.json`
 - **worker** — Python async background task
@@ -163,7 +174,7 @@ inspire/            # Reference implementations (gitignored)
 
 ## Testing Standards
 
-- Core tests: `openagent/tests/` (including `openagent/tests/channels/`)
+- Core tests: `openagent/tests/` (including `openagent/tests/platforms/`)
 - App tests: `app/tests/`
 - Extension tests: `extensions/<name>/tests/` only (self-contained per extension)
 - Go service tests: `services/<name>/` (Go `_test.go` files)
@@ -185,7 +196,7 @@ inspire/            # Reference implementations (gitignored)
 
 1. Read `CLAUDE.md` first, then `CURSOR.md` before substantial changes.
 2. Consult `roadmap.md` for consolidated Nanobot/Picoclaw comparison and build order.
-3. Determine: is this a channel/media concern (Python extension) or a compute concern (Go service)?
+3. Determine: is this a platform/media concern (Python extension) or a compute concern (Go service)?
 4. Keep core changes minimal; push feature logic to extensions or services.
 5. Update/add tests in the appropriate `tests/` tree (Python) or `services/<name>/` (Go).
 6. Keep docs in sync: `README.md`, `CLAUDE.md`, `CURSOR.md`, `roadmap.md`, extension/service metadata.

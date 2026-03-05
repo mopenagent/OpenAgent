@@ -5,20 +5,21 @@
 **OpenAgent** is a **deterministic**, **extension-first** hybrid Python + Go agent platform. It orchestrates multi-agent pipelines using offline 14B-parameter models on low-power hardware (Raspberry Pi primary target).
 
 The architecture has two planes:
-- **Python Control Plane (Brain)** — LLM interfacing, multi-agent orchestration, channel integrations, stateless async core loop.
+- **Python Control Plane (Brain)** — LLM interfacing, multi-agent orchestration, platform integrations, stateless async core loop.
 - **Go Services (Hands)** — Long-lived daemon processes for CPU/IO-intensive work. Python spawns, monitors, and manages them. They communicate via MCP-lite (tagged JSON over Unix sockets).
 
 OpenAgent uses a **custom ReAct loop** and thin provider layer (no framework dependency). Session/memory uses a `SessionBackend` protocol. OpenAgent remains responsible for extension/service orchestration, MCP-lite lifecycle, and deployment constraints for low-power hardware. See `roadmap.md` for rationale.
 
 ## Design Principles
 
-1. **Deterministic behavior** — Explicit control flow, reproducible execution paths. Aligns with smaller local models where reliability matters more than flexibility.
-2. **Two planes, clear boundary** — Python extensions handle channels (WhatsApp, Discord) and media (TTS, STT). Go services handle compute and data-intensive work. Never mix them.
-3. **Service-first for compute** — New heavy capabilities go in `services/<name>/` as Go daemons, not in Python extensions.
-4. **First-class async** — Python core and all extensions are async-first. No blocking I/O in Python extension code.
-5. **Tool-oriented** — Capabilities are exposed as tools the LLM can call. Python tools run in-process; Go service tools are declared in `service.json` and proxied through `ServiceManager`.
-6. **Offline and low-power friendly** — Designed for a 14B local model on Raspberry Pi. Keep core lean, keep context concise, lazy-load everything heavy. Vector search (LanceDB) executes directly via Python to leverage Rust core without JSON IPC serialization tax.
-7. **Workflow Orchestrator (Zero-Copy Artifacts)** — Python acts as a workflow router. Go services dump heavy binaries to `data/artifacts/` and return a file path. Python pipes that path as an argument to the next step. LLMs are treated as non-deterministic nodes in a larger deterministic workflow graph. No direct Go-to-Go (East-West) communication.
+1. **Communication Protocol** — Whenever the user sends an input where their intention needs clarification or context needs expansion, do not assume the correct path. Ask clarifying questions **one by one**, provide possible options/paths, and record/apply this explicitly in every conversation.
+2. **Deterministic behavior** — Explicit control flow, reproducible execution paths. Aligns with smaller local models where reliability matters more than flexibility.
+3. **Two planes, clear boundary** — Python extensions handle platforms (WhatsApp, Discord) and media (TTS, STT). Go services handle compute and data-intensive work. Never mix them.
+4. **Service-first for compute** — New heavy capabilities go in `services/<name>/` as Go daemons, not in Python extensions.
+5. **First-class async** — Python core and all extensions are async-first. No blocking I/O in Python extension code.
+6. **Tool-oriented** — Capabilities are exposed as tools the LLM can call. Python tools run in-process; Go service tools are declared in `service.json` and proxied through `ServiceManager`.
+7. **Offline and low-power friendly** — Designed for a 14B local model on Raspberry Pi. Keep core lean, keep context concise, lazy-load everything heavy. Vector search (LanceDB) executes directly via Python to leverage Rust core without JSON IPC serialization tax.
+8. **Workflow Orchestrator (Zero-Copy Artifacts)** — Python acts as a workflow router. Go services dump heavy binaries to `data/artifacts/` and return a file path. Python pipes that path as an argument to the next step. LLMs are treated as non-deterministic nodes in a larger deterministic workflow graph. No direct Go-to-Go (East-West) communication.
 
 ## Reference Implementations
 
@@ -39,8 +40,8 @@ Key files:
 
 ```
 openagent/      # Core Python — orchestration, discovery, interfaces ONLY
-  tests/         # Core tests (including channel adapters)
-extensions/         # Python channel/media integrations (independently installable)
+  tests/         # Core tests (including platform adapters)
+extensions/         # Python platform/media integrations (independently installable)
   <name>/tests/  # Extension-local tests
 services/           # Go service daemons (compute/data tools)
 app/                # Minimalist web UI — FastAPI 3.x + HTMX, no auth (POC/Pi only)
@@ -59,8 +60,8 @@ inspire/            # Reference implementations (gitignored)
 | Service lifecycle manager | `openagent/services/` | Python | ServiceManager — spawn, health-check, restart |
 | Session manager | `openagent/session/` | Python | SessionBackend protocol, SQLite impl |
 | Message bus | `openagent/bus/` | Python | InboundMessage, OutboundMessage, SenderInfo |
-| Service channel adapters (MCP-lite clients) | `openagent/channels/` | Python | Shared `mcplite.py` + per-service adapter |
-| Channel integrations | `extensions/` | Python | AsyncExtension + entry points |
+| Service platform adapters (MCP-lite clients) | `openagent/platforms/` | Python | Shared `mcplite.py` + per-service adapter |
+| platform integrations | `extensions/` | Python | AsyncExtension + entry points |
 | Media (TTS, STT) | `extensions/` | Python | Provider pattern |
 | Compute/data tools | `services/` | Go | MCP-lite daemon + service.json |
 
@@ -172,7 +173,7 @@ uvicorn app.main:app --host 0.0.0.0 --port 8080 --reload
 ## When Editing This Project
 
 - **Core** — Keep it minimal. Add orchestration and interfaces; avoid domain logic and heavy dependencies.
-- **New channel/media feature** — New Python extension under `extensions/`.
+- **New platform/media feature** — New Python extension under `extensions/`.
 - **New compute/data feature** — New Go service under `services/` with `service.json`.
 - **Async only (Python)** — All extension lifecycle and handlers must be `async def`. No blocking.
 - **Goroutine per request (Go)** — Never block the accept loop. Graceful SIGTERM handling.

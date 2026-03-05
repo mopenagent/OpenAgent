@@ -6,7 +6,8 @@
       "WebFetch(domain:www.digitalocean.com)",
       "WebFetch(domain:raw.githubusercontent.com)",
       "Bash(source .venv/bin/activate)",
-      "Bash(pytest openagent/tests/ -v)"
+      "Bash(pytest openagent/tests/ -v)",
+      "Bash(.venv/bin/pytest app/tests/ -x -q)"
     ]
   }
 }

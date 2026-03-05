@@ -11,6 +11,9 @@ The two planes communicate via a **MCP-lite wire protocol** (tagged JSON frames 
 
 Primary deployment target: **Raspberry Pi / low-power hardware** (Go compiles to arm64; Python core stays lean).
 
+## Communication Protocol (Rule #1)
+Whenever the user sends an input where their intention needs clarification or the context needs expansion, **do not assume the correct path.** Ask clarifying questions **one by one** (1-by-1) and provide possible **options/paths** for the user to choose from. Apply this explicitly in every conversation.
+
 ## Agentic Layer
 
 OpenAgent uses a **custom ReAct loop** and thin httpx-based provider layer — no framework dependency. This gives full control over tool schema format, retry logic, and iteration limits for sub-30B models. Session/memory uses a `SessionBackend` protocol (SQLite now; Go/Rust service later). See `roadmap.md` for rationale and build order.
@@ -64,7 +67,7 @@ openagent/              # Core Python — orchestration, discovery, interfaces
   __init__.py
   interfaces.py             # AsyncExtension protocol + BaseAsyncExtension ABC
   manager.py                # Extension discovery via entry points
-  channels/                 # MCP-lite channel/service adapters (discord, telegram, ...)
+  platforms/                 # MCP-lite platform/service adapters (discord, telegram, ...)
   main.py                   # Entry point: asyncio.run(load_extensions())
   agent/                    # Agent loop (ReAct), tool registry
   providers/                # LLM provider registry (Anthropic, OpenAI, OpenAI-compat)
@@ -73,9 +76,9 @@ openagent/              # Core Python — orchestration, discovery, interfaces
   session/                  # SessionManager, SessionBackend, SQLite impl
   heartbeat/                # Periodic health/summary polling
   observability/            # Logging, metrics, context
-  tests/                    # Core tests (including channels/)
+  tests/                    # Core tests (including platforms/)
 
-extensions/                 # Python channel integrations (independently installable)
+extensions/                 # Python platform integrations (independently installable)
   discord/                  # Discord bot (discord.py + aiohttp)
   whatsapp/                 # WhatsApp via Neonize (to be migrated to services/ later)
   tts/                      # Text-to-speech (EdgeTTS, MiniMax)
@@ -123,7 +126,7 @@ inspire/                    # Reference implementations (gitignored)
                     ┌─────────────────────────────────────────┐
                     │         Python Control Plane             │
                     │                                          │
-  Channel ext ─────►  Message Bus ──► AgentLoop ──► LLM API  │
+  platform ext ─────►  Message Bus ──► AgentLoop ──► LLM API  │
   (WhatsApp/Discord)│                     │                    │
                     │             tool calls│                  │
                     │               ┌──────▼───────┐          │
@@ -145,15 +148,16 @@ inspire/                    # Reference implementations (gitignored)
 Follows Nanobot's agent loop. Core loop:
 
 ```
-InboundMessage (from channel extension)
+InboundMessage (from platform extension)
   → AgentLoop.process()
+    → Execute Middleware Chain (Hooks like STT transcription)
     → Build context (history + memory + system prompt)
     → Call LLM (OpenAI-compatible /v1/chat/completions via aiohttp)
     → If tool call:
         → Python tool? execute directly
         → Go service tool? ServiceManager.call(service, tool, params)
         → Append result, loop (max 40 iterations)
-    → Final answer → OutboundMessage → channel extension delivers it
+    → Final answer → OutboundMessage → platform extension delivers it
 ```
 
 **Agent registry:** Multiple named agent instances (follow Picoclaw `AgentRegistry`). Each agent has its own model, workspace, session, and tool set. A supervisor agent dispatches to workers.
@@ -266,14 +270,14 @@ Schema-first: the manifest is the only contract between Python core and the serv
 }
 ```
 
-### Python Extensions = Channel Integrations Only
+### Python Extensions = platform Integrations Only
 
-Python extensions handle channels and media. They do **not** do heavy CPU/IO work.
+Python extensions handle platforms and media. They do **not** do heavy CPU/IO work.
 
 | What | Language | Location | Pattern |
 |---|---|---|---|
-| Channel integrations (WhatsApp, Discord) | Python | `extensions/` | `AsyncExtension` + entry points |
-| Service-backed channel connectors | Python | `openagent/channels/` | Shared `mcplite.py` + per-service adapters |
+| platform integrations (WhatsApp, Discord) | Python | `extensions/` | `AsyncExtension` + entry points |
+| Service-backed platform connectors | Python | `openagent/platforms/` | Shared `mcplite.py` + per-service adapters |
 | Media (TTS, STT) | Python | `extensions/` | Provider pattern, async wrappers |
 | Heavy compute / data tools | Go | `services/` | MCP-lite daemon + `service.json` |
 
@@ -406,7 +410,7 @@ app/
 
 ## Testing Standards
 
-- Core tests: `openagent/tests/` (including `openagent/tests/channels/`)
+- Core tests: `openagent/tests/` (including `openagent/tests/platforms/`)
 - App tests: `app/tests/`
 - Extension tests: `extensions/<name>/tests/` only (self-contained per extension)
 - Service tests: `services/<name>/` (Go `_test.go` files)
@@ -430,9 +434,9 @@ app/
 
 ### Next (in order)
 1. **Config schema** — extend `openagent.yaml` with agents, bindings, session, tools
-2. **Chat path wiring** — agent loop ↔ channel events ↔ web UI end-to-end
+2. **Chat path wiring** — agent loop ↔ platform events ↔ web UI end-to-end
 3. **Agent registry** — optional multi-agent (follow `inspire/picoclaw/pkg/agent/registry.go`)
-4. **Channel manager** — config-driven init, outbound dispatch
+4. **platform manager** — config-driven init, outbound dispatch
 5. **Optional** — memory consolidation, cron, slash commands, rate limiting
 
 See `roadmap.md` for consolidated Nanobot/Picoclaw comparison and detailed gaps.

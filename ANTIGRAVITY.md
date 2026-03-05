@@ -2,7 +2,13 @@
 
 This file serves as a durable record of the architectural consensus reached regarding OpenAgent, specifically focusing on the deployment realities for Raspberry Pi and the hybrid Python/Go split.
 
-## 1. The Workflow Engine Paradigm
+## 1. Communication Protocol (User Preference)
+Whenever the user sends an input where their intention needs clarification or the context needs expansion, **do not assume the correct path.** 
+- Ask clarifying questions **one by one** (1-by-1).
+- Provide possible **options/paths** for the user to choose from.
+- Record and apply this explicitly in every conversation regarding architecture and implementation.
+
+## 2. The Workflow Engine Paradigm
 OpenAgent is distinct from typical agentic loops because the LLM is **not** the center of the universe.
 - Python acts as a deterministic **Workflow Orchestrator**.
 - The LLM is just one non-deterministic node in the graph.
@@ -23,3 +29,9 @@ Go services **never** talk to each other directly.
 The platform is designed to run entirely on a single 8GB Raspberry Pi (with the LLM/Vector DB potentially running on a dedicated local API/GPU).
 - **Vector DB (LanceDB):** Uses a direct Python client wrapper to leverage LanceDB's fast, native Rust core. We do *not* isolate this into a Go service initially, as that would introduce the JSON IPC serialization tax for massive vector arrays. We only shift it if profiling shows it aggressively blocking the `asyncio` event loop.
 - The philosophy is: Build for a single node, monitor, profile, and optimize. Only distribute if absolutely necessary.
+
+## 5. Communication Protocol (User Preference)
+Whenever the user sends an input where their intention needs clarification or the context needs expansion, **do not assume the correct path.** 
+- Ask clarifying questions **one by one** (1-by-1).
+- Provide possible **options/paths** for the user to choose from.
+- Record and apply this explicitly in every conversation regarding architecture and implementation.
