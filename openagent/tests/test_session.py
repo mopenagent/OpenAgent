@@ -193,3 +193,125 @@ async def test_manager_list_and_clear(mgr: SessionManager) -> None:
     assert "x:1" in sessions
     await mgr.clear("x:1")
     assert await mgr.get_history("x:1") == []
+
+
+# ---------------------------------------------------------------------------
+# Cross-channel identity — SqliteSessionBackend
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_resolve_user_key_new_user(backend: SqliteSessionBackend) -> None:
+    key = await backend.resolve_user_key("telegram", "12345")
+    assert key.startswith("user:")
+
+
+@pytest.mark.asyncio
+async def test_resolve_user_key_stable(backend: SqliteSessionBackend) -> None:
+    key1 = await backend.resolve_user_key("discord", "user-abc")
+    key2 = await backend.resolve_user_key("discord", "user-abc")
+    assert key1 == key2
+
+
+@pytest.mark.asyncio
+async def test_resolve_user_key_different_channels(backend: SqliteSessionBackend) -> None:
+    k1 = await backend.resolve_user_key("telegram", "999")
+    k2 = await backend.resolve_user_key("slack", "999")
+    # Same numeric id on different platforms → different identities
+    assert k1 != k2
+
+
+@pytest.mark.asyncio
+async def test_link_user_keys_merges_turns(backend: SqliteSessionBackend) -> None:
+    key_a = await backend.resolve_user_key("telegram", "100")
+    key_b = await backend.resolve_user_key("discord", "200")
+    await backend.append(key_a, "user", "hello from telegram")
+    await backend.append(key_b, "user", "hello from discord")
+
+    winner = await backend.link_user_keys(key_a, key_b)
+    assert winner == key_a
+
+    turns = await backend.get_history(key_a)
+    contents = {t.content for t in turns}
+    assert "hello from telegram" in contents
+    assert "hello from discord" in contents
+    assert await backend.get_history(key_b) == []
+
+
+@pytest.mark.asyncio
+async def test_link_user_keys_redirects_identity(backend: SqliteSessionBackend) -> None:
+    key_a = await backend.resolve_user_key("whatsapp", "+111")
+    key_b = await backend.resolve_user_key("slack", "U999")
+    await backend.link_user_keys(key_a, key_b)
+
+    resolved = await backend.resolve_user_key("slack", "U999")
+    assert resolved == key_a
+
+
+@pytest.mark.asyncio
+async def test_store_and_redeem_pin(backend: SqliteSessionBackend) -> None:
+    from datetime import datetime, timedelta
+
+    key_a = await backend.resolve_user_key("telegram", "1")
+    key_b = await backend.resolve_user_key("discord", "2")
+    expires_at = (datetime.now() + timedelta(minutes=10)).isoformat()
+    await backend.store_link_pin(key_a, "123456", expires_at)
+
+    winner = await backend.redeem_link_pin(key_b, "123456")
+    assert winner == key_a
+    # key_b identity now resolves to key_a
+    assert await backend.resolve_user_key("discord", "2") == key_a
+
+
+@pytest.mark.asyncio
+async def test_redeem_expired_pin(backend: SqliteSessionBackend) -> None:
+    from datetime import datetime, timedelta
+
+    key_a = await backend.resolve_user_key("telegram", "10")
+    key_b = await backend.resolve_user_key("discord", "20")
+    expired = (datetime.now() - timedelta(seconds=1)).isoformat()
+    await backend.store_link_pin(key_a, "999999", expired)
+
+    assert await backend.redeem_link_pin(key_b, "999999") is None
+
+
+@pytest.mark.asyncio
+async def test_redeem_invalid_pin(backend: SqliteSessionBackend) -> None:
+    key_b = await backend.resolve_user_key("discord", "30")
+    assert await backend.redeem_link_pin(key_b, "000000") is None
+
+
+@pytest.mark.asyncio
+async def test_pin_is_one_time_use(backend: SqliteSessionBackend) -> None:
+    from datetime import datetime, timedelta
+
+    key_a = await backend.resolve_user_key("telegram", "40")
+    key_b = await backend.resolve_user_key("slack", "U40")
+    key_c = await backend.resolve_user_key("whatsapp", "+40")
+    expires_at = (datetime.now() + timedelta(minutes=5)).isoformat()
+    await backend.store_link_pin(key_a, "777777", expires_at)
+
+    assert await backend.redeem_link_pin(key_b, "777777") is not None
+    # Pin consumed — second redeem fails
+    assert await backend.redeem_link_pin(key_c, "777777") is None
+
+
+@pytest.mark.asyncio
+async def test_cannot_link_session_to_itself(backend: SqliteSessionBackend) -> None:
+    from datetime import datetime, timedelta
+
+    key = await backend.resolve_user_key("telegram", "50")
+    expires_at = (datetime.now() + timedelta(minutes=5)).isoformat()
+    await backend.store_link_pin(key, "111111", expires_at)
+    assert await backend.redeem_link_pin(key, "111111") is None
+
+
+@pytest.mark.asyncio
+async def test_session_manager_proxies_identity(tmp_path: Path) -> None:
+    b = SqliteSessionBackend(tmp_path / "id.db")
+    m = SessionManager(backend=b, summarise_after=0)
+    await m.start()
+    key = await m.resolve_user_key("telegram", "77")
+    assert key.startswith("user:")
+    assert await m.resolve_user_key("telegram", "77") == key
+    await m.stop()

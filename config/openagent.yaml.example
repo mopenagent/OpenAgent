@@ -1,17 +1,27 @@
 # OpenAgent configuration
 # Copy this file to config/openagent.yaml and edit as needed.
-# Secrets (api_key) can be placed in .env or set as environment variables —
-# env vars always take priority over values in this file.
+# Secrets should be set as environment variables — env vars always take
+# priority over values in this file.
 #
-# Env-var overrides:
+# ── Provider env vars ────────────────────────────────────────────────────────
 #   OPENAGENT_PROVIDER_KIND   — openai_compat | anthropic | openai
 #   OPENAGENT_LLM_BASE_URL    — full base URL (e.g. http://localhost:1234/v1)
 #   OPENAGENT_API_KEY         — API key / bearer token
 #   OPENAGENT_MODEL           — model name to request
 #   OPENAGENT_LLM_TIMEOUT     — request timeout in seconds (float)
+#
+# ── Channel env vars (preferred over storing secrets in YAML) ─────────────
+#   DISCORD_TOKEN             — Discord bot token
+#   TELEGRAM_APP_ID           — Telegram MTProto app ID (integer)
+#   TELEGRAM_APP_HASH         — Telegram MTProto app hash
+#   TELEGRAM_BOT_TOKEN        — Telegram bot token (if using bot mode)
+#   SLACK_BOT_TOKEN           — Slack bot OAuth token (xoxb-...)
+#   SLACK_APP_TOKEN           — Slack app-level token (xapp-..., socket mode)
+#   WHATSAPP_PHONE            — WhatsApp linked phone number
 
+# ── Provider ─────────────────────────────────────────────────────────────────
 provider:
-  # ── Option A: local OpenAI-compatible server (LM Studio, Ollama, llama.cpp) ──
+  # Option A: local OpenAI-compatible server (LM Studio, Ollama, llama.cpp)
   kind: openai_compat
   base_url: http://100.74.210.70:1234/v1
   api_key: ""          # leave blank for unauthenticated local servers
@@ -19,18 +29,60 @@ provider:
   timeout: 60.0
   max_tokens: 2048
 
-  # ── Option B: Anthropic Claude ───────────────────────────────────────────────
+  # Option B: Anthropic Claude
   # kind: anthropic
   # base_url: ""       # leave blank to use https://api.anthropic.com
   # api_key: sk-ant-...
   # model: claude-sonnet-4-6
-  # timeout: 60.0
-  # max_tokens: 2048
 
-  # ── Option C: OpenAI / Codex ─────────────────────────────────────────────────
+  # Option C: OpenAI
   # kind: openai
-  # base_url: ""       # leave blank to use https://api.openai.com/v1
+  # base_url: ""
   # api_key: sk-...
   # model: gpt-4o
-  # timeout: 60.0
-  # max_tokens: 2048
+
+# ── Agents ────────────────────────────────────────────────────────────────────
+agents:
+  - name: default
+    system_prompt: >
+      You are a helpful assistant.
+      Use tools only when necessary.
+      Be concise.
+    max_iterations: 40
+    max_tool_output: 500
+
+# ── Session ───────────────────────────────────────────────────────────────────
+session:
+  summarise_after: 40
+  backend: sqlite
+  db_path: data/sessions.db
+
+# ── Channels ──────────────────────────────────────────────────────────────────
+# Credentials injected as env vars into the corresponding Go service binary.
+channels:
+  # discord:
+  #   token: ""        # DISCORD_TOKEN
+  #   guild_ids: []
+
+  # telegram:
+  #   app_id: 0        # TELEGRAM_APP_ID
+  #   app_hash: ""     # TELEGRAM_APP_HASH
+  #   bot_token: ""    # TELEGRAM_BOT_TOKEN
+
+  # slack:
+  #   bot_token: ""    # SLACK_BOT_TOKEN  (xoxb-...)
+  #   app_token: ""    # SLACK_APP_TOKEN  (xapp-...)
+
+  # whatsapp:
+  #   phone_number: ""
+  #   data_dir: data/whatsapp
+
+# ── Tools ─────────────────────────────────────────────────────────────────────
+tools:
+  # filesystem:
+  #   allowed_paths:
+  #     - ~/Documents
+  #     - /tmp
+
+  # shell:
+  #   allowed_commands: []   # empty = shell tool disabled

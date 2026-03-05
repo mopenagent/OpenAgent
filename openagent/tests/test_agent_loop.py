@@ -311,7 +311,7 @@ async def test_agent_loop_cross_channel_same_session(
     bus: MessageBus,
     session_mgr: SessionManager,
 ) -> None:
-    """Messages from WhatsApp and Telegram with same canonical_id share history."""
+    """Messages from WhatsApp and Telegram with same user_key share history."""
     provider = _FakeProvider([
         LLMResponse(content="reply1"),
         LLMResponse(content="reply2"),
@@ -322,12 +322,12 @@ async def test_agent_loop_cross_channel_same_session(
 
     wa = InboundMessage(
         channel="whatsapp", chat_id="+1",
-        sender=SenderInfo("whatsapp", "+1", canonical_id="user:alice"),
+        sender=SenderInfo("whatsapp", "+1", user_key="user:alice"),
         content="from whatsapp",
     )
     tg = InboundMessage(
         channel="telegram", chat_id="99",
-        sender=SenderInfo("telegram", "99", canonical_id="user:alice"),
+        sender=SenderInfo("telegram", "99", user_key="user:alice"),
         content="from telegram",
     )
 

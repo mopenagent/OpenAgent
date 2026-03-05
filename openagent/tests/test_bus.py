@@ -19,12 +19,12 @@ def _msg(
     user_id: str = "u1",
     chat_id: str = "c1",
     content: str = "hello",
-    canonical_id: str = "",
+    user_key: str = "",
     session_key_override: str | None = None,
 ) -> InboundMessage:
     return InboundMessage(
         channel=channel,
-        sender=SenderInfo(platform=channel, user_id=user_id, canonical_id=canonical_id),
+        sender=SenderInfo(platform=channel, user_id=user_id, user_key=user_key),
         chat_id=chat_id,
         content=content,
         session_key_override=session_key_override,
@@ -41,19 +41,19 @@ def test_session_key_default() -> None:
     assert m.session_key == "telegram:9999"
 
 
-def test_session_key_canonical_id_wins_over_default() -> None:
-    m = _msg(channel="telegram", chat_id="9999", canonical_id="user:alice")
+def test_session_key_user_key_wins_over_default() -> None:
+    m = _msg(channel="telegram", chat_id="9999", user_key="user:alice")
     assert m.session_key == "user:alice"
 
 
-def test_session_key_override_wins_over_canonical_id() -> None:
-    m = _msg(canonical_id="user:alice", session_key_override="special:session")
+def test_session_key_override_wins_over_user_key() -> None:
+    m = _msg(user_key="user:alice", session_key_override="special:session")
     assert m.session_key == "special:session"
 
 
-def test_cross_channel_same_canonical_id() -> None:
-    wa = _msg(channel="whatsapp", chat_id="+1234567890", canonical_id="user:alice")
-    tg = _msg(channel="telegram", chat_id="12345678", canonical_id="user:alice")
+def test_cross_channel_same_user_key() -> None:
+    wa = _msg(channel="whatsapp", chat_id="+1234567890", user_key="user:alice")
+    tg = _msg(channel="telegram", chat_id="12345678", user_key="user:alice")
     assert wa.session_key == tg.session_key == "user:alice"
 
 
@@ -81,12 +81,12 @@ async def test_publish_routes_to_session_queue() -> None:
 
 @pytest.mark.asyncio
 async def test_cross_channel_messages_share_one_queue() -> None:
-    """WhatsApp + Telegram messages with same canonical_id → one session queue."""
+    """WhatsApp + Telegram messages with same user_key → one session queue."""
     bus = MessageBus()
     await bus.start()
 
-    wa = _msg(channel="whatsapp", chat_id="+1", canonical_id="user:alice", content="hi from wa")
-    tg = _msg(channel="telegram", chat_id="99", canonical_id="user:alice", content="hi from tg")
+    wa = _msg(channel="whatsapp", chat_id="+1", user_key="user:alice", content="hi from wa")
+    tg = _msg(channel="telegram", chat_id="99", user_key="user:alice", content="hi from tg")
 
     await bus.publish(wa)
     await bus.publish(tg)

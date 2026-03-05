@@ -347,3 +347,85 @@ class TestChannelManager:
         custom_adapter = DiscordChannelAdapter(client=client2, bus=bus)
         mgr.register(custom_adapter)
         assert mgr._adapters["discord"] is custom_adapter
+
+
+# ---------------------------------------------------------------------------
+# Identity resolver
+# ---------------------------------------------------------------------------
+
+
+class TestIdentityResolver:
+    """ChannelAdapter enriches sender.user_key when a resolver is provided."""
+
+    def setup_method(self):
+        self.client = _make_mock_client()
+        self.bus = MagicMock(spec=MessageBus)
+        self.bus.publish = AsyncMock()
+
+    @pytest.mark.asyncio
+    async def test_resolver_sets_user_key(self):
+        """When a resolver is wired, the adapter enriches user_key before publish."""
+        async def fake_resolver(channel: str, channel_id: str) -> str:
+            return f"user:resolved-{channel_id}"
+
+        adapter = DiscordChannelAdapter(
+            client=self.client, bus=self.bus, resolver=fake_resolver
+        )
+        event = _make_event("discord.message.received", {
+            "channel_id": "C1",
+            "author_id": "U1",
+            "author": "alice",
+            "content": "hello",
+            "is_bot": False,
+        })
+        _fire_event(self.client, event)
+        await asyncio.sleep(0)  # let ensure_future run
+
+        assert self.bus.publish.called
+        msg: InboundMessage = self.bus.publish.call_args[0][0]
+        assert msg.sender.user_key == "user:resolved-U1"
+        # session_key now uses the resolved user_key
+        assert msg.session_key == "user:resolved-U1"
+
+    @pytest.mark.asyncio
+    async def test_no_resolver_user_key_empty(self):
+        """Without a resolver the adapter publishes with user_key == '' (fallback key)."""
+        adapter = DiscordChannelAdapter(client=self.client, bus=self.bus)
+        event = _make_event("discord.message.received", {
+            "channel_id": "C2",
+            "author_id": "U2",
+            "author": "bob",
+            "content": "hi",
+            "is_bot": False,
+        })
+        _fire_event(self.client, event)
+        await asyncio.sleep(0)
+
+        msg: InboundMessage = self.bus.publish.call_args[0][0]
+        assert msg.sender.user_key == ""
+        # Falls back to channel:chat_id
+        assert msg.session_key == "discord:C2"
+
+    @pytest.mark.asyncio
+    async def test_resolver_failure_falls_back_gracefully(self):
+        """If the resolver raises, the message is still published (no user_key)."""
+        async def bad_resolver(channel: str, channel_id: str) -> str:
+            raise RuntimeError("db is down")
+
+        adapter = DiscordChannelAdapter(
+            client=self.client, bus=self.bus, resolver=bad_resolver
+        )
+        event = _make_event("discord.message.received", {
+            "channel_id": "C3",
+            "author_id": "U3",
+            "author": "carol",
+            "content": "test",
+            "is_bot": False,
+        })
+        _fire_event(self.client, event)
+        await asyncio.sleep(0)
+
+        # Message still reaches the bus despite resolver failure
+        assert self.bus.publish.called
+        msg: InboundMessage = self.bus.publish.call_args[0][0]
+        assert msg.sender.user_key == ""

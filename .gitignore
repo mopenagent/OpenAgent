@@ -87,5 +87,6 @@ bin/
 # Local / project-specific
 # ---
 
+config/openagent.yaml
 data/
 inspire/
