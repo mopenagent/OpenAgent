@@ -7,22 +7,22 @@
      x-data="chatApp()" x-init="connect()">
 
   <!-- Message thread -->
-  <div class="flex-1 overflow-y-auto space-y-4 mb-4 min-h-0" x-ref="thread">
+  <div class="flex-1 overflow-y-auto space-y-2 mb-4 min-h-0" x-ref="thread">
 
-    <!-- Stub notice -->
-    <div class="flex justify-center">
-      <span class="text-xs text-slate-500 bg-slate-800 px-3 py-1 rounded-full border border-slate-700">
-        Agent loop not yet built — responses are stubs
-      </span>
-    </div>
+    <!-- Empty state -->
+    <template x-if="messages.length === 0">
+      <div class="flex justify-center pt-8">
+        <span class="text-xs text-mutedCharcoal dark:text-steelMist">Start a conversation below</span>
+      </div>
+    </template>
 
     <!-- Messages -->
     <template x-for="(msg, i) in messages" :key="i">
       <div :class="msg.role === 'user' ? 'flex justify-end' : 'flex justify-start'">
         <div :class="msg.role === 'user'
-                  ? 'bg-teal-600/20 border border-teal-500/30 text-slate-100 rounded-2xl rounded-tr-sm'
-                  : 'bg-slate-800 border border-slate-700 text-slate-300 rounded-2xl rounded-tl-sm'"
-             class="max-w-lg px-4 py-2.5 text-sm">
+                  ? 'bg-[#FF9933]/20 border border-[#FF9933]/30 text-stone-950 dark:text-slate-100 rounded-2xl rounded-tr-sm'
+                  : 'bg-pastelFog dark:bg-charcoalLayer border border-[#DEE2E6] dark:border-[#21262D] text-stone-800 dark:text-steelMist rounded-2xl rounded-tl-sm'"
+             class="max-w-lg px-3 py-1.5 text-sm whitespace-pre-wrap">
           <p x-text="msg.content"></p>
         </div>
       </div>
@@ -30,11 +30,11 @@
 
     <!-- Typing indicator -->
     <div x-show="typing" class="flex justify-start">
-      <div class="bg-slate-800 border border-slate-700 rounded-2xl rounded-tl-sm px-4 py-2.5">
+      <div class="bg-pastelFog dark:bg-charcoalLayer border border-[#DEE2E6] dark:border-[#21262D] rounded-2xl rounded-tl-sm px-3 py-1.5">
         <span class="inline-flex gap-1">
-          <span class="w-1.5 h-1.5 bg-slate-400 rounded-full animate-bounce [animation-delay:0ms]"></span>
-          <span class="w-1.5 h-1.5 bg-slate-400 rounded-full animate-bounce [animation-delay:150ms]"></span>
-          <span class="w-1.5 h-1.5 bg-slate-400 rounded-full animate-bounce [animation-delay:300ms]"></span>
+          <span class="w-1.5 h-1.5 bg-mutedCharcoal dark:bg-steelMist rounded-full animate-bounce [animation-delay:0ms]"></span>
+          <span class="w-1.5 h-1.5 bg-mutedCharcoal dark:bg-steelMist rounded-full animate-bounce [animation-delay:150ms]"></span>
+          <span class="w-1.5 h-1.5 bg-mutedCharcoal dark:bg-steelMist rounded-full animate-bounce [animation-delay:300ms]"></span>
         </span>
       </div>
     </div>
@@ -46,16 +46,15 @@
     <input
       x-model="draft"
       :disabled="!connected"
-      @keydown.enter.prevent="send()"
       type="text"
       placeholder="Message the agent…"
-      class="flex-1 bg-slate-800 border border-slate-700 rounded-xl px-4 py-2.5 text-sm
-             text-slate-100 placeholder-slate-500 focus:outline-none focus:border-teal-500
+      class="flex-1 bg-softPorcelain dark:bg-charcoalLayer border border-[#DEE2E6] dark:border-[#21262D] rounded-xl px-4 py-2.5 text-sm
+             text-stone-950 dark:text-stone-100 placeholder-mutedCharcoal dark:placeholder-steelMist focus:outline-none focus:border-[#FF9933]
              disabled:opacity-40"
     />
     <button type="submit"
-            :disabled="!connected || !draft.trim()"
-            class="bg-teal-500 hover:bg-teal-400 disabled:opacity-40 text-slate-900 font-semibold
+            :disabled="!connected || !draft.trim() || typing"
+            class="bg-[#FF9933] hover:bg-amber-400 disabled:opacity-40 text-stone-950 font-semibold
                    px-4 py-2.5 rounded-xl text-sm transition-colors">
       Send
     </button>
@@ -63,8 +62,8 @@
 
   <!-- Connection status -->
   <p class="mt-2 text-xs text-center"
-     :class="connected ? 'text-green-400' : 'text-red-400'"
-     x-text="connected ? 'Connected' : 'Disconnected — reconnecting…'">
+     :class="connected ? 'text-mutedCharcoal dark:text-steelMist' : 'text-red-400'"
+     x-text="connected ? 'Connected · session ' + sessionId : 'Disconnected — reconnecting…'">
   </p>
 
 </div>
@@ -76,6 +75,7 @@ function chatApp() {
     draft: "",
     typing: false,
     connected: false,
+    sessionId: "",
     ws: null,
 
     connect() {
@@ -85,10 +85,16 @@ function chatApp() {
       this.ws.onopen = () => { this.connected = true; };
       this.ws.onclose = () => {
         this.connected = false;
+        this.typing = false;
         setTimeout(() => this.connect(), 3000);
       };
       this.ws.onmessage = (e) => {
         const msg = JSON.parse(e.data);
+        // First message from server carries the session ID
+        if (msg.session_id) {
+          this.sessionId = msg.session_id;
+          return;
+        }
         this.typing = false;
         this.messages.push(msg);
         this.$nextTick(() => this.scrollToBottom());
@@ -96,7 +102,7 @@ function chatApp() {
     },
 
     send() {
-      if (!this.draft.trim() || !this.connected) return;
+      if (!this.draft.trim() || !this.connected || this.typing) return;
       const text = this.draft.trim();
       this.messages.push({ role: "user", content: text });
       this.ws.send(text);

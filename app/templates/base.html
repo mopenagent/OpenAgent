@@ -9,12 +9,29 @@
   <script src="/static/tailwind.min.js"></script>
   <script>
     tailwind.config = {
+      darkMode: 'class',
       theme: {
         extend: {
-          colors: { brand: "#FF9933", saffron: "#FF9933" }
+          colors: {
+            brand: "#FF9933",
+            saffron: "#FF9933",
+            pastelFog: "#F1F3F5",
+            softPorcelain: "#F8F9FA",
+            mutedCharcoal: "#6C757D",
+            deepSpaceBlue: "#0D1117",
+            richObsidian: "#010409",
+            charcoalLayer: "#161B22",
+            steelMist: "#8B949E"
+          }
         }
       }
     }
+  </script>
+  <script>
+    (function(){
+      const t = localStorage.getItem('theme');
+      document.documentElement.classList.toggle('dark', t !== 'light');
+    })();
   </script>
 
   <!-- Alpine.js (vendored — app/static/alpine.min.js) -->
@@ -26,7 +43,7 @@
   <link rel="stylesheet" href="/static/app.css">
 </head>
 
-<body class="h-full bg-stone-950 text-stone-100 flex overflow-hidden">
+<body class="h-full bg-white text-stone-950 dark:bg-richObsidian dark:text-stone-100 flex overflow-hidden">
 
   <!-- ── Sidebar ─────────────────────────────────────────── -->
   <aside x-data="{
@@ -34,17 +51,17 @@
            toggle() { this.collapsed = !this.collapsed; localStorage.setItem('sb', this.collapsed ? '1' : '0') }
          }"
          :class="collapsed ? 'w-14' : 'w-56'"
-         class="flex-shrink-0 bg-stone-900 border-r border-stone-800 flex flex-col transition-all duration-200 overflow-hidden">
+         class="flex-shrink-0 bg-pastelFog dark:bg-deepSpaceBlue border-r border-[#DEE2E6] dark:border-[#21262D] flex flex-col transition-all duration-200 overflow-hidden">
 
     <!-- Logo + collapse button -->
-    <div class="flex items-center h-14 border-b border-stone-800 flex-shrink-0"
+    <div class="flex items-center h-14 border-b border-[#DEE2E6] dark:border-[#21262D] flex-shrink-0"
          :class="collapsed ? 'justify-center' : 'px-4 gap-2'">
       <span x-show="!collapsed"
             class="text-saffron font-bold text-lg tracking-tight flex-1 truncate">OpenAgent</span>
       <button @click="toggle()"
               title="Toggle sidebar"
               class="w-8 h-8 flex items-center justify-center rounded-lg text-saffron
-                     hover:bg-stone-800 transition-colors flex-shrink-0">
+                     hover:bg-[#DEE2E6] dark:hover:bg-[#21262D] transition-colors flex-shrink-0">
         <svg class="w-4 h-4 transition-transform duration-200" :class="collapsed ? 'rotate-180' : ''"
              fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
@@ -67,7 +84,7 @@
         <a href="{{ href }}"
            :class="collapsed ? 'justify-center px-0' : 'px-3'"
            class="flex items-center gap-3 py-2 rounded-lg text-sm font-medium transition-colors
-                  {% if is_active %}bg-[#FF9933]/10 text-saffron{% else %}text-stone-400 hover:bg-stone-800 hover:text-stone-100{% endif %}">
+                  {% if is_active %}bg-[#FF9933]/10 text-saffron{% else %}text-mutedCharcoal dark:text-steelMist hover:bg-[#DEE2E6] dark:hover:bg-[#21262D] hover:text-stone-900 dark:hover:text-stone-100{% endif %}">
           <svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" d="{{ icon_path }}"/>
           </svg>
@@ -77,11 +94,11 @@
     </nav>
 
     <!-- Settings — pinned to bottom -->
-    <div class="px-2 py-2 border-t border-stone-800 flex-shrink-0">
+    <div class="px-2 py-2 border-t border-[#DEE2E6] dark:border-[#21262D] flex-shrink-0">
       <a href="/config"
          :class="collapsed ? 'justify-center px-0' : 'px-3'"
          class="flex items-center gap-3 py-2 rounded-lg text-sm font-medium transition-colors
-                {% if active == 'config' %}bg-[#FF9933]/10 text-saffron{% else %}text-stone-400 hover:bg-stone-800 hover:text-stone-100{% endif %}">
+                {% if active == 'config' %}bg-[#FF9933]/10 text-saffron{% else %}text-mutedCharcoal dark:text-steelMist hover:bg-[#DEE2E6] dark:hover:bg-[#21262D] hover:text-stone-900 dark:hover:text-stone-100{% endif %}">
         <svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
           <path stroke-linecap="round" stroke-linejoin="round"
                 d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
@@ -96,7 +113,7 @@
   <main class="flex-1 flex flex-col overflow-hidden">
 
     <!-- Page header -->
-    <header class="flex-shrink-0 px-6 py-4 border-b border-stone-800 bg-stone-900/50 flex items-center justify-between gap-4">
+    <header class="flex-shrink-0 px-6 py-4 border-b border-[#DEE2E6] dark:border-[#21262D] bg-white/80 dark:bg-deepSpaceBlue/80 flex items-center justify-between gap-4">
       <h1 class="text-base font-semibold text-saffron capitalize">
         {% block page_title %}{% endblock %}
       </h1>
@@ -123,11 +140,11 @@
               </svg>
             </button>
             <div x-show="open" x-cloak @click.outside="open = false"
-                 class="absolute right-0 top-full mt-1 w-64 bg-stone-900 border border-stone-700 rounded-lg shadow-xl z-50 py-1 overflow-y-auto max-h-52">
+                 class="absolute right-0 top-full mt-1 w-64 bg-white dark:bg-deepSpaceBlue border border-[#DEE2E6] dark:border-[#21262D] rounded-lg shadow-xl z-50 py-1 overflow-y-auto max-h-52">
               <template x-for="m in models" :key="m">
                 <button @click="pick(m); open = false"
-                        class="w-full text-left px-3 py-1.5 text-xs transition-colors hover:bg-stone-800"
-                        :class="m === selected ? 'text-saffron' : 'text-stone-300'">
+                        class="w-full text-left px-3 py-1.5 text-xs transition-colors hover:bg-pastelFog dark:hover:bg-charcoalLayer"
+                        :class="m === selected ? 'text-saffron' : 'text-mutedCharcoal dark:text-steelMist'">
                   <span x-text="m"></span>
                 </button>
               </template>
@@ -140,6 +157,20 @@
           <span class="text-xs font-medium text-red-400">Offline</span>
         </template>
 
+        <!-- Night / Day toggle -->
+        <div x-data="themeSwitcher()" x-init="init()" class="flex items-center border-l border-[#DEE2E6] dark:border-[#21262D] pl-3 ml-1">
+          <button @click="toggle()"
+                  title="Toggle dark/light mode"
+                  class="w-8 h-8 flex items-center justify-center rounded-lg text-mutedCharcoal hover:text-saffron dark:text-steelMist dark:hover:text-saffron transition-colors">
+            <svg x-show="dark" x-cloak class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z"/>
+            </svg>
+            <svg x-show="!dark" class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z"/>
+            </svg>
+          </button>
+        </div>
+
       </div>
     </header>
 
@@ -151,6 +182,20 @@
 
 
 <script>
+  function themeSwitcher() {
+    return {
+      dark: localStorage.getItem('theme') !== 'light',
+      init() {
+        document.documentElement.classList.toggle('dark', this.dark);
+      },
+      toggle() {
+        this.dark = !this.dark;
+        localStorage.setItem('theme', this.dark ? 'dark' : 'light');
+        document.documentElement.classList.toggle('dark', this.dark);
+      }
+    };
+  }
+
   function llmHealth() {
     return {
       status: 'checking',

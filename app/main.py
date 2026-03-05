@@ -13,10 +13,13 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
 from app.routes import dashboard, chat, logs, extensions, services, config, llm, provider
+from openagent.agent.identity_tools import make_identity_tools
 from openagent.agent.loop import AgentLoop
 from openagent.agent.tools import ToolRegistry
 from openagent.bus.bus import MessageBus
 from openagent.channels.manager import ChannelManager
+from openagent.channels.web import WebChannelAdapter
+from openagent.config import build_service_env_extras, load_config
 from openagent.heartbeat import (
     HeartbeatService,
     heartbeat_enabled_from_env,
@@ -24,7 +27,7 @@ from openagent.heartbeat import (
 )
 from openagent.observability import configure_logging
 from openagent.observability.metrics import render_metrics
-from openagent.providers import load_provider_config, get_provider
+from openagent.providers import get_provider
 from openagent.services.manager import ServiceManager
 from openagent.session import SessionManager, SqliteSessionBackend
 
@@ -70,20 +73,22 @@ _handler.setFormatter(
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # force=True ensures root level is set even if uvicorn already configured logging
     configure_logging(force=True)
-    # SSE handler captures records into the browser log stream
     logging.getLogger().addHandler(_handler)
-    # Also capture uvicorn's own loggers (they have propagate=False by default)
     for _uvi in ("uvicorn", "uvicorn.error", "uvicorn.access"):
         logging.getLogger(_uvi).addHandler(_handler)
     logging.getLogger("openagent").info("Web UI started")
+
     app.state.log_buffer = LOG_BUFFER
     app.state.log_clients = LOG_CLIENTS
     app.state.root = ROOT
-    provider_cfg = load_provider_config(ROOT / "config" / "openagent.yaml")
-    app.state.provider_config = provider_cfg
-    app.state.active_provider = get_provider(provider_cfg)
+
+    # Full config — provider, agents, session, channels, tools
+    cfg = load_config(ROOT / "config" / "openagent.yaml")
+    app.state.config = cfg
+    app.state.provider_config = cfg.provider   # backward compat for provider route
+    app.state.active_provider = get_provider(cfg.provider)
+
     heartbeat = HeartbeatService(
         root=ROOT,
         enabled=heartbeat_enabled_from_env(),
@@ -92,35 +97,63 @@ async def lifespan(app: FastAPI):
     )
     app.state.heartbeat = heartbeat
     await heartbeat.start()
-    service_manager = ServiceManager(root=ROOT)
+
+    # Service manager — inject channel credentials as env vars into Go services
+    service_manager = ServiceManager(
+        root=ROOT,
+        env_extras=build_service_env_extras(cfg),
+    )
     app.state.service_manager = service_manager
     await service_manager.start()
+
     # Message bus
     bus = MessageBus()
     app.state.bus = bus
     await bus.start()
+
     # Session manager
-    session_backend = SqliteSessionBackend(ROOT / "data" / "sessions.db")
-    session_manager = SessionManager(backend=session_backend, summarise_after=40)
+    session_backend = SqliteSessionBackend(
+        ROOT / cfg.session.db_path
+    )
+    session_manager = SessionManager(
+        backend=session_backend,
+        summarise_after=cfg.session.summarise_after,
+    )
     app.state.session_manager = session_manager
     await session_manager.start()
-    # Tool registry + agent loop
+
+    # Tool registry — Go service tools + Python-native identity tools
     tool_registry = ToolRegistry(service_manager)
     await tool_registry.rebuild()
+    for name, description, params, fn in make_identity_tools(session_manager):
+        tool_registry.register_native(name, description, params, fn)
     agent_loop = AgentLoop(
         bus=bus,
         provider=app.state.active_provider,
         sessions=session_manager,
         tools=tool_registry,
+        system_prompt=cfg.default_agent.system_prompt,
     )
     app.state.agent_loop = agent_loop
     await agent_loop.start()
-    # Channel manager: attach adapters to running channel services and route
-    # outbound messages back to the originating Go service.
-    channel_manager = ChannelManager(service_manager=service_manager, bus=bus)
+
+    # Channel manager — auto-attaches adapters; session_manager provides identity resolver
+    channel_manager = ChannelManager(
+        service_manager=service_manager,
+        bus=bus,
+        session_manager=session_manager,
+    )
     app.state.channel_manager = channel_manager
+
+    # Web channel — pure-Python adapter for the browser /chat page
+    web_channel = WebChannelAdapter()
+    app.state.web_channel = web_channel
+    channel_manager.register(web_channel)
+
     await channel_manager.start()
+
     yield
+
     await channel_manager.stop()
     await agent_loop.stop()
     await session_manager.stop()
