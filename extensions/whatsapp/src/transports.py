@@ -7,8 +7,8 @@ from pathlib import Path
 from threading import Lock
 from typing import Any
 
-from openagent.channels.mcplite import McpLiteClient
-from openagent.channels.whatsapp import WhatsAppTransport
+from openagent.platforms.mcplite import McpLiteClient
+from openagent.platforms.whatsapp import WhatsAppTransport
 from openagent.services import protocol as proto
 
 from builders import WhatsAppBuilders
@@ -56,9 +56,9 @@ class NeonizeWhatsAppTransport(WhatsAppTransport):
     async def stop(self) -> None:
         self._gateway.stop()
 
-    async def send_text(self, chat_id: str, text: str) -> Any:
+    async def send_text(self, channel_id: str, text: str) -> Any:
         builder = self._resolve_builders()
-        return await builder.send_text(chat_id, text)
+        return await builder.send_text(channel_id, text)
 
     def get_status(self) -> dict[str, Any]:
         return self._heartbeat.snapshot().to_dict()
@@ -72,13 +72,13 @@ class NeonizeWhatsAppTransport(WhatsAppTransport):
             self._messages.clear()
         return batch
 
-    async def send_image(self, chat_id: str, image_path: str, caption: str | None = None) -> Any:
+    async def send_image(self, channel_id: str, image_path: str, caption: str | None = None) -> Any:
         builder = self._resolve_builders()
-        return await builder.send_image(chat_id, image_path, caption=caption)
+        return await builder.send_image(channel_id, image_path, caption=caption)
 
     async def send_document(
         self,
-        chat_id: str,
+        channel_id: str,
         file_path: str,
         *,
         caption: str | None = None,
@@ -87,7 +87,7 @@ class NeonizeWhatsAppTransport(WhatsAppTransport):
     ) -> Any:
         builder = self._resolve_builders()
         return await builder.send_document(
-            chat_id,
+            channel_id,
             file_path,
             caption=caption,
             mime_type=mime_type,
@@ -131,12 +131,12 @@ class ServiceWhatsAppTransport(McpLiteClient, WhatsAppTransport):
         self._status["running"] = False
         self._status["connected"] = False
 
-    async def send_text(self, chat_id: str, text: str) -> Any:
+    async def send_text(self, channel_id: str, text: str) -> Any:
         frame = await self.request(
             {
                 "type": "tool.call",
                 "tool": "whatsapp.send_text",
-                "params": {"chat_id": chat_id, "text": text},
+                "params": {"chat_id": channel_id, "text": text},
             }
         )
         if not isinstance(frame, proto.ToolResultResponse):

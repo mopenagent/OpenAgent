@@ -19,21 +19,21 @@ class WhatsAppBuilders:
     def __init__(self, client: GatewayClient):
         self._client = client
 
-    async def send_text(self, chat_id: str, text: str) -> Any:
+    async def send_text(self, channel_id: str, text: str) -> Any:
         payload = {"type": "text", "text": text}
-        return await asyncio.to_thread(self._client.send_message, chat_id, payload)
+        return await asyncio.to_thread(self._client.send_message, channel_id, payload)
 
-    async def send_image(self, chat_id: str, image_path: str, caption: str | None = None) -> Any:
+    async def send_image(self, channel_id: str, image_path: str, caption: str | None = None) -> Any:
         payload = {
             "type": "image",
             "path": image_path,
             "caption": caption or "",
         }
-        return await asyncio.to_thread(self._client.send_message, chat_id, payload)
+        return await asyncio.to_thread(self._client.send_message, channel_id, payload)
 
     async def send_document(
         self,
-        chat_id: str,
+        channel_id: str,
         file_path: str,
         *,
         caption: str | None = None,
@@ -50,4 +50,4 @@ class WhatsAppBuilders:
             "mime_type": resolved_mime,
             "file_name": resolved_name,
         }
-        return await asyncio.to_thread(self._client.send_message, chat_id, payload)
+        return await asyncio.to_thread(self._client.send_message, channel_id, payload)

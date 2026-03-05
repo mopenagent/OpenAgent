@@ -40,7 +40,7 @@ class OpenAgentMessage:
     body: str = ""
     timestamp: int | None = None
     chat_type: str = "direct"
-    chat_id: str | None = None
+    channel_id: str | None = None
     sender_jid: str | None = None
     sender_e164: str | None = None
     sender_name: str | None = None
@@ -120,7 +120,7 @@ def from_neonize_message_event(event: Any, *, account_id: str = "default") -> Op
     if not body and not media_type and not media_path and not media_url:
         return None
 
-    chat_id = _read(payload, "chat_id", "chat_jid", "remote_jid", "conversation_id", "from")
+    channel_id = _read(payload, "chat_id", "chat_jid", "remote_jid", "conversation_id", "from")
     sender_jid = _read(payload, "sender_jid", "participant", "author")
     mentioned_jids = _read(payload, "mentioned_jids", "mentions") or None
     if isinstance(mentioned_jids, tuple):
@@ -130,13 +130,13 @@ def from_neonize_message_event(event: Any, *, account_id: str = "default") -> Op
 
     message = OpenAgentMessage(
         id=_read(payload, "id", "message_id", "msg_id"),
-        from_id=str(chat_id) if chat_id is not None else None,
+        from_id=str(channel_id) if channel_id is not None else None,
         to_id=_read(payload, "to", "to_id", "self_jid"),
         account_id=account_id,
         body=body,
         timestamp=_to_timestamp_ms(_read(payload, "timestamp", "ts", "time", "message_time")),
-        chat_type="group" if isinstance(chat_id, str) and chat_id.endswith("@g.us") else "direct",
-        chat_id=str(chat_id) if chat_id is not None else None,
+        chat_type="group" if isinstance(channel_id, str) and channel_id.endswith("@g.us") else "direct",
+        channel_id=str(channel_id) if channel_id is not None else None,
         sender_jid=sender_jid,
         sender_e164=_read(payload, "sender_e164", "phone"),
         sender_name=_read(payload, "sender_name", "push_name", "name"),
@@ -160,7 +160,7 @@ def from_neonize_message_event(event: Any, *, account_id: str = "default") -> Op
         body_for_commands=_read(payload, "body_for_commands"),
         command_authorized=_read(payload, "command_authorized"),
         conversation_label=_read(payload, "conversation_label"),
-        originating_to=str(chat_id) if chat_id is not None else None,
+        originating_to=str(channel_id) if channel_id is not None else None,
         media_paths=[media_path] if media_path else None,
         media_types=[media_type] if media_type else None,
         raw_event={k: v for k, v in payload.items()} if isinstance(payload, dict) else {},

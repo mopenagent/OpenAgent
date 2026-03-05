@@ -177,8 +177,8 @@ class WhatsAppGateway:
             except Exception:
                 pass
 
-    async def send_text(self, chat_id: str, text: str) -> Any:
+    async def send_text(self, channel_id: str, text: str) -> Any:
         client = self._client
         if not client:
             raise RuntimeError("WhatsApp gateway is not connected.")
-        return await asyncio.to_thread(client.send_message, chat_id, {"type": "text", "text": text})
+        return await asyncio.to_thread(client.send_message, channel_id, {"type": "text", "text": text})

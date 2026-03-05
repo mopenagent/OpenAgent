@@ -19,7 +19,7 @@ class GatewayClient(Protocol):
 
     def is_connected(self) -> bool: ...
 
-    def send_message(self, chat_id: str, payload: dict[str, Any]) -> Any: ...
+    def send_message(self, channel_id: str, payload: dict[str, Any]) -> Any: ...
 
 
 @dataclass(slots=True)
@@ -122,9 +122,9 @@ class _NeonizeClientAdapter:
                 return self._connected
         return self._connected
 
-    def send_message(self, chat_id: str, payload: dict[str, Any]) -> Any:
+    def send_message(self, channel_id: str, payload: dict[str, Any]) -> Any:
         if hasattr(self._client, "send_message"):
-            return self._client.send_message(chat_id, payload)
+            return self._client.send_message(channel_id, payload)
         if hasattr(self._client, "send"):
-            return self._client.send(chat_id, payload)
+            return self._client.send(channel_id, payload)
         raise RuntimeError("Neonize client does not provide send_message/send.")

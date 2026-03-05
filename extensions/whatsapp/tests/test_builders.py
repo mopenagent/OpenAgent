@@ -9,8 +9,8 @@ class _FakeClient:
     def __init__(self):
         self.sent = []
 
-    def send_message(self, chat_id, payload):
-        self.sent.append((chat_id, payload))
+    def send_message(self, channel_id, payload):
+        self.sent.append((channel_id, payload))
         return {"ok": True}
 
 

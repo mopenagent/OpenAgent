@@ -15,8 +15,8 @@ class FilterConfig:
     mention_aliases: list[str] = field(default_factory=list)
 
 
-def is_group_chat(chat_id: str | None) -> bool:
-    return bool(chat_id and chat_id.endswith("@g.us"))
+def is_group_chat(channel_id: str | None) -> bool:
+    return bool(channel_id and channel_id.endswith("@g.us"))
 
 
 def message_mentions_self(
@@ -43,7 +43,7 @@ def should_process_message(
     *,
     self_id: str | None = None,
 ) -> tuple[bool, str]:
-    if not is_group_chat(message.chat_id):
+    if not is_group_chat(message.channel_id):
         return True, "direct-chat"
     if not config.process_groups:
         return False, "group-disabled"

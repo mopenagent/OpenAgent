@@ -19,8 +19,8 @@ class _FakeClient:
     def is_connected(self):
         return self.connected
 
-    def send_message(self, chat_id, payload):
-        return {"chat_id": chat_id, "payload": payload}
+    def send_message(self, channel_id, payload):
+        return {"channel_id": channel_id, "payload": payload}
 
 
 class _FakeSession:

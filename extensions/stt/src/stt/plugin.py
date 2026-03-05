@@ -13,7 +13,7 @@ from openagent.observability import log_event
 from openagent.observability.logging import get_logger
 from openagent.observability.metrics import EXTENSION_OPERATION_SECONDS, PROVIDER_CALL_TOTAL
 
-from .providers import DeepgramProvider, FasterWhisperProvider, STTProvider
+from .providers import FasterWhisperProvider, STTProvider
 
 logger = get_logger(__name__)
 
@@ -180,11 +180,9 @@ class STTExtension(BaseAsyncExtension):
         return self._provider
 
     def _build_provider(self, provider_name: str) -> STTProvider:
-        if provider_name in {"faster-whisper", "whisper", "local"}:
+        if provider_name in {"faster-whisper", "whisper", "local", "deepgram"}:
             model_size = str(self._config.get("whisper_model", "small"))
             return FasterWhisperProvider(model_size=model_size)
-        if provider_name == "deepgram":
-            return DeepgramProvider()
         raise ValueError(f"Unsupported STT provider '{provider_name}'.")
 
     def _record_provider_call(self, operation: str, status: str, error_type: str) -> None:

@@ -9,12 +9,10 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI, Response
-from fastapi.staticfiles import StaticFiles
-from fastapi.templating import Jinja2Templates
-
 from app.routes import dashboard, chat, logs, extensions, services, config, llm, provider
 from openagent.agent.identity_tools import make_identity_tools
 from openagent.agent.loop import AgentLoop
+from openagent.agent.middlewares.stt import STTMiddleware
 from openagent.agent.tools import ToolRegistry
 from openagent.bus.bus import MessageBus
 from openagent.platforms.manager import PlatformManager
@@ -133,6 +131,7 @@ async def lifespan(app: FastAPI):
         sessions=session_manager,
         tools=tool_registry,
         system_prompt=cfg.default_agent.system_prompt,
+        middlewares=[STTMiddleware()],
     )
     app.state.agent_loop = agent_loop
     await agent_loop.start()

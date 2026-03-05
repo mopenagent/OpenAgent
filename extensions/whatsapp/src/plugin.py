@@ -6,8 +6,8 @@ import os
 from pathlib import Path
 from typing import Any
 
-from openagent.channels.whatsapp import WhatsAppTransport
 from openagent.interfaces import BaseAsyncExtension
+from openagent.platforms.whatsapp import WhatsAppTransport
 
 from transports import NeonizeWhatsAppTransport, ServiceWhatsAppTransport
 
@@ -46,18 +46,18 @@ class WhatsAppExtension(BaseAsyncExtension):
     def pop_messages(self) -> list[Any]:
         return self._transport.pop_messages()
 
-    async def send_text(self, chat_id: str, text: str) -> Any:
-        return await self._transport.send_text(chat_id, text)
+    async def send_text(self, channel_id: str, text: str) -> Any:
+        return await self._transport.send_text(channel_id, text)
 
-    async def send_image(self, chat_id: str, image_path: str, caption: str | None = None) -> Any:
+    async def send_image(self, channel_id: str, image_path: str, caption: str | None = None) -> Any:
         sender = getattr(self._transport, "send_image", None)
         if not callable(sender):
             raise RuntimeError(f"send_image is not supported by backend '{self._backend}'.")
-        return await sender(chat_id, image_path, caption=caption)
+        return await sender(channel_id, image_path, caption=caption)
 
     async def send_document(
         self,
-        chat_id: str,
+        channel_id: str,
         file_path: str,
         *,
         caption: str | None = None,
@@ -68,7 +68,7 @@ class WhatsAppExtension(BaseAsyncExtension):
         if not callable(sender):
             raise RuntimeError(f"send_document is not supported by backend '{self._backend}'.")
         return await sender(
-            chat_id,
+            channel_id,
             file_path,
             caption=caption,
             mime_type=mime_type,

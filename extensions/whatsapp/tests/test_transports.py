@@ -35,8 +35,8 @@ class _FakeNeonizeClient:
     def is_connected(self):
         return self._connected
 
-    def send_message(self, chat_id, payload):
-        return {"chat_id": chat_id, "payload": payload}
+    def send_message(self, channel_id, payload):
+        return {"channel_id": channel_id, "payload": payload}
 
     def emit_message(self, event):
         if self._on_event:
@@ -67,7 +67,7 @@ def test_neonize_transport_smoke(monkeypatch, tmp_path: Path):
         client.emit_message(
             {
                 "type": "MessageEv",
-                "chat_id": "123@s.whatsapp.net",
+                "channel_id": "123@s.whatsapp.net",
                 "body": "hello from test",
             }
         )
@@ -144,7 +144,7 @@ def test_service_transport_smoke(tmp_path: Path):
                                 "event": "whatsapp.message.received",
                                 "data": {
                                     "id": "m1",
-                                    "chat_id": "123@s.whatsapp.net",
+                                    "channel_id": "123@s.whatsapp.net",
                                     "from_id": "123@s.whatsapp.net",
                                     "body": "hello from service",
                                 },

@@ -18,8 +18,8 @@ class _FakeTransport:
     async def stop(self) -> None:
         self.started = False
 
-    async def send_text(self, chat_id: str, text: str):
-        return {"backend": self.backend, "chat_id": chat_id, "text": text}
+    async def send_text(self, channel_id: str, text: str):
+        return {"backend": self.backend, "channel_id": channel_id, "text": text}
 
     def get_status(self):
         return {"backend": self.backend, "running": self.started, "connected": self.started}
