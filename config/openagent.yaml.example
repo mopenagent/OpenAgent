@@ -10,7 +10,7 @@
 #   OPENAGENT_MODEL           — model name to request
 #   OPENAGENT_LLM_TIMEOUT     — request timeout in seconds (float)
 #
-# ── Channel env vars (preferred over storing secrets in YAML) ─────────────
+# ── platform env vars (preferred over storing secrets in YAML) ─────────────
 #   DISCORD_TOKEN             — Discord bot token
 #   TELEGRAM_APP_ID           — Telegram MTProto app ID (integer)
 #   TELEGRAM_APP_HASH         — Telegram MTProto app hash
@@ -57,9 +57,9 @@ session:
   backend: sqlite
   db_path: data/sessions.db
 
-# ── Channels ──────────────────────────────────────────────────────────────────
+# ── platforms ──────────────────────────────────────────────────────────────────
 # Credentials injected as env vars into the corresponding Go service binary.
-channels:
+platforms:
   # discord:
   #   token: ""        # DISCORD_TOKEN
   #   guild_ids: []

@@ -1,4 +1,4 @@
-"""Telegram channel adapter backed by services/telegram MCP-lite service."""
+"""Telegram platform adapter backed by services/telegram MCP-lite service."""
 
 from __future__ import annotations
 
@@ -11,7 +11,7 @@ from openagent.services import protocol as proto
 from .mcplite import McpLiteClient
 
 
-class TelegramServiceChannel(McpLiteClient):
+class TelegramServicePlatform(McpLiteClient):
     """Python-side connector for the Telegram Go service."""
 
     def __init__(self, *, socket_path: str | Path = "data/sockets/telegram.sock"):

@@ -17,8 +17,8 @@ from openagent.agent.identity_tools import make_identity_tools
 from openagent.agent.loop import AgentLoop
 from openagent.agent.tools import ToolRegistry
 from openagent.bus.bus import MessageBus
-from openagent.channels.manager import ChannelManager
-from openagent.channels.web import WebChannelAdapter
+from openagent.platforms.manager import PlatformManager
+from openagent.platforms.web import WebPlatformAdapter
 from openagent.config import build_service_env_extras, load_config
 from openagent.heartbeat import (
     HeartbeatService,
@@ -83,7 +83,7 @@ async def lifespan(app: FastAPI):
     app.state.log_clients = LOG_CLIENTS
     app.state.root = ROOT
 
-    # Full config — provider, agents, session, channels, tools
+    # Full config — provider, agents, session, platforms, tools
     cfg = load_config(ROOT / "config" / "openagent.yaml")
     app.state.config = cfg
     app.state.provider_config = cfg.provider   # backward compat for provider route
@@ -98,7 +98,7 @@ async def lifespan(app: FastAPI):
     app.state.heartbeat = heartbeat
     await heartbeat.start()
 
-    # Service manager — inject channel credentials as env vars into Go services
+    # Service manager — inject platform credentials as env vars into Go services
     service_manager = ServiceManager(
         root=ROOT,
         env_extras=build_service_env_extras(cfg),
@@ -137,24 +137,24 @@ async def lifespan(app: FastAPI):
     app.state.agent_loop = agent_loop
     await agent_loop.start()
 
-    # Channel manager — auto-attaches adapters; session_manager provides identity resolver
-    channel_manager = ChannelManager(
+    # Platform manager — auto-attaches adapters; session_manager provides identity resolver
+    platform_manager = PlatformManager(
         service_manager=service_manager,
         bus=bus,
         session_manager=session_manager,
     )
-    app.state.channel_manager = channel_manager
+    app.state.platform_manager = platform_manager
 
-    # Web channel — pure-Python adapter for the browser /chat page
-    web_channel = WebChannelAdapter()
-    app.state.web_channel = web_channel
-    channel_manager.register(web_channel)
+    # Web platform — pure-Python adapter for the browser /chat page
+    web_platform = WebPlatformAdapter()
+    app.state.web_platform = web_platform
+    platform_manager.register(web_platform)
 
-    await channel_manager.start()
+    await platform_manager.start()
 
     yield
 
-    await channel_manager.stop()
+    await platform_manager.stop()
     await agent_loop.stop()
     await session_manager.stop()
     await bus.close()

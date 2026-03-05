@@ -1,4 +1,4 @@
-"""Shared MCP-lite Unix socket client for channel service adapters."""
+"""Shared MCP-lite Unix socket client for platform service adapters."""
 
 from __future__ import annotations
 

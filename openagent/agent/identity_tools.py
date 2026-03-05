@@ -16,7 +16,7 @@ identity.redeem_link_pin
     generator's history absorbs the redeemer's), and returns the winning key.
 
 After a successful redeem, both platforms resolve to the same user_key, so
-all future messages share one conversation history regardless of channel.
+all future messages share one conversation history regardless of platform.
 """
 
 from __future__ import annotations

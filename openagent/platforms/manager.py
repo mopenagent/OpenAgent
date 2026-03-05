@@ -1,20 +1,20 @@
-"""ChannelManager — dynamic adapter registry and outbound router.
+"""PlatformManager — dynamic adapter registry and outbound router.
 
 Lifecycle
 ---------
 1. ``start()`` launches two background tasks:
    - ``_monitor_services``: polls ServiceManager every 2 s, creates/removes
-     channel adapters as services come online or go offline.
+     platform adapters as services come online or go offline.
    - ``_route_outbound``: drains ``bus.outbound`` and dispatches each
-     ``OutboundMessage`` to the correct ``ChannelAdapter``.
+     ``OutboundMessage`` to the correct ``PlatformAdapter``.
 
 2. ``stop()`` cancels both tasks.
 
 Service ↔ adapter mapping
 --------------------------
-The module-level ``_CHANNEL_ADAPTERS`` dict maps service names discovered in
-``services/*/service.json`` to the corresponding ``ChannelAdapter`` subclass.
-Extend it to add new channel services without touching this class.
+The module-level ``_PLATFORM_ADAPTERS`` dict maps service names discovered in
+``services/*/service.json`` to the corresponding ``PlatformAdapter`` subclass.
+Extend it to add new platform services without touching this class.
 """
 
 from __future__ import annotations
@@ -27,26 +27,26 @@ from openagent.observability.logging import get_logger
 from openagent.services.manager import ServiceManager
 
 from .adapter import (
-    ChannelAdapter,
-    DiscordChannelAdapter,
-    SlackChannelAdapter,
-    TelegramChannelAdapter,
+    PlatformAdapter,
+    DiscordPlatformAdapter,
+    SlackPlatformAdapter,
+    TelegramPlatformAdapter,
 )
 
 logger = get_logger(__name__)
 
 # service name → adapter class
-_CHANNEL_ADAPTERS: dict[str, type[ChannelAdapter]] = {
-    "discord": DiscordChannelAdapter,
-    "telegram": TelegramChannelAdapter,
-    "slack": SlackChannelAdapter,
+_PLATFORM_ADAPTERS: dict[str, type[PlatformAdapter]] = {
+    "discord": DiscordPlatformAdapter,
+    "telegram": TelegramPlatformAdapter,
+    "slack": SlackPlatformAdapter,
 }
 
 _MONITOR_INTERVAL_S = 2.0
 
 
-class ChannelManager:
-    """Manages channel adapters and routes outbound messages.
+class PlatformManager:
+    """Manages platform adapters and routes outbound messages.
 
     Adapters are created automatically when the underlying Go service client
     becomes available in ``ServiceManager``, and removed when it goes offline.
@@ -63,12 +63,12 @@ class ChannelManager:
         self._service_manager = service_manager
         self._bus = bus
         # Bind SessionManager.resolve_user_key as the identity resolver for adapters.
-        # When None, adapters fall back to the channel:chat_id session key.
+        # When None, adapters fall back to the platform:channel_id session key.
         self._resolver = (
             session_manager.resolve_user_key if session_manager is not None else None
         )
-        # channel_name → adapter
-        self._adapters: dict[str, ChannelAdapter] = {}
+        # platform_name → adapter
+        self._adapters: dict[str, PlatformAdapter] = {}
         self._route_task: asyncio.Task[None] | None = None
         self._monitor_task: asyncio.Task[None] | None = None
 
@@ -78,16 +78,16 @@ class ChannelManager:
 
     async def start(self) -> None:
         self._route_task = asyncio.create_task(
-            self._route_outbound(), name="channelmgr.route"
+            self._route_outbound(), name="platformmgr.route"
         )
         self._monitor_task = asyncio.create_task(
-            self._monitor_services(), name="channelmgr.monitor"
+            self._monitor_services(), name="platformmgr.monitor"
         )
         # Run an initial sync so adapters are ready immediately if services
         # are already online (e.g. when called after a short startup wait).
         self._sync_adapters()
         logger.info(
-            "ChannelManager started — %d adapter(s) ready: %s",
+            "PlatformManager started — %d adapter(s) ready: %s",
             len(self._adapters),
             list(self._adapters),
         )
@@ -102,18 +102,18 @@ class ChannelManager:
                     pass
         self._monitor_task = None
         self._route_task = None
-        logger.info("ChannelManager stopped")
+        logger.info("PlatformManager stopped")
 
     # ------------------------------------------------------------------
     # Manual registration (optional override)
     # ------------------------------------------------------------------
 
-    def register(self, adapter: ChannelAdapter) -> None:
+    def register(self, adapter: PlatformAdapter) -> None:
         """Register a pre-built adapter.  Overrides auto-detected adapter."""
-        self._adapters[adapter.channel_name] = adapter
-        logger.info("ChannelManager: manually registered adapter for %r", adapter.channel_name)
+        self._adapters[adapter.platform_name] = adapter
+        logger.info("PlatformManager: manually registered adapter for %r", adapter.platform_name)
 
-    def adapters(self) -> dict[str, ChannelAdapter]:
+    def adapters(self) -> dict[str, PlatformAdapter]:
         return dict(self._adapters)
 
     # ------------------------------------------------------------------
@@ -128,11 +128,11 @@ class ChannelManager:
             except asyncio.CancelledError:
                 return
             except Exception as exc:
-                logger.error("ChannelManager monitor error: %s", exc)
+                logger.error("PlatformManager monitor error: %s", exc)
 
     def _sync_adapters(self) -> None:
         """Create or remove adapters based on current service client state."""
-        for svc_name, AdapterClass in _CHANNEL_ADAPTERS.items():
+        for svc_name, AdapterClass in _PLATFORM_ADAPTERS.items():
             client = self._service_manager.get_client(svc_name)
             existing = self._adapters.get(svc_name)
 
@@ -140,7 +140,7 @@ class ChannelManager:
                 if existing is not None:
                     del self._adapters[svc_name]
                     logger.info(
-                        "ChannelManager: removed adapter for %r (service offline)", svc_name
+                        "PlatformManager: removed adapter for %r (service offline)", svc_name
                     )
                 continue
 
@@ -152,7 +152,7 @@ class ChannelManager:
             self._adapters[svc_name] = AdapterClass(
                 client=client, bus=self._bus, resolver=self._resolver
             )
-            logger.info("ChannelManager: attached adapter for %r", svc_name)
+            logger.info("PlatformManager: attached adapter for %r", svc_name)
 
     # ------------------------------------------------------------------
     # Background: route outbound
@@ -165,11 +165,11 @@ class ChannelManager:
             if msg is None:
                 return  # Shutdown signal from bus.close()
 
-            adapter = self._adapters.get(msg.channel)
+            adapter = self._adapters.get(msg.platform)
             if adapter is None:
                 logger.warning(
-                    "ChannelManager: no adapter for channel %r (active: %s)",
-                    msg.channel,
+                    "PlatformManager: no adapter for platform %r (active: %s)",
+                    msg.platform,
                     list(self._adapters),
                 )
                 continue
@@ -178,5 +178,5 @@ class ChannelManager:
                 await adapter.send(msg)
             except Exception as exc:
                 logger.error(
-                    "ChannelManager: send failed for channel %r: %s", msg.channel, exc
+                    "PlatformManager: send failed for platform %r: %s", msg.platform, exc
                 )

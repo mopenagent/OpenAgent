@@ -1,19 +1,19 @@
-"""Channel adapters — bridge Go service McpLiteClients to the MessageBus.
+"""platform adapters — bridge Go service McpLiteClients to the MessageBus.
 
 Design
 ------
-Each ``ChannelAdapter`` wraps an existing ``McpLiteClient`` (owned by
+Each ``platformAdapter`` wraps an existing ``McpLiteClient`` (owned by
 ``ServiceManager``) and registers an event handler on it via
 ``add_event_handler()``.  This keeps a **single socket connection** per
 service — no event-stealing between two competing connections.
 
 Inbound path:
     Go service → event frame → McpLiteClient._read_loop
-    → on_event() → registered handler → ChannelAdapter._dispatch()
+    → on_event() → registered handler → platformAdapter._dispatch()
     → InboundMessage → bus.publish()
 
 Outbound path:
-    bus.outbound queue → ChannelManager._route_outbound()
+    bus.outbound queue → platformManager._route_outbound()
     → adapter.send(OutboundMessage) → McpLiteClient.request(tool.call)
     → Go service sends reply.
 """
@@ -33,7 +33,7 @@ from openagent.services import protocol as proto
 
 from .mcplite import McpLiteClient
 
-# async fn(channel, channel_id) -> user_key  (e.g. SessionManager.resolve_user_key)
+# async fn(platform, platform_id) -> user_key  (e.g. SessionManager.resolve_user_key)
 IdentityResolver = Callable[[str, str], Awaitable[str]]
 
 logger = get_logger(__name__)
@@ -44,7 +44,7 @@ logger = get_logger(__name__)
 # ---------------------------------------------------------------------------
 
 
-class ChannelAdapter:
+class PlatformAdapter:
     """Composition wrapper that hooks a McpLiteClient into the MessageBus.
 
     Subclass and implement ``_to_inbound()`` and ``send()``.  The adapter
@@ -54,20 +54,20 @@ class ChannelAdapter:
     def __init__(
         self,
         *,
-        channel_name: str,
+        platform_name: str,
         client: McpLiteClient,
         bus: MessageBus,
         resolver: IdentityResolver | None = None,
     ) -> None:
-        self._channel_name = channel_name
+        self._platform_name = platform_name
         self._client = client
         self._bus = bus
         self._resolver = resolver
         client.add_event_handler(self._dispatch)
 
     @property
-    def channel_name(self) -> str:
-        return self._channel_name
+    def platform_name(self) -> str:
+        return self._platform_name
 
     @property
     def client(self) -> McpLiteClient:
@@ -95,12 +95,12 @@ class ChannelAdapter:
         """Resolve user_key before publishing so the session key is stable."""
         try:
             inbound.sender.user_key = await self._resolver(
-                inbound.channel, inbound.sender.user_id
+                inbound.platform, inbound.sender.user_id
             )
         except Exception:
             logger.warning(
-                "Identity resolution failed for %s:%s — falling back to channel:id",
-                inbound.channel, inbound.sender.user_id,
+                "Identity resolution failed for %s:%s — falling back to platform:id",
+                inbound.platform, inbound.sender.user_id,
             )
         await self._bus.publish(inbound)
 
@@ -116,7 +116,7 @@ class ChannelAdapter:
     # ------------------------------------------------------------------
 
     async def send(self, msg: OutboundMessage) -> None:
-        """Send a reply back through this channel.  Subclasses must override."""
+        """Send a reply back through this platform.  Subclasses must override."""
         raise NotImplementedError(f"{type(self).__name__}.send() is not implemented")
 
 
@@ -125,17 +125,17 @@ class ChannelAdapter:
 # ---------------------------------------------------------------------------
 
 
-class DiscordChannelAdapter(ChannelAdapter):
+class DiscordPlatformAdapter(PlatformAdapter):
     """Adapter for the Discord Go service.
 
     Event data fields (from ``discord.message.received``):
-        id, channel_id, guild_id, author_id, author, content, is_bot
+        id, platform_id, guild_id, author_id, author, content, is_bot
     """
 
     def __init__(self, *, client: McpLiteClient, bus: MessageBus, resolver: IdentityResolver | None = None) -> None:
-        super().__init__(channel_name="discord", client=client, bus=bus, resolver=resolver)
+        super().__init__(platform_name="discord", client=client, bus=bus, resolver=resolver)
         self._status: dict[str, Any] = {"connected": False, "authorized": False}
-        # stream_key -> message_id for progressive edits (stream_key = f"{channel}:{chat_id}:{session_key}")
+        # stream_key -> message_id for progressive edits (stream_key = f"{platform}:{channel_id}:{session_key}")
         self._stream_message_ids: dict[str, str] = {}
 
     def _on_connection_status(self, data: dict[str, Any]) -> None:
@@ -144,13 +144,13 @@ class DiscordChannelAdapter(ChannelAdapter):
     def _to_inbound(self, data: dict[str, Any]) -> InboundMessage | None:
         if data.get("is_bot"):
             return None
-        channel_id = str(data.get("channel_id", ""))
+        platform_id = str(data.get("platform_id", ""))
         content = str(data.get("content", ""))
-        if not channel_id or not content:
+        if not platform_id or not content:
             return None
         return InboundMessage(
-            channel="discord",
-            chat_id=channel_id,
+            platform="discord",
+            channel_id=platform_id,
             sender=SenderInfo(
                 platform="discord",
                 user_id=str(data.get("author_id", "")),
@@ -210,7 +210,7 @@ class DiscordChannelAdapter(ChannelAdapter):
             return None
         return data.get("id") if isinstance(data, dict) else None
 
-    async def _send_progressive(self, channel_id: str, text: str) -> None:
+    async def _send_progressive(self, platform_id: str, text: str) -> None:
         """Send content progressively so the user sees it as it arrives."""
         if not text:
             return
@@ -218,7 +218,7 @@ class DiscordChannelAdapter(ChannelAdapter):
             await self._client.request({
                 "type": "tool.call",
                 "tool": "discord.send_message",
-                "params": {"channel_id": channel_id, "text": text},
+                "params": {"platform_id": platform_id, "text": text},
             })
             return
         # Send first chunk immediately
@@ -226,7 +226,7 @@ class DiscordChannelAdapter(ChannelAdapter):
         frame = await self._client.request({
             "type": "tool.call",
             "tool": "discord.send_message",
-            "params": {"channel_id": channel_id, "text": current},
+            "params": {"platform_id": platform_id, "text": current},
         })
         msg_id = None
         if hasattr(frame, "result") and frame.result:
@@ -238,7 +238,7 @@ class DiscordChannelAdapter(ChannelAdapter):
                 await self._client.request({
                     "type": "tool.call",
                     "tool": "discord.send_message",
-                    "params": {"channel_id": channel_id, "text": rest},
+                    "params": {"platform_id": platform_id, "text": rest},
                 })
             return
         # Edit progressively (respect Discord ~5 edits/5s rate limit)
@@ -252,7 +252,7 @@ class DiscordChannelAdapter(ChannelAdapter):
                     "type": "tool.call",
                     "tool": "discord.edit_message",
                     "params": {
-                        "channel_id": channel_id,
+                        "platform_id": platform_id,
                         "message_id": msg_id,
                         "text": current,
                     },
@@ -264,12 +264,12 @@ class DiscordChannelAdapter(ChannelAdapter):
                     await self._client.request({
                         "type": "tool.call",
                         "tool": "discord.send_message",
-                        "params": {"channel_id": channel_id, "text": rest},
+                        "params": {"platform_id": platform_id, "text": rest},
                     })
                 break
 
     def _stream_key(self, msg: OutboundMessage) -> str:
-        return f"{msg.channel}:{msg.chat_id}:{msg.session_key}"
+        return f"{msg.platform}:{msg.channel_id}:{msg.session_key}"
 
     async def send(self, msg: OutboundMessage) -> None:
         content = msg.content or ""
@@ -288,7 +288,7 @@ class DiscordChannelAdapter(ChannelAdapter):
                 frame = await self._client.request({
                     "type": "tool.call",
                     "tool": "discord.send_message",
-                    "params": {"channel_id": msg.chat_id, "text": content},
+                    "params": {"platform_id": msg.channel_id, "text": content},
                 })
                 new_id = self._parse_message_id(
                     getattr(frame, "result", None) if hasattr(frame, "result") else None
@@ -303,7 +303,7 @@ class DiscordChannelAdapter(ChannelAdapter):
                             "type": "tool.call",
                             "tool": "discord.edit_message",
                             "params": {
-                                "channel_id": msg.chat_id,
+                                "platform_id": msg.channel_id,
                                 "message_id": msg_id,
                                 "text": content,
                             },
@@ -319,13 +319,13 @@ class DiscordChannelAdapter(ChannelAdapter):
         if not chunks:
             return
         if len(chunks) == 1 and len(content) <= self._MAX_MESSAGE_LEN:
-            await self._send_progressive(msg.chat_id, content)
+            await self._send_progressive(msg.channel_id, content)
         else:
             for chunk in chunks:
                 await self._client.request({
                     "type": "tool.call",
                     "tool": "discord.send_message",
-                    "params": {"channel_id": msg.chat_id, "text": chunk},
+                    "params": {"platform_id": msg.channel_id, "text": chunk},
                 })
 
 
@@ -334,7 +334,7 @@ class DiscordChannelAdapter(ChannelAdapter):
 # ---------------------------------------------------------------------------
 
 
-class TelegramChannelAdapter(ChannelAdapter):
+class TelegramPlatformAdapter(PlatformAdapter):
     """Adapter for the Telegram Go service.
 
     Telegram replies require ``user_id`` + ``access_hash`` (the MTProto peer
@@ -347,7 +347,7 @@ class TelegramChannelAdapter(ChannelAdapter):
     """
 
     def __init__(self, *, client: McpLiteClient, bus: MessageBus, resolver: IdentityResolver | None = None) -> None:
-        super().__init__(channel_name="telegram", client=client, bus=bus, resolver=resolver)
+        super().__init__(platform_name="telegram", client=client, bus=bus, resolver=resolver)
         self._status: dict[str, Any] = {"connected": False, "authorized": False}
 
     def _on_connection_status(self, data: dict[str, Any]) -> None:
@@ -359,8 +359,8 @@ class TelegramChannelAdapter(ChannelAdapter):
         if not from_id or not content:
             return None
         return InboundMessage(
-            channel="telegram",
-            chat_id=str(from_id),
+            platform="telegram",
+            channel_id=str(from_id),
             sender=SenderInfo(
                 platform="telegram",
                 user_id=str(from_id),
@@ -375,7 +375,7 @@ class TelegramChannelAdapter(ChannelAdapter):
         )
 
     async def send(self, msg: OutboundMessage) -> None:
-        user_id = int(msg.chat_id)
+        user_id = int(msg.channel_id)
         access_hash = int(msg.metadata.get("access_hash", 0))
         await self._client.request({
             "type": "tool.call",
@@ -393,15 +393,15 @@ class TelegramChannelAdapter(ChannelAdapter):
 # ---------------------------------------------------------------------------
 
 
-class SlackChannelAdapter(ChannelAdapter):
+class SlackPlatformAdapter(PlatformAdapter):
     """Adapter for the Slack Go service.
 
     Expected event data fields (from ``slack.message.received``):
-        channel_id, user_id, username, text, ts, bot_id
+        platform_id, user_id, username, text, ts, bot_id
     """
 
     def __init__(self, *, client: McpLiteClient, bus: MessageBus, resolver: IdentityResolver | None = None) -> None:
-        super().__init__(channel_name="slack", client=client, bus=bus, resolver=resolver)
+        super().__init__(platform_name="slack", client=client, bus=bus, resolver=resolver)
         self._status: dict[str, Any] = {"connected": False}
 
     def _on_connection_status(self, data: dict[str, Any]) -> None:
@@ -410,14 +410,14 @@ class SlackChannelAdapter(ChannelAdapter):
     def _to_inbound(self, data: dict[str, Any]) -> InboundMessage | None:
         if data.get("bot_id"):
             return None
-        channel_id = str(data.get("channel_id", ""))
+        platform_id = str(data.get("platform_id", ""))
         content = str(data.get("text", ""))
         user_id = str(data.get("user_id", ""))
-        if not channel_id or not content:
+        if not platform_id or not content:
             return None
         return InboundMessage(
-            channel="slack",
-            chat_id=channel_id,
+            platform="slack",
+            channel_id=platform_id,
             sender=SenderInfo(
                 platform="slack",
                 user_id=user_id,
@@ -431,5 +431,5 @@ class SlackChannelAdapter(ChannelAdapter):
         await self._client.request({
             "type": "tool.call",
             "tool": "slack.send_message",
-            "params": {"channel_id": msg.chat_id, "text": msg.content},
+            "params": {"platform_id": msg.channel_id, "text": msg.content},
         })

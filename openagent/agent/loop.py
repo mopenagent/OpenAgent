@@ -24,7 +24,7 @@ output is logged at DEBUG level.
 Session key
 -----------
 ``InboundMessage.session_key`` is used throughout — it already handles
-cross-channel identity (user_key → "user:<hex>") and per-chat fallback.
+cross-platform identity (user_key → "user:<hex>") and per-chat fallback.
 """
 
 from __future__ import annotations
@@ -55,7 +55,7 @@ class AgentLoop:
 
     Parameters
     ----------
-    bus:        MessageBus — publish/subscribe point for all channels.
+    bus:        MessageBus — publish/subscribe point for all platforms.
     provider:   LLM provider implementing ``chat(messages, tools)``.
     sessions:   SessionManager — history persistence.
     tools:      ToolRegistry — maps tool names to Go/Rust services.
@@ -167,8 +167,8 @@ class AgentLoop:
                         if first or len(accumulated) % 80 < len(chunk):
                             first = False
                             reply = OutboundMessage(
-                                channel=msg.channel,
-                                chat_id=msg.chat_id,
+                                platform=msg.platform,
+                                channel_id=msg.channel_id,
                                 content=accumulated,
                                 session_key=session_key,
                                 metadata={
@@ -182,8 +182,8 @@ class AgentLoop:
                     # Send final chunk with stream_end so adapters can clean up
                     if final_content:
                         reply = OutboundMessage(
-                            channel=msg.channel,
-                            chat_id=msg.chat_id,
+                            platform=msg.platform,
+                            channel_id=msg.channel_id,
                             content=final_content,
                             session_key=session_key,
                             metadata={
@@ -255,11 +255,11 @@ class AgentLoop:
         if final_content:
             await self._sessions.append(session_key, "assistant", final_content)
 
-        # Dispatch reply to the originating channel (skip if already streamed).
+        # Dispatch reply to the originating platform (skip if already streamed).
         if not streamed:
             reply = OutboundMessage(
-                channel=msg.channel,
-                chat_id=msg.chat_id,
+                platform=msg.platform,
+                channel_id=msg.channel_id,
                 content=final_content,
                 session_key=session_key,
                 metadata=dict(msg.metadata),
@@ -267,5 +267,5 @@ class AgentLoop:
             await self._bus.dispatch(reply)
         logger.info(
             "Session %s → %s:%s (%d chars)",
-            session_key, msg.channel, msg.chat_id, len(final_content),
+            session_key, msg.platform, msg.channel_id, len(final_content),
         )

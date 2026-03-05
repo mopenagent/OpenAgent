@@ -3,123 +3,272 @@
 {% block page_title %}Chat{% endblock %}
 
 {% block content %}
-<div class="h-full flex flex-col max-w-3xl mx-auto"
-     x-data="chatApp()" x-init="connect()">
+<div class="h-full flex gap-4 w-full" x-data="chatApp()" x-init="initApp()">
 
-  <!-- Message thread -->
-  <div class="flex-1 overflow-y-auto space-y-2 mb-4 min-h-0" x-ref="thread">
+  <!-- ── Sessions Sidebar ── -->
+  <div class="w-48 lg:w-56 flex flex-col border-r border-[#DEE2E6] dark:border-[#21262D] pr-4 flex-shrink-0">
+    <div class="flex items-center justify-between mb-4">
+      <h2 class="text-xs font-bold text-mutedCharcoal dark:text-steelMist uppercase tracking-widest">Sessions</h2>
+      <button @click="newSession()" class="text-saffron hover:bg-[#FF9933]/10 p-1.5 rounded-lg transition-colors"
+        title="New Session" :disabled="typing">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path>
+        </svg>
+      </button>
+    </div>
 
-    <!-- Empty state -->
-    <template x-if="messages.length === 0">
-      <div class="flex justify-center pt-8">
-        <span class="text-xs text-mutedCharcoal dark:text-steelMist">Start a conversation below</span>
+    <div class="flex-1 overflow-y-auto space-y-1 pr-1">
+      <template x-if="sessions.length === 0">
+        <p class="text-xs text-mutedCharcoal dark:text-steelMist italic px-2">No active sessions</p>
+      </template>
+
+      <template x-for="s in sessions" :key="s">
+        <button @click="switchSession(s)"
+          :class="s === sessionId 
+                    ? 'bg-[#FF9933]/15 text-saffron border border-[#FF9933]/30' 
+                    : 'text-stone-700 dark:text-stone-300 border border-transparent hover:border-[#DEE2E6] dark:hover:border-[#21262D] hover:bg-pastelFog dark:hover:bg-charcoalLayer'"
+          class="w-full text-left px-3 py-2.5 rounded-xl text-sm truncate transition-all flex items-center gap-2 group">
+
+          <svg class="w-4 h-4 opacity-50 flex-shrink-0 group-hover:opacity-100 transition-opacity" fill="none"
+            stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+              d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+          </svg>
+          <span x-text="s" class="font-medium truncate flex-1"></span>
+        </button>
+      </template>
+    </div>
+  </div>
+
+  <!-- ── Chat Area ── -->
+  <div
+    class="flex-1 flex flex-col h-full min-w-0 bg-white dark:bg-deepSpaceBlue rounded-2xl border border-[#DEE2E6] dark:border-[#21262D] shadow-sm relative overflow-hidden">
+
+    <!-- Top Bar inside Chat -->
+    <div
+      class="h-12 border-b border-[#DEE2E6] dark:border-[#21262D] bg-pastelFog/50 dark:bg-charcoalLayer/50 flex items-center px-4 justify-between">
+      <div class="flex items-center gap-2">
+        <div class="w-2 h-2 rounded-full transition-colors" :class="connected ? 'bg-green-500' : 'bg-red-500'"></div>
+        <span class="text-xs font-semibold text-stone-600 dark:text-stone-300"
+          x-text="sessionId ? sessionId : 'Starting...'"></span>
       </div>
-    </template>
+    </div>
 
-    <!-- Messages -->
-    <template x-for="(msg, i) in messages" :key="i">
-      <div :class="msg.role === 'user' ? 'flex justify-end' : 'flex justify-start'">
-        <div :class="msg.role === 'user'
-                  ? 'bg-[#FF9933]/20 border border-[#FF9933]/30 text-stone-950 dark:text-slate-100 rounded-2xl rounded-tr-sm'
-                  : 'bg-pastelFog dark:bg-charcoalLayer border border-[#DEE2E6] dark:border-[#21262D] text-stone-800 dark:text-steelMist rounded-2xl rounded-tl-sm'"
-             class="max-w-lg px-3 py-1.5 text-sm whitespace-pre-wrap">
-          <p x-text="msg.content"></p>
+    <!-- Message thread -->
+    <div class="flex-1 overflow-y-auto space-y-2 p-4 min-h-0" x-ref="thread">
+
+      <!-- Empty state -->
+      <template x-if="messages.length === 0">
+        <div class="flex flex-col items-center justify-center h-full opacity-50">
+          <svg class="w-12 h-12 text-saffron mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"
+              d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+          </svg>
+          <span class="text-sm">Start a conversation</span>
+        </div>
+      </template>
+
+      <!-- Messages -->
+      <template x-for="(msg, i) in messages" :key="i">
+        <div :class="msg.role === 'user' ? 'flex justify-end' : 'flex justify-start'">
+          <div
+            :class="msg.role === 'user'
+                    ? 'bg-[#FF9933]/20 border border-[#FF9933]/30 text-stone-950 dark:text-slate-100 rounded-2xl rounded-tr-sm'
+                    : 'bg-pastelFog dark:bg-charcoalLayer border border-[#DEE2E6] dark:border-[#21262D] text-stone-800 dark:text-steelMist rounded-2xl rounded-tl-sm'"
+            class="max-w-2xl px-3 py-2.5 text-sm leading-normal whitespace-pre-wrap shadow-sm inline-block m-0"
+            x-text="msg.content">
+          </div>
+        </div>
+      </template>
+
+      <!-- Typing indicator -->
+      <div x-show="typing" class="flex justify-start">
+        <div
+          class="bg-pastelFog dark:bg-charcoalLayer border border-[#DEE2E6] dark:border-[#21262D] rounded-2xl rounded-tl-sm px-2.5 py-[1px] shadow-sm flex items-center h-[26px]">
+          <span class="inline-flex gap-1.5 items-center">
+            <span
+              class="w-1.5 h-1.5 bg-mutedCharcoal dark:bg-steelMist rounded-full animate-bounce [animation-delay:0ms]"></span>
+            <span
+              class="w-1.5 h-1.5 bg-mutedCharcoal dark:bg-steelMist rounded-full animate-bounce [animation-delay:150ms]"></span>
+            <span
+              class="w-1.5 h-1.5 bg-mutedCharcoal dark:bg-steelMist rounded-full animate-bounce [animation-delay:300ms]"></span>
+          </span>
         </div>
       </div>
-    </template>
 
-    <!-- Typing indicator -->
-    <div x-show="typing" class="flex justify-start">
-      <div class="bg-pastelFog dark:bg-charcoalLayer border border-[#DEE2E6] dark:border-[#21262D] rounded-2xl rounded-tl-sm px-3 py-1.5">
-        <span class="inline-flex gap-1">
-          <span class="w-1.5 h-1.5 bg-mutedCharcoal dark:bg-steelMist rounded-full animate-bounce [animation-delay:0ms]"></span>
-          <span class="w-1.5 h-1.5 bg-mutedCharcoal dark:bg-steelMist rounded-full animate-bounce [animation-delay:150ms]"></span>
-          <span class="w-1.5 h-1.5 bg-mutedCharcoal dark:bg-steelMist rounded-full animate-bounce [animation-delay:300ms]"></span>
-        </span>
-      </div>
+    </div>
+
+    <!-- Input container -->
+    <div class="p-4 border-t border-[#DEE2E6] dark:border-[#21262D] bg-pastelFog/30 dark:bg-charcoalLayer/30">
+      <form @submit.prevent="send()" class="flex gap-2">
+        <input x-model="draft" :disabled="!connected" type="text" placeholder="Message..." class="flex-1 bg-white dark:bg-richObsidian border border-[#DEE2E6] dark:border-[#21262D] rounded-xl px-4 py-3 text-sm
+                 text-stone-950 dark:text-stone-100 placeholder-mutedCharcoal dark:placeholder-steelMist 
+                 focus:outline-none focus:border-saffron focus:ring-1 focus:ring-saffron
+                 disabled:opacity-50 transition-all shadow-sm" />
+        <button type="submit" :disabled="!connected || !draft.trim() || typing"
+          class="bg-saffron hover:bg-amber-400 disabled:opacity-40 disabled:hover:bg-saffron text-stone-950 font-semibold
+                       px-5 py-3 rounded-xl text-sm transition-colors shadow-sm flex items-center justify-center min-w-[80px]">
+          <span x-show="!typing">Send</span>
+          <svg x-show="typing" class="animate-spin h-4 w-4 text-stone-900" xmlns="http://www.w3.org/2000/svg"
+            fill="none" viewBox="0 0 24 24">
+            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+            <path class="opacity-75" fill="currentColor"
+              d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z">
+            </path>
+          </svg>
+        </button>
+      </form>
     </div>
 
   </div>
 
-  <!-- Input bar -->
-  <form @submit.prevent="send()" class="flex gap-2 flex-shrink-0">
-    <input
-      x-model="draft"
-      :disabled="!connected"
-      type="text"
-      placeholder="Message the agent…"
-      class="flex-1 bg-softPorcelain dark:bg-charcoalLayer border border-[#DEE2E6] dark:border-[#21262D] rounded-xl px-4 py-2.5 text-sm
-             text-stone-950 dark:text-stone-100 placeholder-mutedCharcoal dark:placeholder-steelMist focus:outline-none focus:border-[#FF9933]
-             disabled:opacity-40"
-    />
-    <button type="submit"
-            :disabled="!connected || !draft.trim() || typing"
-            class="bg-[#FF9933] hover:bg-amber-400 disabled:opacity-40 text-stone-950 font-semibold
-                   px-4 py-2.5 rounded-xl text-sm transition-colors">
-      Send
-    </button>
-  </form>
-
-  <!-- Connection status -->
-  <p class="mt-2 text-xs text-center"
-     :class="connected ? 'text-mutedCharcoal dark:text-steelMist' : 'text-red-400'"
-     x-text="connected ? 'Connected · session ' + sessionId : 'Disconnected — reconnecting…'">
-  </p>
-
 </div>
 
 <script>
-function chatApp() {
-  return {
-    messages: [],
-    draft: "",
-    typing: false,
-    connected: false,
-    sessionId: "",
-    ws: null,
+  function chatApp() {
+    return {
+      sessions: [],
+      messages: [],
+      draft: "",
+      typing: false,
+      connected: false,
+      sessionId: "",
+      ws: null,
+      intentionalDisconnect: false,
 
-    connect() {
-      const proto = location.protocol === "https:" ? "wss" : "ws";
-      this.ws = new WebSocket(`${proto}://${location.host}/ws/chat`);
+      async initApp() {
+        // 1. Fetch available sessions 
+        try {
+          const res = await fetch('/api/chat/sessions');
+          if (res.ok) {
+            const data = await res.json();
+            this.sessions = data.sessions || [];
+          }
+        } catch (e) {
+          console.error("Failed to load sessions", e);
+        }
 
-      this.ws.onopen = () => { this.connected = true; };
-      this.ws.onclose = () => {
+        // 2. Load latest session, or default to new
+        if (this.sessions.length > 0) {
+          // Last session in the list is typically the newest or last appended
+          this.switchSession(this.sessions[this.sessions.length - 1]);
+        } else {
+          this.newSession();
+        }
+      },
+
+      async switchSession(id) {
+        if (this.sessionId === id && this.connected) return;
+
+        this.intentionalDisconnect = true;
+        if (this.ws) {
+          this.ws.close(1000, "Switching session");
+          this.ws = null;
+        }
+
+        this.sessionId = id;
+        this.messages = [];
         this.connected = false;
         this.typing = false;
-        setTimeout(() => this.connect(), 3000);
-      };
-      this.ws.onmessage = (e) => {
-        const msg = JSON.parse(e.data);
-        // First message from server carries the session ID
-        if (msg.session_id) {
-          this.sessionId = msg.session_id;
-          return;
+        this.draft = "";
+
+        // Load history
+        try {
+          const res = await fetch(`/api/chat/sessions/${encodeURIComponent(id)}/history`);
+          if (res.ok) {
+            const data = await res.json();
+            this.messages = data.history || [];
+            this.$nextTick(() => this.scrollToBottom());
+          }
+        } catch (e) {
+          console.error("Failed to load history", e);
         }
+
+        this.intentionalDisconnect = false;
+        this.connect(id);
+      },
+
+      newSession() {
+        if (this.ws) {
+          this.intentionalDisconnect = true;
+          this.ws.close(1000, "New session");
+          this.ws = null;
+        }
+        this.sessionId = "Connecting...";
+        this.messages = [];
+        this.connected = false;
         this.typing = false;
-        if (msg.stream_chunk && this.messages.length > 0 && this.messages[this.messages.length - 1].role === "agent") {
-          this.messages[this.messages.length - 1] = { role: "agent", content: msg.content };
-        } else {
-          this.messages.push(msg);
+        this.draft = "";
+
+        this.intentionalDisconnect = false;
+        this.connect();
+      },
+
+      connect(explicitId = null) {
+        const proto = location.protocol === "https:" ? "wss" : "ws";
+        let url = `${proto}://${location.host}/ws/chat`;
+        if (explicitId) {
+          url += `?session_id=${encodeURIComponent(explicitId)}`;
         }
+
+        this.ws = new WebSocket(url);
+
+        this.ws.onopen = () => { this.connected = true; };
+
+        this.ws.onclose = () => {
+          this.connected = false;
+          // Don't auto-reconnect if user explicitly clicked another session
+          if (this.intentionalDisconnect) return;
+
+          this.typing = false;
+          setTimeout(() => {
+            if (!this.connected && !this.intentionalDisconnect) {
+              this.connect(this.sessionId === "Connecting..." ? null : this.sessionId);
+            }
+          }, 3000);
+        };
+
+        this.ws.onmessage = (e) => {
+          const msg = JSON.parse(e.data);
+
+          // Setup initial metadata
+          if (msg.session_id) {
+            this.sessionId = msg.session_id;
+            if (!this.sessions.includes(this.sessionId)) {
+              this.sessions.push(this.sessionId);
+            }
+            return;
+          }
+
+          this.typing = false;
+
+          // LLM Text Streaming Replacement Chunk
+          if (msg.stream_chunk && this.messages.length > 0 && this.messages[this.messages.length - 1].role === "agent") {
+            this.messages[this.messages.length - 1] = { role: "agent", content: msg.content };
+          } else {
+            // Standard insert
+            this.messages.push(msg);
+          }
+
+          this.$nextTick(() => this.scrollToBottom());
+        };
+      },
+
+      send() {
+        if (!this.draft.trim() || !this.connected || this.typing) return;
+        const text = this.draft.trim();
+        this.messages.push({ role: "user", content: text });
+        this.ws.send(text);
+        this.draft = "";
+        this.typing = true;
         this.$nextTick(() => this.scrollToBottom());
-      };
-    },
+      },
 
-    send() {
-      if (!this.draft.trim() || !this.connected || this.typing) return;
-      const text = this.draft.trim();
-      this.messages.push({ role: "user", content: text });
-      this.ws.send(text);
-      this.draft = "";
-      this.typing = true;
-      this.$nextTick(() => this.scrollToBottom());
-    },
-
-    scrollToBottom() {
-      const el = this.$refs.thread;
-      el.scrollTop = el.scrollHeight;
+      scrollToBottom() {
+        const el = this.$refs.thread;
+        el.scrollTop = el.scrollHeight;
+      }
     }
   }
-}
 </script>
 {% endblock %}

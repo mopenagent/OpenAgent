@@ -1,4 +1,4 @@
-"""Discord channel adapter backed by services/discord MCP-lite service."""
+"""Discord platform adapter backed by services/discord MCP-lite service."""
 
 from __future__ import annotations
 
@@ -11,7 +11,7 @@ from openagent.services import protocol as proto
 from .mcplite import McpLiteClient
 
 
-class DiscordServiceChannel(McpLiteClient):
+class DiscordServicePlatform(McpLiteClient):
     """Python-side connector for the Discord Go service."""
 
     def __init__(self, *, socket_path: str | Path = "data/sockets/discord.sock"):
@@ -47,12 +47,12 @@ class DiscordServiceChannel(McpLiteClient):
         self._status.update(payload)
         return payload
 
-    async def send_message(self, channel_id: str, text: str) -> dict[str, Any]:
+    async def send_message(self, platform_id: str, text: str) -> dict[str, Any]:
         frame = await self.request(
             {
                 "type": "tool.call",
                 "tool": "discord.send_message",
-                "params": {"channel_id": channel_id, "text": text},
+                "params": {"platform_id": platform_id, "text": text},
             }
         )
         return _decode_tool_result(frame)

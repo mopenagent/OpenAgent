@@ -18,7 +18,7 @@ class WhatsAppTransport(ABC):
         """Stop transport resources and background workers."""
 
     @abstractmethod
-    async def send_text(self, chat_id: str, text: str) -> Any:
+    async def send_text(self, channel_id: str, text: str) -> Any:
         """Send a plain text message."""
 
     @abstractmethod
