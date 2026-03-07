@@ -80,7 +80,7 @@ platforms:
 
   # whatsapp:
   #   phone_number: ""
-  #   data_dir: data/whatsapp
+  #   data_dir: data   # whatsapp.db at data/whatsapp.db
 
 # ── Tools ─────────────────────────────────────────────────────────────────────
 tools:
