@@ -12,18 +12,27 @@
     "health": {
         "interval_ms": 5000,
         "timeout_ms": 1000,
-        "restart_backoff_ms": [1000, 2000, 5000, 10000, 30000]
+        "restart_backoff_ms": [
+            1000,
+            2000,
+            5000,
+            10000,
+            30000
+        ]
     },
     "tools": [
         {
             "name": "sandbox.execute",
-            "description": "Execute Python or Node.js code in a secure OCI sandbox (VM-level isolation via microsandbox). Use for data processing, calculations, API calls, or scripting. Each call starts a fresh sandbox — state is not preserved between calls.",
+            "description": "Execute Python or Node.js code in a secure OCI sandbox (VM-level isolation via microsandbox). Use for data processing, calculations, API calls, or scripting. Each call starts a fresh sandbox \u2014 state is not preserved between calls.",
             "params": {
                 "type": "object",
                 "properties": {
                     "language": {
                         "type": "string",
-                        "enum": ["python", "node"],
+                        "enum": [
+                            "python",
+                            "node"
+                        ],
                         "description": "Runtime: 'python' (Python 3) or 'node' (Node.js)"
                     },
                     "code": {
@@ -31,7 +40,10 @@
                         "description": "Code to execute"
                     }
                 },
-                "required": ["language", "code"]
+                "required": [
+                    "language",
+                    "code"
+                ]
             }
         },
         {
@@ -45,9 +57,12 @@
                         "description": "Shell command to execute (bash/sh). Example: 'ls -la /tmp && echo done'"
                     }
                 },
-                "required": ["command"]
+                "required": [
+                    "command"
+                ]
             }
         }
     ],
-    "events": []
+    "events": [],
+    "runtime": "rust"
 }

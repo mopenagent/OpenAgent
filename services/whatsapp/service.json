@@ -1,67 +1,68 @@
 {
-  "name": "whatsapp",
-  "description": "WhatsApp MCP-lite service scaffold.",
-  "version": "0.1.0",
-  "binary": {
-    "linux/arm64": "bin/whatsapp-linux-arm64",
-    "linux/amd64": "bin/whatsapp-linux-amd64",
-    "darwin/arm64": "bin/whatsapp-darwin-arm64",
-    "darwin/amd64": "bin/whatsapp-darwin-amd64"
-  },
-  "socket": "data/sockets/whatsapp.sock",
-  "health": {
-    "interval_ms": 5000,
-    "timeout_ms": 1000,
-    "restart_backoff_ms": [
-      1000,
-      2000,
-      5000,
-      10000,
-      30000
-    ]
-  },
-  "tools": [
-    {
-      "name": "whatsapp.status",
-      "description": "Return current service status.",
-      "params": {
-        "type": "object",
-        "properties": {}
-      }
+    "name": "whatsapp",
+    "description": "WhatsApp MCP-lite service scaffold.",
+    "version": "0.1.0",
+    "binary": {
+        "linux/arm64": "bin/whatsapp-linux-arm64",
+        "linux/amd64": "bin/whatsapp-linux-amd64",
+        "darwin/arm64": "bin/whatsapp-darwin-arm64",
+        "darwin/amd64": "bin/whatsapp-darwin-amd64"
     },
-    {
-      "name": "whatsapp.link_state",
-      "description": "Return current WhatsApp link state metadata.",
-      "params": {
-        "type": "object",
-        "properties": {}
-      }
-    },
-    {
-      "name": "whatsapp.send_text",
-      "description": "Send a text message to a WhatsApp chat.",
-      "params": {
-        "type": "object",
-        "properties": {
-          "chat_id": {
-            "type": "string",
-            "description": "Destination chat ID/JID."
-          },
-          "text": {
-            "type": "string",
-            "description": "Message text."
-          }
-        },
-        "required": [
-          "chat_id",
-          "text"
+    "socket": "data/sockets/whatsapp.sock",
+    "health": {
+        "interval_ms": 5000,
+        "timeout_ms": 1000,
+        "restart_backoff_ms": [
+            1000,
+            2000,
+            5000,
+            10000,
+            30000
         ]
-      }
-    }
-  ],
-  "events": [
-    "whatsapp.qr",
-    "whatsapp.message.received",
-    "whatsapp.connection.status"
-  ]
+    },
+    "tools": [
+        {
+            "name": "whatsapp.status",
+            "description": "Return current service status.",
+            "params": {
+                "type": "object",
+                "properties": {}
+            }
+        },
+        {
+            "name": "whatsapp.link_state",
+            "description": "Return current WhatsApp link state metadata.",
+            "params": {
+                "type": "object",
+                "properties": {}
+            }
+        },
+        {
+            "name": "whatsapp.send_text",
+            "description": "Send a text message to a WhatsApp chat.",
+            "params": {
+                "type": "object",
+                "properties": {
+                    "chat_id": {
+                        "type": "string",
+                        "description": "Destination chat ID/JID."
+                    },
+                    "text": {
+                        "type": "string",
+                        "description": "Message text."
+                    }
+                },
+                "required": [
+                    "chat_id",
+                    "text"
+                ]
+            }
+        }
+    ],
+    "events": [
+        "whatsapp.qr",
+        "whatsapp.message.received",
+        "whatsapp.connection.status"
+    ],
+    "runtime": "go"
 }

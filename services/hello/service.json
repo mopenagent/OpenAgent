@@ -1,42 +1,43 @@
 {
-  "name": "hello",
-  "description": "Funny hello responder service for MCP-lite integration testing.",
-  "version": "0.1.0",
-  "binary": {
-    "linux/arm64": "bin/hello-linux-arm64",
-    "linux/amd64": "bin/hello-linux-amd64",
-    "darwin/arm64": "bin/hello-darwin-arm64",
-    "darwin/amd64": "bin/hello-darwin-amd64"
-  },
-  "socket": "data/sockets/hello.sock",
-  "health": {
-    "interval_ms": 5000,
-    "timeout_ms": 1000,
-    "restart_backoff_ms": [
-      1000,
-      2000,
-      5000,
-      10000,
-      30000
-    ]
-  },
-  "tools": [
-    {
-      "name": "hello.reply",
-      "description": "Return a funny message when the input text is a hello-style greeting.",
-      "params": {
-        "type": "object",
-        "properties": {
-          "text": {
-            "type": "string",
-            "description": "Incoming user text."
-          }
-        },
-        "required": [
-          "text"
+    "name": "hello",
+    "description": "Funny hello responder service for MCP-lite integration testing.",
+    "version": "0.1.0",
+    "binary": {
+        "linux/arm64": "bin/hello-linux-arm64",
+        "linux/amd64": "bin/hello-linux-amd64",
+        "darwin/arm64": "bin/hello-darwin-arm64",
+        "darwin/amd64": "bin/hello-darwin-amd64"
+    },
+    "socket": "data/sockets/hello.sock",
+    "health": {
+        "interval_ms": 5000,
+        "timeout_ms": 1000,
+        "restart_backoff_ms": [
+            1000,
+            2000,
+            5000,
+            10000,
+            30000
         ]
-      }
-    }
-  ],
-  "events": []
+    },
+    "tools": [
+        {
+            "name": "hello.reply",
+            "description": "Return a funny message when the input text is a hello-style greeting.",
+            "params": {
+                "type": "object",
+                "properties": {
+                    "text": {
+                        "type": "string",
+                        "description": "Incoming user text."
+                    }
+                },
+                "required": [
+                    "text"
+                ]
+            }
+        }
+    ],
+    "events": [],
+    "runtime": "go"
 }

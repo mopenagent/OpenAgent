@@ -1,71 +1,72 @@
 {
-  "name": "telegram",
-  "description": "Telegram bot service using gotd/td over MCP-lite.",
-  "version": "0.1.0",
-  "binary": {
-    "linux/arm64": "bin/telegram-linux-arm64",
-    "linux/amd64": "bin/telegram-linux-amd64",
-    "darwin/arm64": "bin/telegram-darwin-arm64",
-    "darwin/amd64": "bin/telegram-darwin-amd64"
-  },
-  "socket": "data/sockets/telegram.sock",
-  "health": {
-    "interval_ms": 5000,
-    "timeout_ms": 1000,
-    "restart_backoff_ms": [
-      1000,
-      2000,
-      5000,
-      10000,
-      30000
-    ]
-  },
-  "tools": [
-    {
-      "name": "telegram.status",
-      "description": "Return current Telegram service status.",
-      "params": {
-        "type": "object",
-        "properties": {}
-      }
+    "name": "telegram",
+    "description": "Telegram bot service using gotd/td over MCP-lite.",
+    "version": "0.1.0",
+    "binary": {
+        "linux/arm64": "bin/telegram-linux-arm64",
+        "linux/amd64": "bin/telegram-linux-amd64",
+        "darwin/arm64": "bin/telegram-darwin-arm64",
+        "darwin/amd64": "bin/telegram-darwin-amd64"
     },
-    {
-      "name": "telegram.link_state",
-      "description": "Return current Telegram link/auth status.",
-      "params": {
-        "type": "object",
-        "properties": {}
-      }
-    },
-    {
-      "name": "telegram.send_message",
-      "description": "Send Telegram message with known user_id + access_hash.",
-      "params": {
-        "type": "object",
-        "properties": {
-          "user_id": {
-            "type": "integer",
-            "description": "Telegram user ID."
-          },
-          "access_hash": {
-            "type": "integer",
-            "description": "Telegram access hash."
-          },
-          "text": {
-            "type": "string",
-            "description": "Message text."
-          }
-        },
-        "required": [
-          "user_id",
-          "access_hash",
-          "text"
+    "socket": "data/sockets/telegram.sock",
+    "health": {
+        "interval_ms": 5000,
+        "timeout_ms": 1000,
+        "restart_backoff_ms": [
+            1000,
+            2000,
+            5000,
+            10000,
+            30000
         ]
-      }
-    }
-  ],
-  "events": [
-    "telegram.connection.status",
-    "telegram.message.received"
-  ]
+    },
+    "tools": [
+        {
+            "name": "telegram.status",
+            "description": "Return current Telegram service status.",
+            "params": {
+                "type": "object",
+                "properties": {}
+            }
+        },
+        {
+            "name": "telegram.link_state",
+            "description": "Return current Telegram link/auth status.",
+            "params": {
+                "type": "object",
+                "properties": {}
+            }
+        },
+        {
+            "name": "telegram.send_message",
+            "description": "Send Telegram message with known user_id + access_hash.",
+            "params": {
+                "type": "object",
+                "properties": {
+                    "user_id": {
+                        "type": "integer",
+                        "description": "Telegram user ID."
+                    },
+                    "access_hash": {
+                        "type": "integer",
+                        "description": "Telegram access hash."
+                    },
+                    "text": {
+                        "type": "string",
+                        "description": "Message text."
+                    }
+                },
+                "required": [
+                    "user_id",
+                    "access_hash",
+                    "text"
+                ]
+            }
+        }
+    ],
+    "events": [
+        "telegram.connection.status",
+        "telegram.message.received"
+    ],
+    "runtime": "go"
 }

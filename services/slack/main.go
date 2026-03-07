@@ -260,11 +260,10 @@ func run() error {
 	appToken := firstNonEmpty(os.Getenv("SLACK_APP_TOKEN"), os.Getenv("OPENAGENT_SLACK_APP_TOKEN"))
 
 	runtime := newSlackRuntime(token, appToken)
-	if err := runtime.start(ctx); err != nil {
-		return err
-	}
 	defer runtime.stop()
 
+	// Create the socket BEFORE starting Slack auth so Python's _wait_for_socket
+	// can connect immediately. Auth runs in the background goroutine.
 	if err := os.MkdirAll(filepath.Dir(socketPath), 0o755); err != nil {
 		return fmt.Errorf("create socket directory: %w", err)
 	}
@@ -276,6 +275,16 @@ func run() error {
 	if err != nil {
 		return fmt.Errorf("listen on socket %q: %w", socketPath, err)
 	}
+
+	// Start Slack auth asynchronously — errors are logged but don't kill the socket.
+	go func() {
+		if err := runtime.start(ctx); err != nil {
+			mcplite.LogEvent("ERROR", "slack auth failed", map[string]any{
+				"service": "slack",
+				"error":   err.Error(),
+			})
+		}
+	}()
 	defer func() {
 		_ = listener.Close()
 		_ = os.Remove(socketPath)

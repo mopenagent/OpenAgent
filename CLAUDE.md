@@ -94,7 +94,7 @@ openagent/              # Core Python — orchestration, discovery, interfaces
 
 extensions/                 # Python platform integrations (independently installable)
   discord/                  # Discord bot (discord.py + aiohttp)
-  whatsapp/                 # WhatsApp via Neonize (to be migrated to services/ later)
+  # whatsapp removed — now services/whatsapp (Go/whatsmeow)
   tts/                      # Text-to-speech (EdgeTTS, MiniMax)
   stt/                      # Speech-to-text (faster-whisper, Deepgram)
   <name>/tests/             # Extension-local tests
@@ -348,7 +348,7 @@ Python extensions handle platforms and media. They do **not** do heavy CPU/IO wo
 | Heavy compute / data tools | Go | `services/` | MCP-lite daemon + `service.json` |
 | VM-isolated code execution | Rust | `services/sandbox/` | MCP-lite daemon + microsandbox HTTP client |
 
-**WhatsApp migration plan:** Current Python/Neonize extension works — keep it. Once `ServiceManager` is proven with a simpler first service, migrate WhatsApp to `services/whatsapp/` using whatsmeow natively (eliminates the CGo bridge).
+**WhatsApp:** Implemented as Go service (`services/whatsapp/`) using whatsmeow. No Python extension.
 
 ### LLM Provider Layer
 

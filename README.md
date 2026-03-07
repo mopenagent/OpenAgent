@@ -53,7 +53,7 @@ pip install -r requirements.txt
 
 # Or selectively
 pip install -e .
-pip install -e extensions/whatsapp
+# WhatsApp is a Go service — no Python extension needed
 pip install -e extensions/discord
 pip install -e extensions/tts
 pip install -e extensions/stt
@@ -119,7 +119,6 @@ OpenAgent/
 │   └── tests/              # Core Python tests
 │
 ├── extensions/             # Python platform/media integrations
-│   ├── whatsapp/           # WhatsApp (Neonize)
 │   ├── discord/            # Discord bot
 │   ├── tts/                # Text-to-speech (EdgeTTS, MiniMax)
 │   └── stt/                # Speech-to-text (faster-whisper, Deepgram)
@@ -151,7 +150,6 @@ Extensions handle platforms and media. Each is independently installable.
 
 | Extension | Description | Dependencies |
 |-----------|-------------|--------------|
-| **whatsapp** | WhatsApp messaging via Neonize | neonize |
 | **discord** | Discord bot integration | discord.py, aiohttp |
 | **tts** | Text-to-speech (EdgeTTS / MiniMax) | edge-tts, aiohttp |
 | **stt** | Speech-to-text (faster-whisper / Deepgram) | faster-whisper, deepgram-sdk |
@@ -167,7 +165,7 @@ Services run as long-lived daemons managed by `ServiceManager`. Python spawns th
 | **discord** | Discord connector service | Implemented |
 | **telegram** | Telegram connector service (gotd/td) | Implemented |
 | **slack** | Slack connector service | Implemented |
-| **whatsapp** | WhatsApp service (service path in progress alongside Python extension) | Implemented |
+| **whatsapp** | WhatsApp service (whatsmeow) | Implemented |
 | **sdk-go** | Shared MCP-lite server/client codec helpers | Implemented |
 
 Build a service:
@@ -185,7 +183,7 @@ GOOS=linux GOARCH=arm64 go build -o bin/my-service-linux-arm64 .
 ```bash
 python -m pytest openagent/tests app/tests
 python -m pytest extensions/discord/tests
-pytest extensions/whatsapp/tests/   # extension tests
+# WhatsApp is a Go service — no extension tests
 python -m pytest extensions/stt/tests
 python -m pytest extensions/tts/tests
 ```

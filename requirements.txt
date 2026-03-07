@@ -1,8 +1,8 @@
 -e .
--e extensions/whatsapp
--e extensions/discord
+-e app
 -e extensions/tts
 -e extensions/stt
 pydantic>=2.8.0
+qrcode[pil]>=7.0.0
 pytest>=8.0.0
 pytest-asyncio>=0.23.0
