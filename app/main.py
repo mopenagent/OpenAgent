@@ -9,7 +9,7 @@ from pathlib import Path
 from fastapi import FastAPI, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
-from app.routes import dashboard, chat, extensions, services, config, llm, provider, settings, browser
+from app.routes import dashboard, chat, services, config, llm, provider, settings, browser
 from openagent.agent.platform_tools import make_platform_tools
 from openagent.agent.skill_tools import make_skill_tools
 from openagent.agent.loop import AgentLoop
@@ -162,16 +162,24 @@ async def lifespan(app: FastAPI):
     for name, description, params, fn in make_skill_tools():
         tool_registry.register_native(name, description, params, fn)
 
-    # Middleware — inject STT/TTS fns from extensions via lazy lookup wrappers
-    from openagent.manager import get_extension
+    # Middleware — STT and TTS delegate to the Rust service daemons via ToolRegistry.
+    # Returns empty string when the service is offline; middleware skips gracefully.
 
     async def _stt_fn(audio_path: str) -> str:
-        ext = get_extension("stt")
-        return await ext.listen(file=audio_path) if ext else ""
+        import json as _json
+        result = await tool_registry.call("stt.transcribe", {"audio_path": audio_path})
+        try:
+            return _json.loads(result).get("text", "") if result else ""
+        except Exception:
+            return ""
 
     async def _tts_fn(text: str) -> str:
-        ext = get_extension("tts")
-        return await ext.speak(text=text) if ext else ""
+        import json as _json
+        result = await tool_registry.call("tts.synthesize", {"text": text})
+        try:
+            return _json.loads(result).get("path", "") if result else ""
+        except Exception:
+            return ""
 
     # Whitelist middleware — only active when whitelist.enabled = true in config
     _middlewares = []
@@ -253,7 +261,6 @@ templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
 # Share templates with routes
 dashboard.templates = templates
 chat.templates = templates
-extensions.templates = templates
 services.templates = templates
 config.templates = templates
 settings.templates = templates
@@ -261,7 +268,6 @@ browser.templates = templates
 
 app.include_router(dashboard.router)
 app.include_router(chat.router)
-app.include_router(extensions.router)
 app.include_router(services.router)
 app.include_router(config.router)
 app.include_router(settings.router)
