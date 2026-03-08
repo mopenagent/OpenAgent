@@ -17,7 +17,7 @@ Python is the control plane (orchestration, routing). Rust services are the data
 - **Platform adapters** — Discord, Telegram, WhatsApp, Slack (Python MCP-lite clients)
 - **Rust services** — `sandbox`, `discord`, `telegram`, `slack`, `stt`, `tts`, `browser`, `memory`
 - **Go service** — `whatsapp` (only remaining Go service)
-- **Web UI** — FastAPI + HTMX (dashboard, chat, logs, services, config)
+- **Web UI** — FastAPI + HTMX (dashboard, chat, services, config)
 
 **In progress:**
 - Config schema extension (agents, bindings, session, tools)
@@ -44,6 +44,7 @@ Two clear planes, one socket each, no REST overhead:
 - **Rust** (for building Rust services; `cargo` + `cross` for cross-compilation)
 - **Go 1.21+** (only for WhatsApp service)
 - A local LLM via an OpenAI-compatible endpoint (e.g. [Ollama](https://ollama.com))
+- **agent-browser** (for browser service: `npm install -g agent-browser` then `agent-browser install`)
 
 ## Installation
 
@@ -122,7 +123,7 @@ OpenAgent/
 │   ├── whatsapp/           # Go — WhatsApp (whatsmeow; only Go service retained)
 │   ├── stt/                # Rust — Speech-to-text
 │   ├── tts/                # Rust — Text-to-speech
-│   ├── browser/            # Rust — Headless browser automation
+│   ├── browser/            # Rust — MCP-lite wrapper for agent-browser CLI
 │   └── memory/             # Rust — Vector memory
 │
 ├── app/                    # Minimalist web UI (FastAPI + HTMX)
@@ -150,7 +151,7 @@ Services run as long-lived daemons managed by `ServiceManager`. Python spawns th
 | **whatsapp** | Go | WhatsApp (whatsmeow) |
 | **stt** | Rust | Speech-to-text |
 | **tts** | Rust | Text-to-speech |
-| **browser** | Rust | Headless browser automation (Playwright) |
+| **browser** | Rust | Headless browser automation via agent-browser CLI (`npm install -g agent-browser`) |
 | **memory** | Rust | Vector memory (LanceDB) |
 
 Build Rust services:
@@ -212,9 +213,10 @@ Visit `http://<pi-ip>:8080`.
 |------|-----|-------------|
 | Dashboard | `/` | Service status + system stats |
 | Chat | `/chat` | Chat surface |
-| Logs | `/logs` | Live log stream |
 | Services | `/services` | Rust/Go services with status and restart controls |
 | Config | `/config` | Read-only view of `openagent.yaml` |
+
+Logging is OTEL-compliant (OpenTelemetry); traces, logs, and metrics are written to `logs/` as JSONL.
 
 Stack: FastAPI 3.x · Jinja2 · HTMX · Tailwind CSS (CDN) · WebSockets · SSE
 

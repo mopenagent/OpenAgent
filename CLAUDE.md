@@ -104,7 +104,7 @@ services/                   # Rust (primary) or Go (WhatsApp only) service daemo
 
 app/                        # Minimalist web UI (FastAPI + HTMX, no auth — POC only)
   main.py                   # FastAPI app, mounts routes and static files
-  routes/                   # Route modules (dashboard, chat, logs, services)
+  routes/                   # Route modules (dashboard, chat, services)
   templates/                # Jinja2 HTML templates
   static/                   # CSS and vanilla JS (no build step)
   pyproject.toml            # Package: openagent-app
@@ -388,7 +388,6 @@ A minimalist admin/debug UI for the agent. POC only — **no authentication**, i
 **Pages:**
 - `/` Dashboard — agent status, Python packages, Go/Rust services, system stats
 - `/chat` — Send messages to the agent, stream responses via WebSocket; sessions sidebar
-- `/logs` — Live log stream via SSE (capped clients)
 - `/services` — Go and Rust services with status, restart button
 - `/config` — Read-only view of `config/openagent.yaml`
 - `/settings` — Connectors (enable/disable), provider, whitelist, WhatsApp QR
@@ -401,7 +400,6 @@ app/
   routes/
     dashboard.py    # GET /
     chat.py         # GET /chat, WS /ws/chat, /api/chat/sessions
-    logs.py         # GET /logs, GET /stream/logs (SSE)
     services.py     # GET /services, POST /services/{name}/restart
     config.py       # GET /config
     settings.py     # GET /settings, connectors, whitelist, WhatsApp QR
@@ -412,7 +410,6 @@ app/
     base.html       # Layout shell (nav sidebar, content area)
     dashboard.html
     chat.html
-    logs.html
     services.html
     config.html
   settings.html
@@ -520,6 +517,7 @@ See `roadmap.md` for consolidated Nanobot/Picoclaw comparison and detailed gaps.
 
 - Observability is mandatory for new core, extension, app, and service work.
 - Python side:
+  - All logs are OTEL-compliant (OpenTelemetry). Traces, logs, and metrics are written to `logs/` as JSONL.
   - Use `openagent/observability/logging.py` for structured logs.
   - Use `openagent/observability/metrics.py` for counters/histograms.
   - Propagate request correlation ids using MCP-lite frame ids.

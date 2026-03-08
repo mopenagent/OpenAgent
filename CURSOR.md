@@ -44,7 +44,7 @@ openagent/      # Core Python — orchestration, discovery, interfaces ONLY
   tests/         # Core tests (including platform adapters)
 services/       # Rust (primary) + Go (whatsapp only; telegram, slack in transition)
 app/            # Minimalist web UI — FastAPI 3.x + HTMX, no auth (POC/Pi only)
-  routes/       # dashboard, chat, logs, services, config, settings, llm, provider, browser
+  routes/       # dashboard, chat, services, config, settings, llm, provider, browser
   tests/        # Web UI tests
 data/           # Runtime: openagent.db, memory/, sockets/, artifacts/
 config/         # openagent.yaml
