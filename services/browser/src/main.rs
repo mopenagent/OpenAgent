@@ -12,8 +12,17 @@
 //!   OPENAGENT_SOCKET_PATH   — Unix socket (default: data/sockets/browser.sock)
 //!   BROWSER_BIN             — agent-browser binary (default: agent-browser)
 //!   BROWSER_ARTIFACTS_DIR   — screenshot root (default: data/artifacts/browser)
+//!
+//! # Abort
+//!
+//! Panics if the log-level env filter directive is invalid, or if the session
+//! mutex is poisoned due to a prior panic in a tool handler.
 
 use anyhow::{Context, Result};
+use mimalloc::MiMalloc;
+
+#[global_allocator]
+static GLOBAL: MiMalloc = MiMalloc;
 use sdk_rust::{setup_otel, McpLiteServer, ToolDefinition};
 use serde_json::{json, Value};
 use std::collections::HashMap;

@@ -57,7 +57,13 @@ struct DailyWriterInner {
 }
 
 impl DailyFileWriter {
-    pub fn new(logs_dir: impl Into<PathBuf>, prefix: impl Into<String>) -> anyhow::Result<Self> {
+    /// Create a new daily-rotating file writer under `logs_dir`.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`crate::Error::Io`] if the directory cannot be created or the
+    /// initial log file cannot be opened.
+    pub fn new(logs_dir: impl Into<PathBuf>, prefix: impl Into<String>) -> crate::Result<Self> {
         let logs_dir = logs_dir.into();
         let prefix = prefix.into();
         fs::create_dir_all(&logs_dir)?;
@@ -73,8 +79,13 @@ impl DailyFileWriter {
         })
     }
 
-    pub fn write_line(&self, line: &str) -> anyhow::Result<()> {
-        let mut guard = self.inner.lock().unwrap();
+    /// Append a line to today's log file, rotating if the date has changed.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`crate::Error::Io`] if the file cannot be opened, written, or flushed.
+    pub fn write_line(&self, line: &str) -> crate::Result<()> {
+        let mut guard = self.inner.lock().expect("log file mutex poisoned");
         let today = today_str();
         if guard.current_date != today {
             let new_file = open_file(&self.logs_dir, &self.prefix, &today)?;
@@ -82,7 +93,7 @@ impl DailyFileWriter {
             guard.current_date = today.clone();
             self.purge_old(&today);
         }
-        writeln!(guard.file, "{}", line)?;
+        writeln!(guard.file, "{line}")?;
         guard.file.flush()?;
         Ok(())
     }
@@ -115,9 +126,9 @@ impl DailyFileWriter {
 
 }
 
-fn open_file(dir: &PathBuf, prefix: &str, date: &str) -> anyhow::Result<File> {
-    let path = dir.join(format!("{}-{}.jsonl", prefix, date));
-    Ok(OpenOptions::new().create(true).append(true).open(path)?)
+fn open_file(dir: &PathBuf, prefix: &str, date: &str) -> std::io::Result<File> {
+    let path = dir.join(format!("{prefix}-{date}.jsonl"));
+    OpenOptions::new().create(true).append(true).open(path)
 }
 
 fn today_str() -> String {
@@ -178,7 +189,7 @@ impl SpanExporter for FileSpanExporter {
         let prefix = self.prefix.clone();
 
         Box::pin(async move {
-            let mut guard = inner.lock().unwrap();
+            let mut guard = inner.lock().expect("log file mutex poisoned");
             let today = today_str();
             if guard.current_date != today {
                 match open_file(&logs_dir, &prefix, &today) {
@@ -320,8 +331,19 @@ impl Drop for OTELGuard {
 /// Writes spans as OTLP-compatible JSON to
 /// `<logs_dir>/<service_name>-traces-YYYY-MM-DD.jsonl`.
 ///
-/// Returns a guard that flushes on drop.
-pub fn setup_otel(service_name: &str, logs_dir: &str) -> anyhow::Result<OTELGuard> {
+/// Returns a guard that flushes and shuts down the tracer on drop.
+///
+/// # Errors
+///
+/// Returns [`crate::Error::OtelSetup`] if the log directory cannot be created,
+/// the initial trace file cannot be opened, or the subscriber cannot be
+/// installed.
+pub fn setup_otel(service_name: &str, logs_dir: &str) -> crate::Result<OTELGuard> {
+    setup_otel_inner(service_name, logs_dir)
+        .map_err(|e| crate::Error::OtelSetup(e.to_string()))
+}
+
+fn setup_otel_inner(service_name: &str, logs_dir: &str) -> anyhow::Result<OTELGuard> {
     let logs_path = PathBuf::from(logs_dir);
     fs::create_dir_all(&logs_path)?;
     let prefix = format!("{}-traces", service_name);

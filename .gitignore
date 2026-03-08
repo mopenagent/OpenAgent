@@ -100,3 +100,5 @@ services/browser/target
 logs/
 services/memory/target
 services/memory/.cargo
+services/tts/target
+services/tts/.cargo

@@ -12,9 +12,18 @@
 //!   MSB_SERVER_URL        — microsandbox server URL (default http://127.0.0.1:5555)
 //!   MSB_API_KEY           — API key (required; run: msb server keygen)
 //!   MSB_MEMORY_MB         — VM memory in MB (default 512)
+//!
+//! # Abort
+//!
+//! Panics if the log-level env filter directive is invalid, or if microsandbox
+//! returns malformed JSON that violates the expected schema.
 
 use anyhow::{Context, Result};
+use mimalloc::MiMalloc;
 use sdk_rust::{setup_otel, McpLiteServer, ToolDefinition};
+
+#[global_allocator]
+static GLOBAL: MiMalloc = MiMalloc;
 use serde_json::{json, Value};
 use std::env;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -29,6 +38,7 @@ const NAMESPACE: &str = "default";
 // MSB HTTP client
 // ---------------------------------------------------------------------------
 
+#[derive(Debug)]
 struct MsbClient {
     rpc_url: String,
     api_key: String,
@@ -246,7 +256,7 @@ async fn main() -> Result<()> {
             tracing_subscriber::fmt()
                 .with_env_filter(
                     tracing_subscriber::EnvFilter::from_default_env()
-                        .add_directive("sandbox=info".parse().unwrap()),
+                        .add_directive("sandbox=info".parse().expect("valid log directive")),
                 )
                 .try_init()
                 .ok();

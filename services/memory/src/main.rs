@@ -14,8 +14,17 @@
 //!   OPENAGENT_LOGS_DIR         — Log/metrics output dir (default: logs)
 //!   OPENAGENT_EMBED_CACHE_PATH — FastEmbed model cache (default: ./data/models)
 //!   OPENAGENT_EMBED_OFFLINE    — "1" to error if model not cached (no download)
+//!
+//! # Abort
+//!
+//! Panics if the log-level env filter directive is invalid, or if the embedding
+//! model mutex is poisoned due to a prior panic in a tool handler.
 
 use anyhow::Result;
+use mimalloc::MiMalloc;
+
+#[global_allocator]
+static GLOBAL: MiMalloc = MiMalloc;
 use arrow_array::{
     types::Float32Type, Array, FixedSizeListArray, Float32Array, RecordBatch,
     RecordBatchIterator, StringArray,
@@ -54,11 +63,13 @@ const STS_TABLE: &str = "sts";
 ///
 /// Each line: {"ts_ms":…,"service":"memory","op":"store|search","status":"ok|error",
 ///             "index":"sts","embed_ms":22.1,"op_ms":8.4,"result_count":5,…}
+#[derive(Debug)]
 struct MetricsWriter {
     inner: Arc<Mutex<MetricsInner>>,
     logs_dir: PathBuf,
 }
 
+#[derive(Debug)]
 struct MetricsInner {
     file: File,
     current_date: String,
@@ -77,7 +88,7 @@ impl MetricsWriter {
     }
 
     fn record(&self, record: &Value) {
-        let mut guard = self.inner.lock().unwrap();
+        let mut guard = self.inner.lock().expect("metrics mutex poisoned");
         let today = today_date();
         if guard.current_date != today {
             match open_metrics_file(&self.logs_dir, &today) {
@@ -210,7 +221,7 @@ fn handle_index_trace(
         tokio::runtime::Handle::current().block_on(async {
             // -- Embed --
             let t_embed = Instant::now();
-            let embeddings = model.lock().unwrap().embed(&[content_owned.clone()], None)
+            let embeddings = model.lock().expect("embedding model mutex poisoned").embed(&[content_owned.clone()], None)
                 .map_err(|e| anyhow::anyhow!("{}", err_json(&format!("embedding failed: {e}"))))?;
             let embed_ms = t_embed.elapsed().as_secs_f64() * 1000.0;
             let vec = embeddings.first()
@@ -295,7 +306,7 @@ fn handle_search_memory(
         tokio::runtime::Handle::current().block_on(async {
             // -- Embed query --
             let t_embed = Instant::now();
-            let embeddings = model.lock().unwrap().embed(&[query_owned.clone()], None)
+            let embeddings = model.lock().expect("embedding model mutex poisoned").embed(&[query_owned.clone()], None)
                 .map_err(|e| anyhow::anyhow!("{}", err_json(&format!("embedding failed: {e}"))))?;
             let embed_ms = t_embed.elapsed().as_secs_f64() * 1000.0;
             let query_vec = embeddings.first()
@@ -434,7 +445,7 @@ async fn main() -> Result<()> {
             tracing_subscriber::fmt()
                 .with_env_filter(
                     tracing_subscriber::EnvFilter::from_default_env()
-                        .add_directive("memory=info".parse().unwrap()),
+                        .add_directive("memory=info".parse().expect("valid log directive")),
                 )
                 .try_init()
                 .ok();
@@ -478,7 +489,7 @@ async fn main() -> Result<()> {
 
     // Warm-up: force ONNX session init before first real request
     let t_warm = Instant::now();
-    let _ = model.lock().unwrap().embed(&["warmup".to_string()], None)?;
+    let _ = model.lock().expect("embedding model mutex poisoned").embed(&["warmup".to_string()], None)?;
     info!(warmup_ms = t_warm.elapsed().as_millis(), "model warmup complete");
 
     let tools = vec![
