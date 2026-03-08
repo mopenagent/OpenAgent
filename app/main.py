@@ -234,14 +234,14 @@ async def lifespan(app: FastAPI):
     app.state.agent_loop = agent_loop
     await agent_loop.start()
 
-    # Platform manager — auto-attaches adapters; identity hardwired to platform:channel_id
+    # Platform manager — auto-attaches adapters; uses session_manager for identity resolution
     def _get_connectors_enabled():
         return getattr(app.state, "connectors_enabled", {})
 
     platform_manager = PlatformManager(
         service_manager=service_manager,
         bus=bus,
-        session_manager=None,  # hardwired identity: session_key = platform:channel_id
+        session_manager=session_manager,
         get_connectors_enabled=_get_connectors_enabled,
     )
     app.state.platform_manager = platform_manager

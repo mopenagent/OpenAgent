@@ -123,8 +123,8 @@ def test_resolve_binary_current_platform(tmp_path: Path) -> None:
     mgr = ServiceManager(root=tmp_path)
     manifests = mgr._discover_manifests()
     result = mgr._resolve_binary(manifests[0])
-    # Binary resolved relative to service dir (services/svc/bin/)
-    assert result == tmp_path / "services" / "svc" / "bin" / "svc-bin"
+    # Binary resolved relative to project root (bin/)
+    assert result == tmp_path / "bin" / "svc-bin"
 
 
 def test_resolve_socket_relative(tmp_path: Path) -> None:

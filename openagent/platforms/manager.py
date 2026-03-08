@@ -165,7 +165,9 @@ class PlatformManager:
 
             # New client (first start or restart) — create fresh adapter.
             self._adapters[svc_name] = AdapterClass(
-                client=client, bus=self._bus, resolver=self._resolver
+                client=client,
+                bus=self._bus,
+                resolver=self._resolver,
             )
             logger.info("PlatformManager: attached adapter for %r", svc_name)
 

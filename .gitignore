@@ -92,3 +92,4 @@ inspire/
 services/sandbox/target
 services/sdk-rust/target
 bin/
+services/browser/target

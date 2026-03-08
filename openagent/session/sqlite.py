@@ -64,6 +64,15 @@ CREATE TABLE IF NOT EXISTS whitelist (
     added_at    TEXT NOT NULL,
     UNIQUE(platform, channel_id)
 );
+
+CREATE TABLE IF NOT EXISTS blacklist (
+    platform    TEXT NOT NULL,
+    channel_id  TEXT NOT NULL,
+    first_seen  TEXT NOT NULL,
+    last_seen   TEXT NOT NULL,
+    message_count INTEGER NOT NULL DEFAULT 1,
+    PRIMARY KEY (platform, channel_id)
+);
 """
 
 
@@ -471,6 +480,44 @@ class SqliteSessionBackend:
             (platform, channel_id),
         )
         await self._db.commit()
+
+    async def record_seen_sender(self, platform: str, channel_id: str) -> None:
+        """Upsert a blocked-but-seen sender (call from WhitelistMiddleware)."""
+        assert self._db, "backend not started"
+        now = datetime.now().isoformat()
+        await self._db.execute(
+            "INSERT INTO blacklist (platform, channel_id, first_seen, last_seen, message_count)"
+            " VALUES (?, ?, ?, ?, 1)"
+            " ON CONFLICT(platform, channel_id) DO UPDATE SET"
+            "   last_seen = excluded.last_seen,"
+            "   message_count = message_count + 1",
+            (platform, channel_id, now, now),
+        )
+        await self._db.commit()
+
+    async def get_seen_senders(self) -> list[dict]:  # kept for API compat
+        """Return all seen-but-not-whitelisted senders, most-recent first."""
+        assert self._db, "backend not started"
+        async with self._db.execute(
+            "SELECT s.platform, s.channel_id, s.first_seen, s.last_seen, s.message_count"
+            " FROM blacklist s"
+            " WHERE NOT EXISTS ("
+            "   SELECT 1 FROM whitelist w"
+            "   WHERE w.platform = s.platform AND w.channel_id = s.channel_id"
+            " )"
+            " ORDER BY s.last_seen DESC"
+        ) as cur:
+            rows = await cur.fetchall()
+        return [
+            {
+                "platform": r["platform"],
+                "channel_id": r["channel_id"],
+                "first_seen": r["first_seen"],
+                "last_seen": r["last_seen"],
+                "message_count": r["message_count"],
+            }
+            for r in rows
+        ]
 
     async def is_whitelisted(self, platform: str, channel_id: str) -> bool:
         """Check if (platform, channel_id) is in the whitelist."""

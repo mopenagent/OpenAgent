@@ -201,26 +201,9 @@ async def list_whitelist(request: Request):
     return {"entries": entries}
 
 
-def _normalize_whitelist_channel_id(platform: str, channel_id: str) -> str:
-    """Normalize channel_id for storage so it matches incoming event format.
-
-    WhatsApp: +916356737267 -> 916356737267@s.whatsapp.net (JID format from whatsmeow).
-    """
-    if platform != "whatsapp" or not channel_id:
-        return channel_id
-    cid = channel_id.strip()
-    if "@s.whatsapp.net" in cid:
-        return cid
-    # Strip + and spaces, append JID suffix
-    digits = "".join(ch for ch in cid if ch.isdigit())
-    if not digits:
-        return channel_id
-    return f"{digits}@s.whatsapp.net"
-
-
 @router.post("/api/settings/whitelist")
 async def add_whitelist_entry(request: Request):
-    """Add a new whitelist entry."""
+    """Add a new whitelist entry. channel_id is stored as-is (e.g. 52922670915662@lid)."""
     body = await request.json()
     platform = body.get("platform", "").strip()
     channel_id = body.get("channel_id", "").strip()
@@ -229,8 +212,6 @@ async def add_whitelist_entry(request: Request):
 
     if not platform or not channel_id:
         return {"ok": False, "error": "platform and channel_id are required"}
-
-    channel_id = _normalize_whitelist_channel_id(platform, channel_id)
 
     backend = _session_backend(request)
     if not backend:
@@ -263,6 +244,18 @@ async def remove_whitelist_entry(request: Request, platform: str, channel_id: st
         await mw.refresh()
 
     return {"ok": True}
+
+
+@router.get("/api/settings/whitelist/seen")
+async def list_seen_senders(request: Request):
+    """Return senders whose messages were blocked (not in whitelist), unique per platform/channel."""
+    backend = _session_backend(request)
+    if not backend:
+        return {"senders": []}
+    if not hasattr(backend, "get_seen_senders"):
+        return {"senders": []}
+    senders = await backend.get_seen_senders()
+    return {"senders": senders}
 
 
 @router.post("/api/settings/whitelist/refresh")

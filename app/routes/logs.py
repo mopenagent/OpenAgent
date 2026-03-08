@@ -42,12 +42,11 @@ async def stream_logs(request: Request):
 
         try:
             while True:
-                if await request.is_disconnected():
-                    break
                 try:
-                    entry = await asyncio.wait_for(queue.get(), timeout=5.0)
+                    entry = await asyncio.wait_for(queue.get(), timeout=15.0)
                     yield f"data: {json.dumps(entry)}\n\n"
                 except asyncio.TimeoutError:
+                    # Keepalive comment — also lets Starlette detect a broken connection
                     yield ": keepalive\n\n"
         finally:
             clients.discard(queue)

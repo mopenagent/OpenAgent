@@ -60,17 +60,17 @@ def _collect_memory() -> dict[str, list[dict]]:
                     python_procs.append(entry)
                     continue
 
-            # Go: binary from services/<name>/bin/<name>-*
+            # Go/Rust: binary from <root>/bin/<name>-<os>-<arch>
             if root_str in combined or "openagent" in combined.lower():
                 for svc in GO_SERVICES:
-                    if f"services/{svc}" in combined or f"/{svc}-" in combined:
+                    if f"/bin/{svc}-" in combined or f"/{svc}-" in combined:
                         entry["service"] = svc
                         go_procs.append(entry)
                         break
                 else:
-                    # Rust: services/sandbox, services/browser
+                    # Rust: sandbox, browser
                     for svc in RUST_SERVICES:
-                        if f"services/{svc}" in combined or f"/{svc}" in exe:
+                        if f"/bin/{svc}-" in combined or f"/{svc}" in exe:
                             entry["service"] = svc
                             rust_procs.append(entry)
                             break

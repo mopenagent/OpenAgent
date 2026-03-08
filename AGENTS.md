@@ -102,7 +102,7 @@ The two planes communicate via **MCP-lite**: tagged JSON frames over Unix Domain
   - `GOOS=linux GOARCH=arm64` — Raspberry Pi (primary)
   - `GOOS=linux GOARCH=amd64` — Ubuntu server
   - `GOOS=darwin GOARCH=arm64` — M4 Mac (dev)
-- Compiled binaries in `services/<name>/bin/` (gitignored)
+- Compiled binaries in `bin/` at project root (gitignored)
 
 ## MCP-lite Wire Protocol
 

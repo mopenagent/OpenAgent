@@ -612,8 +612,8 @@ class ServiceManager:
         path = Path(rel)
         if path.is_absolute():
             return path
-        # Relative to the service directory (manifest parent); Makefile builds to services/<name>/bin/
-        return manifest.manifest_path.parent / path
+        # Relative to project root; Makefile builds to <root>/bin/
+        return self._root / path
 
     def _resolve_socket(self, manifest: ServiceManifest) -> Path:
         p = Path(manifest.socket)

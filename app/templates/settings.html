@@ -17,7 +17,7 @@
             class="px-4 py-2 text-sm font-medium -mb-px transition-colors">
       Provider
     </button>
-    <button @click="tab = 'whitelist'; loadWhitelist()"
+    <button @click="tab = 'whitelist'; loadWhitelist(); loadSeenSenders()"
             :class="tab === 'whitelist' ? 'border-b-2 border-saffron text-saffron' : 'text-mutedCharcoal dark:text-steelMist hover:text-stone-900 dark:hover:text-stone-100'"
             class="px-4 py-2 text-sm font-medium -mb-px transition-colors">
       Whitelist
@@ -288,6 +288,63 @@
         </table>
       </div>
     </div>
+
+    <!-- Unknown senders -->
+    <div class="bg-white dark:bg-charcoalLayer border border-[#DEE2E6] dark:border-[#21262D] rounded-xl p-6 space-y-4">
+      <div class="flex items-center justify-between">
+        <div>
+          <h3 class="text-sm font-semibold text-stone-900 dark:text-stone-100">Unknown Senders</h3>
+          <p class="text-xs text-mutedCharcoal dark:text-steelMist mt-0.5">
+            Messages blocked by the whitelist, grouped by sender. Click Whitelist to allow them.
+          </p>
+        </div>
+        <button @click="loadSeenSenders()"
+                class="px-3 py-1.5 text-xs font-medium rounded-lg border border-[#DEE2E6] dark:border-[#21262D]
+                       text-stone-600 dark:text-stone-400 hover:bg-stone-50 dark:hover:bg-stone-800/50 transition-colors">
+          Refresh
+        </button>
+      </div>
+
+      <div class="overflow-x-auto rounded-lg border border-[#DEE2E6] dark:border-[#21262D]">
+        <table class="w-full text-sm">
+          <thead class="bg-stone-50 dark:bg-deepSpaceBlue text-xs text-mutedCharcoal dark:text-steelMist uppercase tracking-wide">
+            <tr>
+              <th class="px-4 py-2 text-left">Platform</th>
+              <th class="px-4 py-2 text-left">Channel / Number</th>
+              <th class="px-4 py-2 text-left">Messages</th>
+              <th class="px-4 py-2 text-left">Last Seen</th>
+              <th class="px-4 py-2 text-left">Action</th>
+            </tr>
+          </thead>
+          <tbody>
+            <template x-if="seen.length === 0">
+              <tr>
+                <td colspan="5" class="px-4 py-6 text-center text-xs text-mutedCharcoal dark:text-steelMist">
+                  No unknown senders yet. Blocked messages will appear here.
+                </td>
+              </tr>
+            </template>
+            <template x-for="s in seen" :key="s.platform + ':' + s.channel_id">
+              <tr class="border-t border-[#DEE2E6] dark:border-[#21262D] hover:bg-stone-50 dark:hover:bg-stone-800/30">
+                <td class="px-4 py-2 capitalize text-stone-900 dark:text-stone-100" x-text="s.platform"></td>
+                <td class="px-4 py-2 font-mono text-stone-700 dark:text-stone-300" x-text="s.channel_id"></td>
+                <td class="px-4 py-2 text-stone-700 dark:text-stone-300" x-text="s.message_count"></td>
+                <td class="px-4 py-2 text-xs text-mutedCharcoal dark:text-steelMist"
+                    x-text="s.last_seen ? s.last_seen.slice(0, 16).replace('T', ' ') : '—'"></td>
+                <td class="px-4 py-2">
+                  <button @click="whitelistSeen(s.platform, s.channel_id)"
+                          class="px-2 py-1 text-xs font-medium rounded border border-sage
+                                 text-sage hover:bg-sage/10 transition-colors">
+                    Whitelist
+                  </button>
+                </td>
+              </tr>
+            </template>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
   </div>
 
 </div><!-- /settingsApp -->
@@ -318,6 +375,8 @@ function settingsApp() {
       addMsg: '',
       addOk: true,
     },
+
+    seen: [],
 
     async init() {
       const r = await fetch('/api/config/provider')
@@ -497,6 +556,32 @@ function settingsApp() {
         }
       } catch (e) {
         // silent — table will refresh on next loadWhitelist call
+      }
+    },
+
+    async loadSeenSenders() {
+      try {
+        const r = await fetch('/api/settings/whitelist/seen')
+        const d = await r.json()
+        this.seen = d.senders || []
+      } catch (e) {
+        this.seen = []
+      }
+    },
+
+    async whitelistSeen(platform, channelId) {
+      try {
+        const r = await fetch('/api/settings/whitelist', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ platform, channel_id: channelId, label: '', added_by: 'ui' })
+        })
+        const d = await r.json()
+        if (d.ok) {
+          await Promise.all([this.loadWhitelist(), this.loadSeenSenders()])
+        }
+      } catch (e) {
+        // silent
       }
     },
   }

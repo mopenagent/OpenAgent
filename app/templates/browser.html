@@ -5,76 +5,8 @@
 {% block content %}
 <div x-data="browserApp()" x-init="init()" class="h-full flex flex-col gap-0 w-full">
 
-  <!-- ── Top toolbar ──────────────────────────────────────── -->
-  <div class="flex-shrink-0 flex items-center gap-2 mb-3">
-    <!-- URL bar -->
-    <input x-model="urlInput" @keydown.enter="openSession()"
-           placeholder="https://example.com"
-           class="flex-1 px-3 py-2 text-sm rounded-lg border border-[#DEE2E6] dark:border-[#21262D]
-                  bg-white dark:bg-deepSpaceBlue text-stone-900 dark:text-stone-100
-                  focus:outline-none focus:ring-2 focus:ring-saffron/40 font-mono"/>
-
-    <!-- Open in current tab -->
-    <button @click="openSession(false)"
-            :disabled="!urlInput.trim() || busy"
-            class="px-3 py-2 text-sm bg-saffron hover:bg-amber-500 text-white rounded-lg
-                   disabled:opacity-40 transition-colors flex items-center gap-1.5">
-      <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 12h14M12 5l7 7-7 7"/>
-      </svg>
-      <span x-text="activeTab ? 'Navigate' : 'Open'"></span>
-    </button>
-
-    <!-- New tab -->
-    <button @click="openSession(true)"
-            :disabled="!urlInput.trim() || busy"
-            class="px-3 py-2 text-sm border border-[#DEE2E6] dark:border-[#21262D]
-                   text-mutedCharcoal dark:text-steelMist hover:text-stone-900 dark:hover:text-stone-100
-                   hover:bg-pastelFog dark:hover:bg-charcoalLayer rounded-lg disabled:opacity-40 transition-colors flex items-center gap-1.5">
-      <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
-      </svg>
-      New Tab
-    </button>
-
-    <!-- Refresh screenshot -->
-    <button @click="refreshScreenshot()"
-            :disabled="!activeTab || busy"
-            title="Refresh screenshot"
-            class="w-9 h-9 flex items-center justify-center rounded-lg border border-[#DEE2E6] dark:border-[#21262D]
-                   text-mutedCharcoal dark:text-steelMist hover:text-saffron transition-colors disabled:opacity-40">
-      <svg class="w-4 h-4" :class="busy ? 'animate-spin' : ''" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-              d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
-      </svg>
-    </button>
-
-    <!-- Snapshot (accessibility tree) -->
-    <button @click="takeSnapshot()"
-            :disabled="!activeTab || busy"
-            title="Get snapshot + text"
-            class="w-9 h-9 flex items-center justify-center rounded-lg border border-[#DEE2E6] dark:border-[#21262D]
-                   text-mutedCharcoal dark:text-steelMist hover:text-saffron transition-colors disabled:opacity-40">
-      <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-              d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
-      </svg>
-    </button>
-
-    <!-- Close tab -->
-    <button @click="closeTab(activeTab)"
-            :disabled="!activeTab || busy"
-            title="Close this session"
-            class="w-9 h-9 flex items-center justify-center rounded-lg border border-red-200 dark:border-red-900/40
-                   text-red-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors disabled:opacity-40">
-      <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
-      </svg>
-    </button>
-  </div>
-
   <!-- ── Tab strip ────────────────────────────────────────── -->
-  <div class="flex-shrink-0 flex items-end gap-1 border-b border-[#DEE2E6] dark:border-[#21262D] overflow-x-auto pb-0">
+  <div class="flex-shrink-0 flex items-end gap-1 border-b border-[#DEE2E6] dark:border-[#21262D] overflow-x-auto pb-0 mb-3">
     <template x-for="tab in tabs" :key="tab.session_id">
       <button @click="activateTab(tab.session_id)"
               :class="activeTab === tab.session_id
@@ -83,7 +15,6 @@
               class="relative px-3 py-2 text-xs font-medium flex items-center gap-1.5 rounded-t-lg -mb-px
                      border border-b-0 border-[#DEE2E6] dark:border-[#21262D] transition-colors flex-shrink-0 max-w-[160px]">
         <span class="truncate" x-text="tab.label || tab.session_id"></span>
-        <!-- tab close -->
         <span @click.stop="closeTab(tab.session_id)"
               class="flex-shrink-0 w-3.5 h-3.5 flex items-center justify-center rounded hover:bg-red-100 dark:hover:bg-red-900/30 hover:text-red-500 transition-colors">
           <svg class="w-2.5 h-2.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -93,268 +24,63 @@
       </button>
     </template>
     <template x-if="tabs.length === 0">
-      <span class="text-xs text-mutedCharcoal dark:text-steelMist italic px-3 py-2">No open sessions — enter a URL above</span>
+      <span class="text-xs text-mutedCharcoal dark:text-steelMist italic px-3 py-2">
+        No open sessions — ask the agent to open a URL
+      </span>
     </template>
+
+    <!-- Refresh button aligned right -->
+    <div class="ml-auto flex items-center gap-2 pb-1">
+      <span x-show="activeTab" class="text-xs font-mono text-mutedCharcoal dark:text-steelMist truncate max-w-xs"
+            x-text="currentTabData()?.current_url || ''"></span>
+      <template x-if="busy">
+        <svg class="w-3.5 h-3.5 animate-spin text-saffron flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+        </svg>
+      </template>
+      <button @click="refreshScreenshot()"
+              :disabled="!activeTab || busy"
+              title="Refresh screenshot"
+              class="w-7 h-7 flex items-center justify-center rounded border border-[#DEE2E6] dark:border-[#21262D]
+                     text-mutedCharcoal dark:text-steelMist hover:text-saffron transition-colors disabled:opacity-40 flex-shrink-0">
+        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+        </svg>
+      </button>
+    </div>
   </div>
 
-  <!-- ── Main area: screenshot + action panel ─────────────── -->
-  <div class="flex-1 flex gap-4 overflow-hidden pt-3 min-h-0">
-
-    <!-- Screenshot viewer -->
-    <div class="flex-1 flex flex-col overflow-hidden min-h-0">
-      <!-- No session -->
-      <template x-if="!activeTab">
-        <div class="flex-1 flex items-center justify-center text-mutedCharcoal dark:text-steelMist">
-          <div class="text-center space-y-2">
-            <svg class="w-12 h-12 mx-auto opacity-30" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"
-                    d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"/>
-            </svg>
-            <p class="text-sm">Enter a URL and press Open to start a browser session</p>
-          </div>
-        </div>
-      </template>
-
-      <!-- Active screenshot -->
-      <template x-if="activeTab">
-        <div class="flex-1 flex flex-col overflow-hidden min-h-0">
-          <!-- Breadcrumb / status -->
-          <div class="flex items-center gap-2 mb-2 flex-shrink-0">
-            <span class="text-xs font-mono text-mutedCharcoal dark:text-steelMist truncate flex-1"
-                  x-text="currentTabData()?.current_url || activeTab"></span>
-            <template x-if="busy">
-              <span class="text-xs text-saffron flex items-center gap-1">
-                <svg class="w-3 h-3 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
-                </svg>
-                Working…
-              </span>
-            </template>
-          </div>
-
-          <!-- Screenshot image — scrollable -->
-          <div class="flex-1 overflow-auto rounded-xl border border-[#DEE2E6] dark:border-[#21262D] bg-[#0a0a0a] min-h-0">
-            <img :src="screenshotUrl()"
-                 @load="ssLoaded = true"
-                 @error="ssLoaded = false"
-                 alt="Browser screenshot"
-                 class="max-w-full block"
-                 :class="ssLoaded ? '' : 'hidden'"/>
-            <template x-if="!ssLoaded">
-              <div class="h-48 flex items-center justify-center text-stone-500 text-sm">
-                No screenshot yet — open a URL first
-              </div>
-            </template>
-          </div>
-
-          <!-- Quick actions bar below screenshot -->
-          <div class="flex-shrink-0 flex flex-wrap gap-1.5 mt-2">
-            <template x-for="action in quickActions" :key="action.label">
-              <button @click="runQuickAction(action)"
-                      :disabled="busy"
-                      class="px-2 py-1 text-xs border border-[#DEE2E6] dark:border-[#21262D]
-                             text-mutedCharcoal dark:text-steelMist hover:text-stone-900 dark:hover:text-stone-100
-                             hover:bg-pastelFog dark:hover:bg-charcoalLayer rounded disabled:opacity-40 transition-colors"
-                      x-text="action.label"></button>
-            </template>
-          </div>
-        </div>
-      </template>
-    </div>
-
-    <!-- ── Action panel (right side) ── -->
-    <div class="w-64 flex-shrink-0 flex flex-col gap-3 overflow-y-auto">
-
-      <!-- Tool selector -->
-      <div class="bg-white dark:bg-charcoalLayer border border-[#DEE2E6] dark:border-[#21262D] rounded-xl p-3 space-y-2.5">
-        <h3 class="text-xs font-bold text-mutedCharcoal dark:text-steelMist uppercase tracking-wide">Action</h3>
-
-        <select x-model="actionTool"
-                class="w-full px-2 py-1.5 text-xs rounded-lg border border-[#DEE2E6] dark:border-[#21262D]
-                       bg-white dark:bg-deepSpaceBlue text-stone-900 dark:text-stone-100
-                       focus:outline-none focus:ring-1 focus:ring-saffron/40">
-          <optgroup label="Navigation">
-            <option value="browser.click">Click</option>
-            <option value="browser.fill">Fill input</option>
-            <option value="browser.type">Type text</option>
-            <option value="browser.press">Press key</option>
-            <option value="browser.hover">Hover</option>
-            <option value="browser.select">Select option</option>
-            <option value="browser.check">Check/Uncheck</option>
-            <option value="browser.scroll">Scroll</option>
-            <option value="browser.scrollinto">Scroll into view</option>
-          </optgroup>
-          <optgroup label="Find">
-            <option value="browser.find">Find by role/text/label</option>
-          </optgroup>
-          <optgroup label="Read">
-            <option value="browser.get">Get value</option>
-            <option value="browser.extract">Extract text</option>
-            <option value="browser.eval">Eval JS</option>
-          </optgroup>
-          <optgroup label="Wait">
-            <option value="browser.wait">Wait</option>
-          </optgroup>
-          <optgroup label="Tabs">
-            <option value="browser.tab_new">New tab</option>
-            <option value="browser.tab_switch">Switch tab</option>
-          </optgroup>
-          <optgroup label="State">
-            <option value="browser.cookies">Cookies</option>
-            <option value="browser.state">Auth state</option>
-            <option value="browser.pdf">Save PDF</option>
-            <option value="browser.diff">Diff</option>
-          </optgroup>
-        </select>
-
-        <!-- Dynamic param inputs -->
-        <template x-if="actionNeedsSelector()">
-          <input x-model="actionParams.selector" placeholder="CSS selector or @ref"
-                 class="w-full px-2 py-1.5 text-xs rounded-lg border border-[#DEE2E6] dark:border-[#21262D]
-                        bg-white dark:bg-deepSpaceBlue text-stone-900 dark:text-stone-100 font-mono
-                        focus:outline-none focus:ring-1 focus:ring-saffron/40"/>
-        </template>
-
-        <template x-if="actionNeedsText()">
-          <input x-model="actionParams.text" placeholder="Text"
-                 class="w-full px-2 py-1.5 text-xs rounded-lg border border-[#DEE2E6] dark:border-[#21262D]
-                        bg-white dark:bg-deepSpaceBlue text-stone-900 dark:text-stone-100
-                        focus:outline-none focus:ring-1 focus:ring-saffron/40"/>
-        </template>
-
-        <template x-if="actionTool === 'browser.press'">
-          <input x-model="actionParams.key" placeholder="Key e.g. Enter, Tab, Control+a"
-                 class="w-full px-2 py-1.5 text-xs rounded-lg border border-[#DEE2E6] dark:border-[#21262D]
-                        bg-white dark:bg-deepSpaceBlue text-stone-900 dark:text-stone-100 font-mono
-                        focus:outline-none focus:ring-1 focus:ring-saffron/40"/>
-        </template>
-
-        <template x-if="actionTool === 'browser.scroll'">
-          <select x-model="actionParams.direction"
-                  class="w-full px-2 py-1.5 text-xs rounded-lg border border-[#DEE2E6] dark:border-[#21262D]
-                         bg-white dark:bg-deepSpaceBlue text-stone-900 dark:text-stone-100
-                         focus:outline-none focus:ring-1 focus:ring-saffron/40">
-            <option value="down">Scroll down</option>
-            <option value="up">Scroll up</option>
-            <option value="left">Scroll left</option>
-            <option value="right">Scroll right</option>
-          </select>
-        </template>
-
-        <template x-if="actionTool === 'browser.find'">
-          <div class="space-y-1.5">
-            <select x-model="actionParams.by"
-                    class="w-full px-2 py-1.5 text-xs rounded-lg border border-[#DEE2E6] dark:border-[#21262D]
-                           bg-white dark:bg-deepSpaceBlue text-stone-900 dark:text-stone-100
-                           focus:outline-none focus:ring-1 focus:ring-saffron/40">
-              <option value="text">By text</option>
-              <option value="role">By role</option>
-              <option value="label">By label</option>
-              <option value="placeholder">By placeholder</option>
-              <option value="testid">By testid</option>
-            </select>
-            <input x-model="actionParams.value" placeholder="Value to match"
-                   class="w-full px-2 py-1.5 text-xs rounded-lg border border-[#DEE2E6] dark:border-[#21262D]
-                          bg-white dark:bg-deepSpaceBlue text-stone-900 dark:text-stone-100
-                          focus:outline-none focus:ring-1 focus:ring-saffron/40"/>
-          </div>
-        </template>
-
-        <template x-if="actionTool === 'browser.get'">
-          <select x-model="actionParams.what"
-                  class="w-full px-2 py-1.5 text-xs rounded-lg border border-[#DEE2E6] dark:border-[#21262D]
-                         bg-white dark:bg-deepSpaceBlue text-stone-900 dark:text-stone-100
-                         focus:outline-none focus:ring-1 focus:ring-saffron/40">
-            <option value="url">URL</option>
-            <option value="title">Title</option>
-            <option value="text">Text</option>
-            <option value="html">HTML</option>
-            <option value="value">Input value</option>
-            <option value="attr">Attribute</option>
-            <option value="count">Count</option>
-          </select>
-        </template>
-
-        <template x-if="actionTool === 'browser.eval'">
-          <textarea x-model="actionParams.js" placeholder="document.title"
-                    rows="3"
-                    class="w-full px-2 py-1.5 text-xs rounded-lg border border-[#DEE2E6] dark:border-[#21262D]
-                           bg-white dark:bg-deepSpaceBlue text-stone-900 dark:text-stone-100 font-mono
-                           focus:outline-none focus:ring-1 focus:ring-saffron/40 resize-none"></textarea>
-        </template>
-
-        <template x-if="actionTool === 'browser.wait'">
-          <input x-model="actionParams.ms" placeholder="Milliseconds (e.g. 2000)"
-                 type="number"
-                 class="w-full px-2 py-1.5 text-xs rounded-lg border border-[#DEE2E6] dark:border-[#21262D]
-                        bg-white dark:bg-deepSpaceBlue text-stone-900 dark:text-stone-100
-                        focus:outline-none focus:ring-1 focus:ring-saffron/40"/>
-        </template>
-
-        <button @click="runAction()"
-                :disabled="!activeTab || busy"
-                class="w-full py-1.5 text-xs bg-saffron hover:bg-amber-500 text-white rounded-lg
-                       disabled:opacity-40 transition-colors font-medium">
-          Run
-        </button>
-      </div>
-
-      <!-- Last result -->
-      <template x-if="lastResult">
-        <div class="bg-white dark:bg-charcoalLayer border border-[#DEE2E6] dark:border-[#21262D] rounded-xl p-3 space-y-1.5">
-          <div class="flex items-center justify-between">
-            <h3 class="text-xs font-bold text-mutedCharcoal dark:text-steelMist uppercase tracking-wide">Last Result</h3>
-            <button @click="modal.open = true; modal.content = lastResult"
-                    class="text-xs text-saffron hover:underline">Expand</button>
-          </div>
-          <pre x-text="lastResult.slice(0, 300) + (lastResult.length > 300 ? '…' : '')"
-               class="text-xs text-stone-700 dark:text-stone-300 font-mono whitespace-pre-wrap break-words max-h-40 overflow-y-auto"></pre>
-        </div>
-      </template>
-
-      <!-- Error -->
-      <template x-if="lastError">
-        <div class="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-xl p-3">
-          <p class="text-xs text-red-600 dark:text-red-400 font-mono break-words" x-text="lastError"></p>
-        </div>
-      </template>
-    </div>
-
-  </div><!-- /main area -->
-
-  <!-- ── Modal — full text result ─────────────────────────── -->
-  <div x-show="modal.open" x-cloak
-       class="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm"
-       @keydown.escape.window="modal.open = false">
-    <div @click.outside="modal.open = false"
-         class="bg-white dark:bg-deepSpaceBlue border border-[#DEE2E6] dark:border-[#21262D] rounded-xl
-                shadow-2xl w-full max-w-2xl max-h-[80vh] flex flex-col mx-4">
-      <div class="flex items-center justify-between px-4 py-3 border-b border-[#DEE2E6] dark:border-[#21262D] flex-shrink-0">
-        <h2 class="text-sm font-semibold text-stone-900 dark:text-stone-100">Result</h2>
-        <button @click="modal.open = false"
-                class="w-6 h-6 flex items-center justify-center rounded hover:bg-[#DEE2E6] dark:hover:bg-[#21262D] transition-colors text-mutedCharcoal">
-          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+  <!-- ── Screenshot viewer ─────────────────────────────────── -->
+  <div class="flex-1 overflow-auto min-h-0">
+    <template x-if="!activeTab">
+      <div class="h-full flex items-center justify-center text-mutedCharcoal dark:text-steelMist">
+        <div class="text-center space-y-3">
+          <svg class="w-14 h-14 mx-auto opacity-20" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"
+                  d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/>
           </svg>
-        </button>
+          <p class="text-sm">Browser sessions appear here.</p>
+          <p class="text-xs text-mutedCharcoal/60 dark:text-steelMist/60">Ask the agent to open a URL in the chat.</p>
+        </div>
       </div>
-      <div class="flex-1 overflow-y-auto p-4">
-        <pre x-text="modal.content"
-             class="text-xs text-stone-700 dark:text-stone-300 font-mono whitespace-pre-wrap break-words"></pre>
+    </template>
+
+    <template x-if="activeTab">
+      <div class="rounded-xl border border-[#DEE2E6] dark:border-[#21262D] bg-[#0a0a0a] overflow-hidden">
+        <img :src="screenshotUrl()"
+             @load="ssLoaded = true"
+             @error="ssLoaded = false"
+             alt="Browser screenshot"
+             class="w-full block"
+             :class="ssLoaded ? '' : 'hidden'"/>
+        <template x-if="!ssLoaded">
+          <div class="h-64 flex items-center justify-center text-stone-500 text-sm">
+            No screenshot yet
+          </div>
+        </template>
       </div>
-      <div class="flex-shrink-0 flex justify-end gap-2 px-4 py-3 border-t border-[#DEE2E6] dark:border-[#21262D]">
-        <button @click="copyResult()"
-                class="px-3 py-1.5 text-xs border border-[#DEE2E6] dark:border-[#21262D]
-                       text-mutedCharcoal dark:text-steelMist hover:text-stone-900 dark:hover:text-stone-100
-                       rounded-lg transition-colors">
-          Copy
-        </button>
-        <button @click="modal.open = false"
-                class="px-3 py-1.5 text-xs bg-saffron hover:bg-amber-500 text-white rounded-lg transition-colors">
-          Close
-        </button>
-      </div>
-    </div>
+    </template>
   </div>
 
 </div>
@@ -362,48 +88,28 @@
 <script>
 function browserApp() {
   return {
-    // State
-    tabs: [],          // [{ session_id, label, current_url, screenshot_url, screenshot_ts }]
-    activeTab: null,   // session_id string
-    urlInput: '',
+    tabs: [],
+    activeTab: null,
     busy: false,
     ssLoaded: false,
-    ssTs: Date.now(),  // cache-bust for screenshot reloads
-    lastResult: '',
-    lastError: '',
-    actionTool: 'browser.click',
-    actionParams: { selector: '', text: '', key: 'Enter', direction: 'down', by: 'text', value: '', what: 'url', js: '', ms: '' },
-    modal: { open: false, content: '' },
-
-    quickActions: [
-      { label: 'Snapshot', tool: 'browser.snapshot', params: {} },
-      { label: 'Scroll ↓', tool: 'browser.scroll', params: { direction: 'down', amount: 500 } },
-      { label: 'Scroll ↑', tool: 'browser.scroll', params: { direction: 'up', amount: 500 } },
-      { label: 'Get URL', tool: 'browser.get', params: { what: 'url' } },
-      { label: 'Get Title', tool: 'browser.get', params: { what: 'title' } },
-      { label: 'Extract text', tool: 'browser.extract', params: {} },
-      { label: 'Back', tool: 'browser.eval', params: { js: 'history.back()' } },
-      { label: 'Forward', tool: 'browser.eval', params: { js: 'history.forward()' } },
-      { label: 'Reload', tool: 'browser.eval', params: { js: 'location.reload()' } },
-    ],
+    ssTs: Date.now(),
 
     async init() {
       await this.loadSessions();
-      // Auto-refresh screenshot every 10s for active tab
+      // Refresh screenshot every 5s while a session is active
       setInterval(() => {
         if (this.activeTab && !this.busy) this.ssTs = Date.now();
-      }, 10000);
+      }, 5000);
     },
 
     async loadSessions() {
       try {
         const r = await fetch('/api/browser/sessions');
         const d = await r.json();
-        // Merge into tabs (preserve existing label/url)
         const existing = Object.fromEntries(this.tabs.map(t => [t.session_id, t]));
         this.tabs = d.sessions.map(s => ({
           ...s,
-          label: existing[s.session_id]?.label || s.session_id.slice(0, 10),
+          label: existing[s.session_id]?.label || s.session_id.slice(0, 12),
           current_url: existing[s.session_id]?.current_url || '',
         }));
         if (this.activeTab && !this.tabs.find(t => t.session_id === this.activeTab)) {
@@ -421,8 +127,6 @@ function browserApp() {
       this.activeTab = session_id;
       this.ssLoaded = false;
       this.ssTs = Date.now();
-      this.lastResult = '';
-      this.lastError = '';
     },
 
     currentTabData() {
@@ -432,46 +136,6 @@ function browserApp() {
     screenshotUrl() {
       if (!this.activeTab) return '';
       return `/artifacts/browser/${this.activeTab}/latest.png?t=${this.ssTs}`;
-    },
-
-    async openSession(forceNew = false) {
-      const url = this.urlInput.trim();
-      if (!url) return;
-      this.busy = true;
-      this.lastError = '';
-      try {
-        const session_id = forceNew ? null : this.activeTab;
-        const body = { url };
-        if (session_id) body.session_id = session_id;
-        const r = await fetch('/api/browser/open', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(body),
-        });
-        const d = await r.json();
-        if (d.error) { this.lastError = d.error; return; }
-
-        const sid = d.session_id;
-        const label = this._labelFromUrl(url);
-        const existing = this.tabs.find(t => t.session_id === sid);
-        if (existing) {
-          existing.label = label;
-          existing.current_url = url;
-          existing.screenshot_url = `/artifacts/browser/${sid}/latest.png`;
-          existing.screenshot_ts = d.screenshot_ts;
-        } else {
-          this.tabs.push({ session_id: sid, label, current_url: url,
-                           screenshot_url: `/artifacts/browser/${sid}/latest.png`,
-                           screenshot_ts: d.screenshot_ts, has_screenshot: true });
-        }
-        this.activeTab = sid;
-        this.ssLoaded = false;
-        this.ssTs = Date.now();
-      } catch (e) {
-        this.lastError = String(e);
-      } finally {
-        this.busy = false;
-      }
     },
 
     async closeTab(session_id) {
@@ -492,123 +156,14 @@ function browserApp() {
       if (!this.activeTab) return;
       this.busy = true;
       try {
-        const d = await this._action('browser.screenshot', { session_id: this.activeTab });
-        if (!d.error) this.ssTs = Date.now();
+        await fetch('/api/browser/action', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ tool: 'browser.screenshot', params: { session_id: this.activeTab } }),
+        });
+        this.ssTs = Date.now();
       } finally {
         this.busy = false;
-      }
-    },
-
-    async takeSnapshot() {
-      if (!this.activeTab) return;
-      this.busy = true;
-      try {
-        const d = await this._action('browser.snapshot', { session_id: this.activeTab });
-        if (d.error) { this.lastError = d.error; }
-        else {
-          this.lastResult = d.text || JSON.stringify(d, null, 2);
-          this.ssTs = Date.now();
-          this.modal.open = true;
-          this.modal.content = this.lastResult;
-        }
-      } finally {
-        this.busy = false;
-      }
-    },
-
-    async runQuickAction(action) {
-      if (!this.activeTab || this.busy) return;
-      this.busy = true;
-      try {
-        const params = { session_id: this.activeTab, ...action.params };
-        const d = await this._action(action.tool, params);
-        this._handleResult(d);
-      } finally {
-        this.busy = false;
-      }
-    },
-
-    async runAction() {
-      if (!this.activeTab || this.busy) return;
-      this.busy = true;
-      this.lastError = '';
-      try {
-        const params = { session_id: this.activeTab };
-
-        if (this.actionParams.selector) params.selector = this.actionParams.selector;
-        if (this.actionParams.text && this.actionNeedsText()) params.text = this.actionParams.text;
-        if (this.actionTool === 'browser.press') params.key = this.actionParams.key;
-        if (this.actionTool === 'browser.scroll') params.direction = this.actionParams.direction;
-        if (this.actionTool === 'browser.find') {
-          params.by = this.actionParams.by;
-          params.value = this.actionParams.value;
-        }
-        if (this.actionTool === 'browser.get') params.what = this.actionParams.what;
-        if (this.actionTool === 'browser.eval') params.js = this.actionParams.js;
-        if (this.actionTool === 'browser.wait' && this.actionParams.ms) params.ms = parseInt(this.actionParams.ms);
-
-        const d = await this._action(this.actionTool, params);
-        this._handleResult(d);
-
-        // Refresh screenshot for interaction tools
-        if (['browser.click','browser.fill','browser.type','browser.press',
-             'browser.hover','browser.select','browser.check','browser.scroll',
-             'browser.scrollinto','browser.find'].includes(this.actionTool)) {
-          this.ssTs = Date.now();
-        }
-      } finally {
-        this.busy = false;
-      }
-    },
-
-    _handleResult(d) {
-      if (d.error) {
-        this.lastError = d.error;
-        this.lastResult = '';
-      } else {
-        this.lastError = '';
-        const text = d.text || d.result || d.diff || d.tabs || null;
-        if (text) {
-          this.lastResult = typeof text === 'string' ? text : JSON.stringify(text, null, 2);
-          // Auto-open modal for text results
-          if (this.lastResult.length > 100) {
-            this.modal.open = true;
-            this.modal.content = this.lastResult;
-          }
-        } else {
-          this.lastResult = JSON.stringify(d, null, 2);
-        }
-      }
-    },
-
-    async _action(tool, params) {
-      const r = await fetch('/api/browser/action', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ tool, params }),
-      });
-      return r.json();
-    },
-
-    actionNeedsSelector() {
-      return ['browser.click','browser.dblclick','browser.fill','browser.hover',
-              'browser.select','browser.check','browser.scroll','browser.scrollinto',
-              'browser.extract','browser.get'].includes(this.actionTool);
-    },
-
-    actionNeedsText() {
-      return ['browser.fill','browser.type','browser.select'].includes(this.actionTool);
-    },
-
-    copyResult() {
-      navigator.clipboard.writeText(this.modal.content).catch(() => {});
-    },
-
-    _labelFromUrl(url) {
-      try {
-        return new URL(url).hostname.replace('www.', '');
-      } catch {
-        return url.slice(0, 20);
       }
     },
   };

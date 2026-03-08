@@ -34,10 +34,26 @@ class WhitelistMiddleware:
         logger.info("Whitelist loaded: %d entries", len(self._allowed))
 
     async def __call__(self, msg: InboundMessage) -> None:
+        # Log incoming message JID before whitelist check (for debugging)
+        logger.info(
+            "Inbound before whitelist: platform=%s channel_id=%s (JID)",
+            msg.platform,
+            msg.channel_id,
+        )
         async with self._lock:
             allowed = (msg.platform, msg.channel_id) in self._allowed
         if not allowed:
             logger.info(
-                "Whitelist blocked %s:%s", msg.platform, msg.channel_id
+                "Whitelist blocked — JID=%s (add to Settings → Whitelist: %s:%s)",
+                msg.channel_id,
+                msg.platform,
+                msg.channel_id,
             )
             msg.metadata["_blocked"] = True
+            if hasattr(self._backend, "record_seen_sender"):
+                try:
+                    await self._backend.record_seen_sender(msg.platform, msg.channel_id)
+                except Exception:
+                    pass
+        else:
+            logger.debug("Whitelist allowed %s:%s", msg.platform, msg.channel_id)

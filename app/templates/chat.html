@@ -19,7 +19,9 @@
 
     <div class="flex-1 overflow-y-auto space-y-1 pr-1">
       <template x-if="sessions.length === 0">
-        <p class="text-xs text-mutedCharcoal dark:text-steelMist italic px-2">No active sessions</p>
+        <p class="text-xs text-mutedCharcoal dark:text-steelMist italic px-2">
+          No sessions yet. Send a message from WhatsApp (ensure your number is in Settings → Whitelist) or start a chat below.
+        </p>
       </template>
 
       <template x-for="s in sessions" :key="s.key">
