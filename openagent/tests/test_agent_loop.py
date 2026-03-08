@@ -15,7 +15,7 @@ from openagent.agent.loop import AgentLoop, MAX_ITERATIONS, MAX_TOOL_OUTPUT
 from openagent.agent.tools import ToolRegistry, _to_openai_schema
 from openagent.bus.bus import MessageBus
 from openagent.bus.events import InboundMessage, SenderInfo
-from openagent.providers.base import LLMResponse, Message, ToolCall
+from openagent.providers.base import LLMResponse, Message, StreamEvent, ToolCall
 from openagent.services import protocol as proto
 from openagent.session import SessionManager, SqliteSessionBackend
 
@@ -26,11 +26,32 @@ from openagent.session import SessionManager, SqliteSessionBackend
 
 
 class _FakeProvider:
-    """Records calls and returns pre-configured responses."""
+    """Records calls and returns pre-configured responses via stream_with_tools.
+
+    Each call to stream_with_tools consumes one LLMResponse from the queue and
+    yields the appropriate StreamEvents so the unified loop path is exercised.
+    """
 
     def __init__(self, responses: list[LLMResponse]) -> None:
         self._responses = iter(responses)
         self.calls: list[tuple[list[Message], Any]] = []
+
+    async def stream_with_tools(
+        self,
+        messages: list[Message],
+        *,
+        tools: list | None = None,
+        **kwargs,
+    ):
+        self.calls.append((messages, tools))
+        try:
+            response = next(self._responses)
+        except StopIteration:
+            response = LLMResponse(content="(no more responses)")
+        if response.content:
+            yield StreamEvent(content=response.content)
+        if response.tool_calls:
+            yield StreamEvent(tool_calls=response.tool_calls, finish_reason="tool_calls")
 
     async def chat(
         self,
@@ -356,13 +377,13 @@ async def test_agent_loop_stop_cancels_tasks(
     session_mgr: SessionManager,
 ) -> None:
     """stop() cancels all per-session worker tasks cleanly."""
-    # Provider blocks forever to keep the task alive
-    async def _blocking_chat(messages, tools=None, **kw):
+    # Provider blocks forever inside stream_with_tools to keep the task alive
+    async def _blocking_stream(messages, *, tools=None, **kw):
         await asyncio.sleep(100)
-        return LLMResponse(content="never")
+        yield StreamEvent(content="never")
 
     provider = MagicMock()
-    provider.chat = _blocking_chat
+    provider.stream_with_tools = _blocking_stream
 
     registry = _empty_registry()
     loop = AgentLoop(bus, provider, session_mgr, registry, middlewares=[])

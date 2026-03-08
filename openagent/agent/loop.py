@@ -21,7 +21,7 @@ The loop owns the chaining; no NextCall / chain-of-responsibility needed.
 
 Iteration limit
 ---------------
-``MAX_ITERATIONS = 40`` prevents infinite loops when a model keeps calling
+``MAX_ITERATIONS = 10`` prevents infinite loops when a model keeps calling
 tools without converging.  When the limit is hit the loop returns whatever
 partial content the model last produced (or a timeout notice).
 
@@ -35,6 +35,12 @@ Session key
 -----------
 ``InboundMessage.session_key`` is used throughout — it already handles
 cross-platform identity (user_key → "user:<hex>") and per-chat fallback.
+
+Abort
+-----
+``abort_session(session_key)`` cancels an in-progress loop for a given
+session.  The abort is checked at the top of each iteration so the loop
+exits cleanly between tool rounds.
 """
 
 from __future__ import annotations
@@ -45,15 +51,15 @@ from typing import Any
 
 from openagent.bus.bus import MessageBus
 from openagent.bus.events import InboundMessage, OutboundMessage
-from openagent.providers.base import LLMResponse, Message, Provider, StreamEvent
+from openagent.providers.base import LLMResponse, Message, Provider, StreamEvent, ToolCall
 from openagent.session.manager import SessionManager
 from openagent.agent.tools import ToolRegistry
 from openagent.agent.middlewares import AgentMiddleware
 
 logger = logging.getLogger(__name__)
 
-MAX_ITERATIONS = 40
-MAX_TOOL_OUTPUT = 500   # chars; truncate beyond this
+MAX_ITERATIONS = 10        # default dropped from 40 — tunable per instance
+MAX_TOOL_OUTPUT = 500      # chars; truncate beyond this
 _SYSTEM_PROMPT = (
     "You are a helpful assistant. "
     "Use tools only when necessary. "
@@ -67,7 +73,7 @@ class AgentLoop:
     Parameters
     ----------
     bus:        MessageBus — publish/subscribe point for all platforms.
-    provider:   LLM provider implementing ``chat(messages, tools)``.
+    provider:   LLM provider implementing ``stream_with_tools(messages, tools)``.
     sessions:   SessionManager — history persistence.
     tools:      ToolRegistry — maps tool names to Go/Rust services.
     system_prompt:
@@ -101,6 +107,8 @@ class AgentLoop:
         self._outbound_mw = [m for m in mw if m.direction == "outbound"]
         self._tasks: dict[str, asyncio.Task[None]] = {}
         self._running = False
+        # Abort signals — one Event per active session_key
+        self._abort_events: dict[str, asyncio.Event] = {}
 
     # ------------------------------------------------------------------
     # Lifecycle
@@ -121,6 +129,17 @@ class AgentLoop:
             await asyncio.gather(*self._tasks.values(), return_exceptions=True)
         self._tasks.clear()
         logger.info("AgentLoop stopped")
+
+    def abort_session(self, session_key: str) -> None:
+        """Cancel an in-progress agent loop for the given session.
+
+        The running iteration will notice the abort flag at the top of its
+        next loop cycle and break cleanly.  Safe to call when no loop is
+        running — the event is cleaned up after the loop exits.
+        """
+        event = self._abort_events.setdefault(session_key, asyncio.Event())
+        event.set()
+        logger.info("Abort requested for session %s", session_key)
 
     # ------------------------------------------------------------------
     # Session dispatch
@@ -156,14 +175,61 @@ class AgentLoop:
                 )
 
     # ------------------------------------------------------------------
+    # Tool execution helper (Rec 1 + Rec 3: extract + per-tool isolation)
+    # ------------------------------------------------------------------
+
+    async def _execute_tool_calls(
+        self,
+        tool_calls: list[ToolCall],
+        messages: list[Message],
+        session_key: str,
+    ) -> None:
+        """Execute tool calls, append results to messages and session.
+
+        Each tool call is isolated: an exception from one tool injects an
+        error string into the message history so the LLM can self-correct
+        rather than crashing the entire loop iteration.
+        """
+        for tc in tool_calls:
+            logger.debug("Tool call: %s(%s)", tc.name, tc.arguments)
+            try:
+                raw_result = await self._tools.call(
+                    tc.name, tc.arguments, session_key=session_key
+                )
+            except Exception as exc:
+                # Per-tool error isolation — inject error, LLM can self-correct
+                raw_result = f"[tool error] {tc.name}: {exc}"
+                logger.warning("Tool %s raised: %s", tc.name, exc)
+            if len(raw_result) > self._max_tool_output:
+                logger.debug(
+                    "Truncating tool output for %s: %d → %d chars",
+                    tc.name, len(raw_result), self._max_tool_output,
+                )
+                raw_result = raw_result[: self._max_tool_output] + "…[truncated]"
+            await self._sessions.append(
+                session_key, "tool", raw_result,
+                tool_call_id=tc.id,
+                tool_name=tc.name,
+            )
+            messages.append(Message(
+                "tool", raw_result,
+                tool_call_id=tc.id,
+                tool_name=tc.name,
+            ))
+
+    # ------------------------------------------------------------------
     # Middleware chains + core ReAct
     # ------------------------------------------------------------------
 
     async def _process(self, msg: InboundMessage) -> OutboundMessage | None:
         """Run inbound chain → ReAct → outbound chain.
 
-        Returns the final ``OutboundMessage`` to be dispatched, or ``None``
-        if the reply was already streamed inline (no further dispatch needed).
+        ``_run_react`` always returns a plain string (final_content).
+        Outbound middleware and final dispatch happen here — never inside
+        ``_run_react`` — so the loop boundary is clean (Rec 8).
+
+        Returns ``None`` because the final ``OutboundMessage`` is dispatched
+        directly here; the session worker's dispatch call is a no-op.
         """
         # ── Inbound chain ──────────────────────────────────────────────
         for mw in self._inbound_mw:
@@ -172,24 +238,47 @@ class AgentLoop:
             except Exception:
                 logger.exception("Inbound middleware %s raised", type(mw).__name__)
 
-        # ── ReAct loop ─────────────────────────────────────────────────
-        outbound = await self._run_react(msg)
+        # ── Whitelist / middleware block check ─────────────────────────
+        if msg.metadata.get("_blocked"):
+            logger.info("Message blocked by middleware — skipping agent loop")
+            return None
 
-        # ── Outbound chain ─────────────────────────────────────────────
-        if outbound is not None:
-            for mw in self._outbound_mw:
-                try:
-                    await mw(outbound)
-                except Exception:
-                    logger.exception("Outbound middleware %s raised", type(mw).__name__)
+        # ── ReAct loop — returns plain string (Rec 8) ──────────────────
+        final_content = await self._run_react(msg)
 
-        return outbound
+        # ── Save assistant turn ────────────────────────────────────────
+        session_key = msg.session_key
+        if final_content:
+            await self._sessions.append(session_key, "assistant", final_content)
 
-    async def _run_react(self, msg: InboundMessage) -> OutboundMessage | None:
-        """Run one full ReAct turn.
+        # ── Build final outbound message ───────────────────────────────
+        outbound = OutboundMessage(
+            platform=msg.platform,
+            channel_id=msg.channel_id,
+            content=final_content,
+            session_key=session_key,
+            metadata={**dict(msg.metadata), "stream_chunk": True, "stream_end": True},
+        )
 
-        Returns ``OutboundMessage`` for the caller to dispatch (non-streaming),
-        or ``None`` when streaming already sent everything inline.
+        # ── Outbound middleware chain (Rec 8) ──────────────────────────
+        for mw in self._outbound_mw:
+            try:
+                await mw(outbound)
+            except Exception:
+                logger.exception("Outbound middleware %s raised", type(mw).__name__)
+
+        # ── Final dispatch ─────────────────────────────────────────────
+        await self._bus.dispatch(outbound)
+        return None  # already dispatched; session_worker does nothing
+
+    async def _run_react(self, msg: InboundMessage) -> str:
+        """Run one full ReAct turn using stream_with_tools (Rec 5).
+
+        Always returns the final accumulated text content.  Intermediate
+        streaming chunks are dispatched inline; the stream_end / outbound
+        middleware are the caller's responsibility (Rec 8).
+
+        The abort signal is checked at the top of each iteration (Rec 7).
         """
         session_key = msg.session_key
 
@@ -205,23 +294,29 @@ class AgentLoop:
 
         tool_schemas = self._tools.schemas() if self._tools.has_tools() else None
         final_content = ""
-        streamed = False  # True when we dispatched via stream_chunk (caller returns None)
-        # Path A: stream_with_tools when provider supports it; else chat() when tools exist
-        stream_with_tools = getattr(
-            self._provider, "stream_with_tools", None
-        ) if tool_schemas else None
-        use_legacy_stream = tool_schemas is None and hasattr(self._provider, "stream")  # no tools + provider supports streaming
 
-        for iteration in range(self._max_iterations):
-            try:
-                if use_legacy_stream:
-                    # No tools — plain stream
-                    accumulated = ""
-                    first = True
-                    async for chunk in self._provider.stream(messages):
-                        accumulated += chunk
-                        if first or len(accumulated) % 80 < len(chunk):
-                            first = False
+        try:
+            for iteration in range(self._max_iterations):
+                # Abort check (Rec 7)
+                if self._abort_events.get(session_key, asyncio.Event()).is_set():
+                    logger.info(
+                        "Session %s aborted at iteration %d", session_key, iteration
+                    )
+                    break
+
+                accumulated = ""
+                response_tool_calls: list[ToolCall] = []
+
+                try:
+                    # Single code path — stream_with_tools always (Rec 5)
+                    async for event in self._provider.stream_with_tools(
+                        messages, tools=tool_schemas
+                    ):
+                        if not isinstance(event, StreamEvent):
+                            continue
+                        if event.content:
+                            accumulated += event.content
+                            # Dispatch every chunk unconditionally (Rec 2)
                             await self._bus.dispatch(OutboundMessage(
                                 platform=msg.platform,
                                 channel_id=msg.channel_id,
@@ -233,198 +328,47 @@ class AgentLoop:
                                     "stream_end": False,
                                 },
                             ))
-                    final_content = accumulated
-
-                    # Final chunk — outbound middlewares see this via metadata
-                    if final_content:
-                        stream_end_msg = OutboundMessage(
-                            platform=msg.platform,
-                            channel_id=msg.channel_id,
-                            content=final_content,
-                            session_key=session_key,
-                            metadata={
-                                **dict(msg.metadata),
-                                "stream_chunk": True,
-                                "stream_end": True,
-                            },
-                        )
-                        for mw in self._outbound_mw:
-                            try:
-                                await mw(stream_end_msg)
-                            except Exception:
-                                logger.exception(
-                                    "Outbound middleware %s raised on stream_end",
-                                    type(mw).__name__,
-                                )
-                        await self._bus.dispatch(stream_end_msg)
-                    streamed = True
-                    break
-
-                elif stream_with_tools:
-                    # Delta-based streaming with tools — content → UI, tool_calls → buffer
-                    accumulated = ""
-                    response_tool_calls: list = []
-                    response_content = ""
-
-                    async for event in stream_with_tools(messages, tools=tool_schemas):
-                        if not isinstance(event, StreamEvent):
-                            continue
-                        if event.content:
-                            accumulated += event.content
-                            # Stream to UI immediately
-                            if accumulated:
-                                await self._bus.dispatch(OutboundMessage(
-                                    platform=msg.platform,
-                                    channel_id=msg.channel_id,
-                                    content=accumulated,
-                                    session_key=session_key,
-                                    metadata={
-                                        **dict(msg.metadata),
-                                        "stream_chunk": True,
-                                        "stream_end": False,
-                                    },
-                                ))
                         if event.tool_calls:
                             response_tool_calls = event.tool_calls
-                            response_content = accumulated
-                            # Optional: Nanobot-style tool hint
-                            hint = ", ".join(
-                                f"{tc.name}(...)" for tc in event.tool_calls
-                            )
-                            await self._bus.dispatch(OutboundMessage(
-                                platform=msg.platform,
-                                channel_id=msg.channel_id,
-                                content=hint,
-                                session_key=session_key,
-                                metadata={
-                                    **dict(msg.metadata),
-                                    "_progress": True,
-                                    "_tool_hint": True,
-                                },
-                            ))
-
-                    final_content = accumulated
-                    if response_tool_calls:
-                        # Execute tools and continue loop
-                        messages.append(Message(
-                            "assistant",
-                            response_content or "",
-                            tool_calls=response_tool_calls,
-                        ))
-                        for tc in response_tool_calls:
-                            logger.debug("Tool call: %s(%s)", tc.name, tc.arguments)
-                            raw_result = await self._tools.call(
-                                tc.name, tc.arguments, session_key=session_key
-                            )
-                            if len(raw_result) > self._max_tool_output:
-                                logger.debug(
-                                    "Truncating tool output for %s: %d → %d chars",
-                                    tc.name, len(raw_result), self._max_tool_output,
-                                )
-                                raw_result = raw_result[: self._max_tool_output] + "…[truncated]"
-                            await self._sessions.append(
-                                session_key, "tool", raw_result,
-                                tool_call_id=tc.id,
-                                tool_name=tc.name,
-                            )
-                            messages.append(Message(
-                                "tool", raw_result,
-                                tool_call_id=tc.id,
-                                tool_name=tc.name,
-                            ))
-                        continue  # next iteration
-                    # No tool calls — stream ended with text
-                    if final_content:
-                        stream_end_msg = OutboundMessage(
-                            platform=msg.platform,
-                            channel_id=msg.channel_id,
-                            content=final_content,
-                            session_key=session_key,
-                            metadata={
-                                **dict(msg.metadata),
-                                "stream_chunk": True,
-                                "stream_end": True,
-                            },
-                        )
-                        for mw in self._outbound_mw:
-                            try:
-                                await mw(stream_end_msg)
-                            except Exception:
-                                logger.exception(
-                                    "Outbound middleware %s raised on stream_end",
-                                    type(mw).__name__,
-                                )
-                        await self._bus.dispatch(stream_end_msg)
-                    streamed = True
+                except Exception as exc:
+                    logger.error(
+                        "LLM stream failed on iteration %d: %s", iteration, exc
+                    )
+                    final_content = f"[error] LLM call failed: {exc}"
                     break
 
-                else:
-                    # Fallback: non-streaming chat when tools exist but no stream_with_tools
-                    response: LLMResponse = await self._provider.chat(
-                        messages, tools=tool_schemas
-                    )
-                    if response.content:
-                        final_content = response.content
-                    if not response.has_tool_calls:
-                        break
+                if response_tool_calls:
+                    # Append assistant turn with tool call requests
                     messages.append(Message(
                         "assistant",
-                        response.content or "",
-                        tool_calls=response.tool_calls or None,
+                        accumulated or "",
+                        tool_calls=response_tool_calls,
                     ))
-                    for tc in response.tool_calls:
-                        logger.debug("Tool call: %s(%s)", tc.name, tc.arguments)
-                        raw_result = await self._tools.call(
-                            tc.name, tc.arguments, session_key=session_key
-                        )
-                        if len(raw_result) > self._max_tool_output:
-                            logger.debug(
-                                "Truncating tool output for %s: %d → %d chars",
-                                tc.name, len(raw_result), self._max_tool_output,
-                            )
-                            raw_result = raw_result[: self._max_tool_output] + "…[truncated]"
-                        await self._sessions.append(
-                            session_key, "tool", raw_result,
-                            tool_call_id=tc.id,
-                            tool_name=tc.name,
-                        )
-                        messages.append(Message(
-                            "tool", raw_result,
-                            tool_call_id=tc.id,
-                            tool_name=tc.name,
-                        ))
-                    continue
-            except Exception as exc:
-                logger.error("LLM call failed on iteration %d: %s", iteration, exc)
-                final_content = f"[error] LLM call failed: {exc}"
+                    # Execute tools — per-tool isolation inside (Rec 1 + Rec 3)
+                    await self._execute_tool_calls(
+                        response_tool_calls, messages, session_key
+                    )
+                    continue  # next iteration with tool results in context
+
+                # No tool calls — LLM produced its final answer
+                final_content = accumulated
                 break
 
-        else:
-            logger.warning(
-                "Session %s hit max_iterations=%d; returning partial reply",
-                session_key, self._max_iterations,
-            )
-            if not final_content:
-                final_content = "[max iterations reached — partial response]"
+            else:
+                logger.warning(
+                    "Session %s hit max_iterations=%d; returning partial reply",
+                    session_key, self._max_iterations,
+                )
+                if not final_content:
+                    final_content = "[max iterations reached — partial response]"
 
-        # Save assistant turn
-        if final_content:
-            await self._sessions.append(session_key, "assistant", final_content)
+        finally:
+            # Clean up abort event regardless of how the loop exited (Rec 7)
+            self._abort_events.pop(session_key, None)
 
         logger.info(
             "Session %s → %s:%s (%d chars)",
             session_key, msg.platform, msg.channel_id, len(final_content),
         )
 
-        # Streaming already dispatched everything — caller does nothing
-        if streamed:
-            return None
-
-        # Non-streaming — return outbound for middleware chain + dispatch
-        return OutboundMessage(
-            platform=msg.platform,
-            channel_id=msg.channel_id,
-            content=final_content,
-            session_key=session_key,
-            metadata=dict(msg.metadata),
-        )
+        return final_content

@@ -54,6 +54,16 @@ CREATE TABLE IF NOT EXISTS session_metadata (
     session_key TEXT PRIMARY KEY,
     hidden_at   TEXT          -- NULL = visible; ISO timestamp = soft-deleted
 );
+
+CREATE TABLE IF NOT EXISTS whitelist (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    platform    TEXT NOT NULL,
+    channel_id  TEXT NOT NULL,
+    label       TEXT NOT NULL DEFAULT '',
+    added_by    TEXT NOT NULL DEFAULT '',
+    added_at    TEXT NOT NULL,
+    UNIQUE(platform, channel_id)
+);
 """
 
 
@@ -413,6 +423,64 @@ class SqliteSessionBackend:
             (pin, user_key, expires_at),
         )
         await self._db.commit()
+
+    # ------------------------------------------------------------------
+    # Whitelist
+    # ------------------------------------------------------------------
+
+    async def get_whitelist(self) -> list[dict]:
+        """Return all whitelist entries."""
+        assert self._db, "backend not started"
+        async with self._db.execute(
+            "SELECT platform, channel_id, label, added_by, added_at FROM whitelist ORDER BY added_at DESC"
+        ) as cur:
+            rows = await cur.fetchall()
+        return [
+            {
+                "platform": r["platform"],
+                "channel_id": r["channel_id"],
+                "label": r["label"],
+                "added_by": r["added_by"],
+                "added_at": r["added_at"],
+            }
+            for r in rows
+        ]
+
+    async def add_to_whitelist(
+        self, platform: str, channel_id: str, *, label: str = "", added_by: str = ""
+    ) -> None:
+        """Insert or replace an entry."""
+        assert self._db, "backend not started"
+        now = datetime.now().isoformat()
+        await self._db.execute(
+            "INSERT INTO whitelist (platform, channel_id, label, added_by, added_at)"
+            " VALUES (?, ?, ?, ?, ?)"
+            " ON CONFLICT(platform, channel_id) DO UPDATE SET"
+            "   label = excluded.label,"
+            "   added_by = excluded.added_by,"
+            "   added_at = excluded.added_at",
+            (platform, channel_id, label, added_by, now),
+        )
+        await self._db.commit()
+
+    async def remove_from_whitelist(self, platform: str, channel_id: str) -> None:
+        """Delete an entry."""
+        assert self._db, "backend not started"
+        await self._db.execute(
+            "DELETE FROM whitelist WHERE platform = ? AND channel_id = ?",
+            (platform, channel_id),
+        )
+        await self._db.commit()
+
+    async def is_whitelisted(self, platform: str, channel_id: str) -> bool:
+        """Check if (platform, channel_id) is in the whitelist."""
+        assert self._db, "backend not started"
+        async with self._db.execute(
+            "SELECT 1 FROM whitelist WHERE platform = ? AND channel_id = ?",
+            (platform, channel_id),
+        ) as cur:
+            row = await cur.fetchone()
+        return row is not None
 
     async def redeem_link_pin(self, redeemer_key: str, pin: str) -> str | None:
         """Validate pin, merge the two sessions, return winning key.

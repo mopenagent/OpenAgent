@@ -30,8 +30,11 @@ from __future__ import annotations
 from typing import Literal, Protocol, Union
 
 from openagent.bus.events import InboundMessage, OutboundMessage
+from openagent.agent.middlewares.whitelist import WhitelistMiddleware
 
 AnyMessage = Union[InboundMessage, OutboundMessage]
+
+__all__ = ["AgentMiddleware", "WhitelistMiddleware"]
 
 
 class AgentMiddleware(Protocol):

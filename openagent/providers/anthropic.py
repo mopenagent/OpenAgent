@@ -7,7 +7,7 @@ from typing import Any, AsyncIterator
 
 import httpx
 
-from .base import LLMResponse, Message, ToolCall
+from .base import LLMResponse, Message, StreamEvent, ToolCall
 from .config import ProviderConfig
 
 _ANTHROPIC_BASE = "https://api.anthropic.com"
@@ -150,3 +150,23 @@ class AnthropicProvider:
                 ))
 
         return LLMResponse(content=content, tool_calls=tool_calls)
+
+    async def stream_with_tools(
+        self,
+        messages: list[Message],
+        *,
+        tools: list[dict[str, Any]] | None = None,
+        **kwargs,
+    ) -> AsyncIterator[StreamEvent]:
+        """Uniform streaming interface — wraps chat() for Anthropic.
+
+        Anthropic's SSE format for tool_use is complex (separate content block
+        events per tool); we fall back to a single non-streaming chat() call
+        and wrap the result as StreamEvents.  The agent loop is identical
+        regardless of whether real token-by-token streaming occurs here.
+        """
+        response = await self.chat(messages, tools=tools, **kwargs)
+        if response.content:
+            yield StreamEvent(content=response.content)
+        if response.tool_calls:
+            yield StreamEvent(tool_calls=response.tool_calls, finish_reason="tool_calls")

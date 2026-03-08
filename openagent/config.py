@@ -118,6 +118,15 @@ class ToolsConfig(BaseModel):
 
 
 # ---------------------------------------------------------------------------
+# Whitelist
+# ---------------------------------------------------------------------------
+
+
+class WhitelistConfig(BaseModel):
+    enabled: bool = False
+
+
+# ---------------------------------------------------------------------------
 # STT
 # ---------------------------------------------------------------------------
 
@@ -155,6 +164,7 @@ class OpenAgentConfig(BaseModel):
     tools: ToolsConfig = Field(default_factory=ToolsConfig)
     stt: STTConfig = Field(default_factory=STTConfig)
     tts: TTSConfig = Field(default_factory=TTSConfig)
+    whitelist: WhitelistConfig = Field(default_factory=WhitelistConfig)
 
     @field_validator("tools", mode="before")
     @classmethod

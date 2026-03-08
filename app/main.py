@@ -17,6 +17,7 @@ from openagent.agent.skill_tools import make_skill_tools
 from openagent.agent.loop import AgentLoop
 from openagent.agent.middlewares.stt import STTMiddleware
 from openagent.agent.middlewares.tts import TTSMiddleware
+from openagent.agent.middlewares.whitelist import WhitelistMiddleware
 from openagent.agent.tools import ToolRegistry
 from openagent.bus.bus import MessageBus
 from openagent.platforms.manager import PlatformManager
@@ -203,6 +204,21 @@ async def lifespan(app: FastAPI):
         ext = get_extension("tts")
         return await ext.speak(text=text) if ext else ""
 
+    # Whitelist middleware — only active when whitelist.enabled = true in config
+    _middlewares = []
+    if cfg.whitelist.enabled:
+        whitelist_mw = WhitelistMiddleware(backend=session_backend)
+        await whitelist_mw.start()
+        app.state.whitelist_middleware = whitelist_mw
+        _middlewares.append(whitelist_mw)
+    else:
+        app.state.whitelist_middleware = None
+
+    _middlewares += [
+        STTMiddleware(stt_fn=_stt_fn),
+        TTSMiddleware(tts_fn=_tts_fn),
+    ]
+
     agent_loop = AgentLoop(
         bus=bus,
         provider=app.state.active_provider,
@@ -211,10 +227,7 @@ async def lifespan(app: FastAPI):
         system_prompt=cfg.default_agent.system_prompt,
         max_iterations=cfg.default_agent.max_iterations,
         max_tool_output=cfg.default_agent.max_tool_output,
-        middlewares=[
-            STTMiddleware(stt_fn=_stt_fn),
-            TTSMiddleware(tts_fn=_tts_fn),
-        ],
+        middlewares=_middlewares,
     )
     app.state.agent_loop = agent_loop
     await agent_loop.start()

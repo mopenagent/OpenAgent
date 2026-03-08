@@ -1,4 +1,4 @@
-"""Settings route — GET /settings (Provider + Connector tabs)."""
+"""Settings route — GET /settings (Provider + Connector + Whitelist tabs)."""
 
 from __future__ import annotations
 
@@ -44,6 +44,15 @@ def _settings_store(request: Request):
 
 def _service_manager(request: Request):
     return getattr(request.app.state, "service_manager", None)
+
+
+def _session_backend(request: Request):
+    mgr = getattr(request.app.state, "session_manager", None)
+    return mgr._backend if mgr and hasattr(mgr, "_backend") else None
+
+
+def _whitelist_middleware(request: Request):
+    return getattr(request.app.state, "whitelist_middleware", None)
 
 
 @router.get("/api/settings/connectors")
@@ -172,3 +181,73 @@ async def whatsapp_qr(request: Request):
             "status": "error",
             "message": f"QR generation failed: {e}",
         }
+
+
+# ---------------------------------------------------------------------------
+# Whitelist API
+# ---------------------------------------------------------------------------
+
+
+@router.get("/api/settings/whitelist")
+async def list_whitelist(request: Request):
+    """Return all whitelist entries."""
+    backend = _session_backend(request)
+    if not backend:
+        return {"entries": []}
+    entries = await backend.get_whitelist()
+    return {"entries": entries}
+
+
+@router.post("/api/settings/whitelist")
+async def add_whitelist_entry(request: Request):
+    """Add a new whitelist entry."""
+    body = await request.json()
+    platform = body.get("platform", "").strip()
+    channel_id = body.get("channel_id", "").strip()
+    label = body.get("label", "").strip()
+    added_by = body.get("added_by", "").strip()
+
+    if not platform or not channel_id:
+        return {"ok": False, "error": "platform and channel_id are required"}
+
+    backend = _session_backend(request)
+    if not backend:
+        return {"ok": False, "error": "session backend not available"}
+
+    await backend.add_to_whitelist(
+        platform, channel_id, label=label, added_by=added_by
+    )
+
+    # Refresh in-memory cache if middleware is running
+    mw = _whitelist_middleware(request)
+    if mw:
+        await mw.refresh()
+
+    return {"ok": True}
+
+
+@router.delete("/api/settings/whitelist/{platform}/{channel_id:path}")
+async def remove_whitelist_entry(request: Request, platform: str, channel_id: str):
+    """Remove a whitelist entry."""
+    backend = _session_backend(request)
+    if not backend:
+        return {"ok": False, "error": "session backend not available"}
+
+    await backend.remove_from_whitelist(platform, channel_id)
+
+    # Refresh in-memory cache if middleware is running
+    mw = _whitelist_middleware(request)
+    if mw:
+        await mw.refresh()
+
+    return {"ok": True}
+
+
+@router.post("/api/settings/whitelist/refresh")
+async def refresh_whitelist(request: Request):
+    """Reload whitelist middleware cache from DB."""
+    mw = _whitelist_middleware(request)
+    if not mw:
+        return {"ok": False, "error": "whitelist middleware not running"}
+    await mw.refresh()
+    return {"ok": True}

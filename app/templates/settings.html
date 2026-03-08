@@ -17,6 +17,11 @@
             class="px-4 py-2 text-sm font-medium -mb-px transition-colors">
       Provider
     </button>
+    <button @click="tab = 'whitelist'; loadWhitelist()"
+            :class="tab === 'whitelist' ? 'border-b-2 border-saffron text-saffron' : 'text-mutedCharcoal dark:text-steelMist hover:text-stone-900 dark:hover:text-stone-100'"
+            class="px-4 py-2 text-sm font-medium -mb-px transition-colors">
+      Whitelist
+    </button>
   </div>
 
   <!-- ── Provider tab ─────────────────────────────────────── -->
@@ -193,6 +198,98 @@
 
   </div>
 
+  <!-- ── Whitelist tab ──────────────────────────────────────── -->
+  <div x-show="tab === 'whitelist'" x-cloak class="space-y-4">
+    <div class="bg-white dark:bg-charcoalLayer border border-[#DEE2E6] dark:border-[#21262D] rounded-xl p-6 space-y-5">
+      <p class="text-xs text-mutedCharcoal dark:text-steelMist">
+        When the whitelist is enabled in config, only these platform/channel pairs can send messages to the agent.
+        Entries take effect immediately — no restart required.
+      </p>
+
+      <!-- Add entry form -->
+      <div class="grid grid-cols-1 sm:grid-cols-4 gap-3 items-end">
+        <div class="space-y-1">
+          <label class="block text-xs font-medium text-mutedCharcoal dark:text-steelMist uppercase tracking-wide">Platform</label>
+          <select x-model="wl.newPlatform"
+                  class="w-full px-3 py-2 text-sm rounded-lg border border-[#DEE2E6] dark:border-[#21262D]
+                         bg-white dark:bg-deepSpaceBlue text-stone-900 dark:text-stone-100
+                         focus:outline-none focus:ring-2 focus:ring-saffron/40">
+            <option value="whatsapp">whatsapp</option>
+            <option value="telegram">telegram</option>
+            <option value="discord">discord</option>
+            <option value="slack">slack</option>
+          </select>
+        </div>
+        <div class="space-y-1">
+          <label class="block text-xs font-medium text-mutedCharcoal dark:text-steelMist uppercase tracking-wide">Channel / Number</label>
+          <input x-model="wl.newChannelId" type="text" placeholder="+1234567890 or channel ID"
+                 class="w-full px-3 py-2 text-sm rounded-lg border border-[#DEE2E6] dark:border-[#21262D]
+                        bg-white dark:bg-deepSpaceBlue text-stone-900 dark:text-stone-100
+                        focus:outline-none focus:ring-2 focus:ring-saffron/40"/>
+        </div>
+        <div class="space-y-1">
+          <label class="block text-xs font-medium text-mutedCharcoal dark:text-steelMist uppercase tracking-wide">Label</label>
+          <input x-model="wl.newLabel" type="text" placeholder="e.g. Alice"
+                 class="w-full px-3 py-2 text-sm rounded-lg border border-[#DEE2E6] dark:border-[#21262D]
+                        bg-white dark:bg-deepSpaceBlue text-stone-900 dark:text-stone-100
+                        focus:outline-none focus:ring-2 focus:ring-saffron/40"/>
+        </div>
+        <div>
+          <button @click="addWhitelistEntry()"
+                  :disabled="wl.adding"
+                  class="w-full px-4 py-2 text-sm font-medium rounded-lg bg-saffron text-white
+                         hover:bg-saffron/80 disabled:opacity-50 transition-colors">
+            <span x-text="wl.adding ? 'Adding…' : 'Add'"></span>
+          </button>
+        </div>
+      </div>
+      <p x-show="wl.addMsg" x-text="wl.addMsg"
+         :class="wl.addOk ? 'text-green-500' : 'text-red-500'"
+         class="text-xs font-medium"></p>
+
+      <!-- Entries table -->
+      <div class="overflow-x-auto rounded-lg border border-[#DEE2E6] dark:border-[#21262D]">
+        <table class="w-full text-sm">
+          <thead class="bg-stone-50 dark:bg-deepSpaceBlue text-xs text-mutedCharcoal dark:text-steelMist uppercase tracking-wide">
+            <tr>
+              <th class="px-4 py-2 text-left">Platform</th>
+              <th class="px-4 py-2 text-left">Channel / Number</th>
+              <th class="px-4 py-2 text-left">Label</th>
+              <th class="px-4 py-2 text-left">Added By</th>
+              <th class="px-4 py-2 text-left">Added At</th>
+              <th class="px-4 py-2 text-left">Action</th>
+            </tr>
+          </thead>
+          <tbody>
+            <template x-if="wl.entries.length === 0">
+              <tr>
+                <td colspan="6" class="px-4 py-6 text-center text-xs text-mutedCharcoal dark:text-steelMist">
+                  No whitelist entries. Add one above.
+                </td>
+              </tr>
+            </template>
+            <template x-for="e in wl.entries" :key="e.platform + ':' + e.channel_id">
+              <tr class="border-t border-[#DEE2E6] dark:border-[#21262D] hover:bg-stone-50 dark:hover:bg-stone-800/30">
+                <td class="px-4 py-2 capitalize text-stone-900 dark:text-stone-100" x-text="e.platform"></td>
+                <td class="px-4 py-2 font-mono text-stone-700 dark:text-stone-300" x-text="e.channel_id"></td>
+                <td class="px-4 py-2 text-stone-700 dark:text-stone-300" x-text="e.label || '—'"></td>
+                <td class="px-4 py-2 text-stone-700 dark:text-stone-300" x-text="e.added_by || '—'"></td>
+                <td class="px-4 py-2 text-xs text-mutedCharcoal dark:text-steelMist" x-text="e.added_at ? e.added_at.slice(0, 16).replace('T', ' ') : '—'"></td>
+                <td class="px-4 py-2">
+                  <button @click="removeWhitelistEntry(e.platform, e.channel_id)"
+                          class="px-2 py-1 text-xs font-medium rounded border border-red-300 dark:border-red-700
+                                 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/30 transition-colors">
+                    Remove
+                  </button>
+                </td>
+              </tr>
+            </template>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
 </div><!-- /settingsApp -->
 
 <script>
@@ -211,6 +308,16 @@ function settingsApp() {
     waQR: { qr: null, connected: false, status: '', message: '' },
     waQRCardOpen: false,
     _waQRPoll: null,
+
+    wl: {
+      entries: [],
+      newPlatform: 'whatsapp',
+      newChannelId: '',
+      newLabel: '',
+      adding: false,
+      addMsg: '',
+      addOk: true,
+    },
 
     async init() {
       const r = await fetch('/api/config/provider')
@@ -328,6 +435,69 @@ function settingsApp() {
       }
       this.saving = false
       setTimeout(() => this.providerMsg = '', 3000)
+    },
+
+    async loadWhitelist() {
+      try {
+        const r = await fetch('/api/settings/whitelist')
+        const d = await r.json()
+        this.wl.entries = d.entries || []
+      } catch (e) {
+        this.wl.entries = []
+      }
+    },
+
+    async addWhitelistEntry() {
+      if (!this.wl.newChannelId.trim()) {
+        this.wl.addOk = false
+        this.wl.addMsg = 'Channel / Number is required'
+        setTimeout(() => this.wl.addMsg = '', 3000)
+        return
+      }
+      this.wl.adding = true
+      this.wl.addMsg = ''
+      try {
+        const r = await fetch('/api/settings/whitelist', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            platform: this.wl.newPlatform,
+            channel_id: this.wl.newChannelId.trim(),
+            label: this.wl.newLabel.trim(),
+            added_by: '',
+          })
+        })
+        const d = await r.json()
+        if (d.ok) {
+          this.wl.addOk = true
+          this.wl.addMsg = 'Added'
+          this.wl.newChannelId = ''
+          this.wl.newLabel = ''
+          await this.loadWhitelist()
+        } else {
+          this.wl.addOk = false
+          this.wl.addMsg = d.error || 'Error adding entry'
+        }
+      } catch (e) {
+        this.wl.addOk = false
+        this.wl.addMsg = 'Network error'
+      }
+      this.wl.adding = false
+      setTimeout(() => this.wl.addMsg = '', 3000)
+    },
+
+    async removeWhitelistEntry(platform, channelId) {
+      try {
+        const r = await fetch(`/api/settings/whitelist/${encodeURIComponent(platform)}/${encodeURIComponent(channelId)}`, {
+          method: 'DELETE'
+        })
+        const d = await r.json()
+        if (d.ok) {
+          await this.loadWhitelist()
+        }
+      } catch (e) {
+        // silent — table will refresh on next loadWhitelist call
+      }
     },
   }
 }

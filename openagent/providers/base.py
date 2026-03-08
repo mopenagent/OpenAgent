@@ -79,3 +79,19 @@ class Provider(Protocol):
         When ``tools`` is None or empty the model will not use tools.
         """
         ...
+
+    async def stream_with_tools(
+        self,
+        messages: list[Message],
+        *,
+        tools: list[dict[str, Any]] | None = None,
+        **kwargs,
+    ) -> AsyncIterator[StreamEvent]:
+        """Stream a chat request, yielding content deltas and final tool_calls.
+
+        Implementations that genuinely cannot stream may fall back to wrapping
+        ``chat()`` — yielding one ``StreamEvent(content=...)`` then optionally
+        one ``StreamEvent(tool_calls=...)``.  The agent loop treats the
+        interface uniformly regardless of whether real streaming occurs.
+        """
+        ...

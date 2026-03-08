@@ -97,20 +97,25 @@ class OpenAICompatProvider:
     async def stream_with_tools(
         self,
         messages: list[Message],
-        tools: list[dict[str, Any]],
+        *,
+        tools: list[dict[str, Any]] | None = None,
         **kwargs,
     ) -> AsyncIterator[StreamEvent]:
         """Stream with tool support. Yields content deltas for UI; buffers tool_calls.
 
         - delta.content → StreamEvent(content=...) — stream to UI immediately
         - delta.tool_calls → buffer by index; on stream end yield tool_calls
+
+        When ``tools`` is None or empty the request is sent without tool
+        schemas and no tool buffering is performed.
         """
         payload = {
             **self._base_payload(messages),
             "stream": True,
-            "tools": tools,
-            "tool_choice": "auto",
         }
+        if tools:
+            payload["tools"] = tools
+            payload["tool_choice"] = "auto"
         payload.update(kwargs)
 
         # Buffers for incremental tool_call parsing (index → partial data)

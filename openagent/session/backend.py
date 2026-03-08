@@ -158,3 +158,25 @@ class SessionBackend(Protocol):
         Returns None if the pin is invalid, expired, or already used.
         """
         ...
+
+    # ------------------------------------------------------------------
+    # Whitelist
+    # ------------------------------------------------------------------
+
+    async def get_whitelist(self) -> list[dict]:
+        """Return all whitelist entries."""
+        ...
+
+    async def add_to_whitelist(
+        self, platform: str, channel_id: str, *, label: str = "", added_by: str = ""
+    ) -> None:
+        """Insert or replace an entry."""
+        ...
+
+    async def remove_from_whitelist(self, platform: str, channel_id: str) -> None:
+        """Delete an entry."""
+        ...
+
+    async def is_whitelisted(self, platform: str, channel_id: str) -> bool:
+        """Check if (platform, channel_id) is in the whitelist."""
+        ...
