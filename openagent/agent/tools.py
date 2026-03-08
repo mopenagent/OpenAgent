@@ -150,6 +150,34 @@ class ToolRegistry:
     def has_tools(self) -> bool:
         return bool(self._service_schemas) or bool(self._native_schemas)
 
+    def has_service_tools(self) -> bool:
+        """True when at least one Go/Rust service tool is registered."""
+        return bool(self._service_schemas)
+
+    def search(self, query: str) -> list[dict[str, Any]]:
+        """Return schemas whose name or description match query (case-insensitive).
+
+        When query is empty or ``"*"``, all tools except ``search_tools`` itself
+        are returned — useful for the LLM to browse the full catalog.
+        """
+        q = query.lower().strip()
+        results: list[dict[str, Any]] = []
+
+        def _matches(schema: dict[str, Any]) -> bool:
+            fn = schema.get("function", {})
+            name = fn.get("name", "").lower()
+            if name == "search_tools":  # never return search_tools in its own results
+                return False
+            if not q or q == "*":
+                return True
+            desc = fn.get("description", "").lower()
+            return any(w in name or w in desc for w in q.split())
+
+        for schemas in self._service_schemas.values():
+            results.extend(s for s in schemas if _matches(s))
+        results.extend(s for s in self._native_schemas if _matches(s))
+        return results
+
     # ------------------------------------------------------------------
     # Dispatch
     # ------------------------------------------------------------------

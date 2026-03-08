@@ -52,6 +52,7 @@ TEMPLATES_DIR = Path(__file__).resolve().parent / "templates"
 
 LOG_BUFFER: deque[str] = deque(maxlen=500)
 LOG_CLIENTS: set[asyncio.Queue[str]] = set()
+LOG_CLIENTS_MAX = 50
 
 
 class _SSELogHandler(logging.Handler):
@@ -86,6 +87,7 @@ async def lifespan(app: FastAPI):
 
     app.state.log_buffer = LOG_BUFFER
     app.state.log_clients = LOG_CLIENTS
+    app.state.log_clients_max = LOG_CLIENTS_MAX
     app.state.root = ROOT
 
     # Load extensions (discord, tts, stt, etc.)

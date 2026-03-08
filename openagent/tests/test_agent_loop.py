@@ -258,19 +258,28 @@ async def test_agent_loop_tool_call_dispatched(
     bus: MessageBus,
     session_mgr: SessionManager,
 ) -> None:
-    """LLM emits a tool_call → tool executes → LLM gets result → final answer."""
-    tc = ToolCall(id="c1", name="add", arguments={"a": 1, "b": 2})
+    """LLM calls search_tools → discovers 'add' → calls add → final answer."""
+    search_tc = ToolCall(id="s1", name="search_tools", arguments={"query": "add"})
+    add_tc = ToolCall(id="c1", name="add", arguments={"a": 1, "b": 2})
     provider = _FakeProvider([
-        LLMResponse(content="", tool_calls=[tc]),  # first: tool call
-        LLMResponse(content="The answer is 3"),    # second: final
+        LLMResponse(content="", tool_calls=[search_tc]),  # iter 0: discover
+        LLMResponse(content="", tool_calls=[add_tc]),     # iter 1: call add
+        LLMResponse(content="The answer is 3"),            # iter 2: final
     ])
 
-    # Registry mock that returns "3" for "add"
+    # Registry with "add" in service_schemas so search_tools can find it
     mgr_mock = MagicMock()
     mgr_mock.list_services.return_value = []
     registry = ToolRegistry(mgr_mock)
     registry._tool_to_service["add"] = "calc_service"
-    registry._schemas = [{"type": "function", "function": {"name": "add", "description": "add two numbers", "parameters": {"type": "object", "properties": {}}}}]
+    registry._service_schemas["calc_service"] = [{
+        "type": "function",
+        "function": {
+            "name": "add",
+            "description": "add two numbers",
+            "parameters": {"type": "object", "properties": {}},
+        },
+    }]
 
     client_mock = AsyncMock()
     result_frame = proto.ToolResultResponse(id="r1", type="tool.result", result="3")
@@ -286,7 +295,7 @@ async def test_agent_loop_tool_call_dispatched(
     out = bus.outbound.get_nowait()
     assert "3" in out.content
 
-    # Tool result should be in session history
+    # Tool results should be in session history
     history = await session_mgr.get_history("telegram:1")
     roles = [t.role for t in history]
     assert "tool" in roles
@@ -299,11 +308,13 @@ async def test_agent_loop_tool_output_truncated(
     bus: MessageBus,
     session_mgr: SessionManager,
 ) -> None:
-    """Tool output longer than MAX_TOOL_OUTPUT is truncated."""
+    """Tool output longer than MAX_TOOL_OUTPUT is truncated by _process_tool_output."""
     long_result = "x" * (MAX_TOOL_OUTPUT + 100)
-    tc = ToolCall(id="c1", name="big_tool", arguments={})
+    search_tc = ToolCall(id="s1", name="search_tools", arguments={"query": "big_tool"})
+    big_tc = ToolCall(id="c1", name="big_tool", arguments={})
     provider = _FakeProvider([
-        LLMResponse(content="", tool_calls=[tc]),
+        LLMResponse(content="", tool_calls=[search_tc]),
+        LLMResponse(content="", tool_calls=[big_tc]),
         LLMResponse(content="done"),
     ])
 
@@ -311,7 +322,14 @@ async def test_agent_loop_tool_output_truncated(
     mgr_mock.list_services.return_value = []
     registry = ToolRegistry(mgr_mock)
     registry._tool_to_service["big_tool"] = "svc"
-    registry._schemas = [{"type": "function", "function": {"name": "big_tool", "description": "big tool", "parameters": {"type": "object", "properties": {}}}}]
+    registry._service_schemas["svc"] = [{
+        "type": "function",
+        "function": {
+            "name": "big_tool",
+            "description": "big tool",
+            "parameters": {"type": "object", "properties": {}},
+        },
+    }]
 
     result_frame = proto.ToolResultResponse(id="r1", type="tool.result", result=long_result)
     client_mock = AsyncMock()
@@ -325,10 +343,12 @@ async def test_agent_loop_tool_output_truncated(
     await asyncio.sleep(0.2)
 
     history = await session_mgr.get_history("telegram:1")
-    tool_turns = [t for t in history if t.role == "tool"]
-    assert tool_turns
-    assert len(tool_turns[0].content) <= MAX_TOOL_OUTPUT + 20  # +20 for "…[truncated]"
-    assert "truncated" in tool_turns[0].content
+    # search_tools + big_tool are both tool turns; find the truncated one
+    truncated_turns = [
+        t for t in history if t.role == "tool" and "truncated" in t.content
+    ]
+    assert truncated_turns
+    assert len(truncated_turns[0].content) <= MAX_TOOL_OUTPUT + 20  # +20 for "…[truncated]"
 
     await loop.stop()
 

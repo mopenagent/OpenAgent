@@ -56,3 +56,4 @@ If you previously used `data/whatsapp/whatsapp.db`, copy it:
 | "QR timed out" | QR codes expire. Click Scan QR code again for a fresh one. |
 | No QR shown | Ensure the service is running (Services page). Enable WhatsApp in Connector. |
 | "invalid chat_id" | Use full JID: `15551234567@s.whatsapp.net` |
+| Messages not landing | **Whitelist:** If `whitelist.enabled: true` in config, add your number in Settings > Connector > Whitelist. Use `+916356737267` or `916356737267@s.whatsapp.net` — both are normalized. Empty whitelist blocks all. |

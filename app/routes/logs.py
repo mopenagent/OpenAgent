@@ -24,8 +24,14 @@ async def logs_page(request: Request):
 @router.get("/stream/logs")
 async def stream_logs(request: Request):
     """SSE endpoint — streams log records to the browser."""
-    queue: asyncio.Queue[str] = asyncio.Queue(maxsize=200)
     clients: set = request.app.state.log_clients
+    if len(clients) >= getattr(request.app.state, "log_clients_max", 50):
+        from fastapi.responses import JSONResponse
+        return JSONResponse(
+            status_code=503,
+            content={"error": "Too many log stream clients; try again later"},
+        )
+    queue: asyncio.Queue[str] = asyncio.Queue(maxsize=200)
     buffer = request.app.state.log_buffer
     clients.add(queue)
 

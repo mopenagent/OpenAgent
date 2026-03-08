@@ -46,7 +46,9 @@ exits cleanly between tool rounds.
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
+import re
 from typing import Any
 
 from openagent.bus.bus import MessageBus
@@ -110,6 +112,54 @@ class AgentLoop:
         # Abort signals — one Event per active session_key
         self._abort_events: dict[str, asyncio.Event] = {}
 
+        # Register search_tools as a native meta-tool so the LLM can discover
+        # available tools progressively rather than receiving the full catalog.
+        self._search_tools_schema: dict[str, Any] = {
+            "type": "function",
+            "function": {
+                "name": "search_tools",
+                "description": (
+                    "Discover available tools by keyword. "
+                    "Call this first to find the right tool for your task. "
+                    "Use an empty string to list all tools."
+                ),
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "query": {
+                            "type": "string",
+                            "description": "Keyword(s) to match tool names/descriptions. Use '' for all.",
+                        }
+                    },
+                    "required": ["query"],
+                },
+            },
+        }
+
+        async def _search_tools_handler(_session_key: str, args: dict[str, Any]) -> str:
+            query = args.get("query", "")
+            found = self._tools.search(query)
+            return json.dumps(found) if found else "[]"
+
+        self._tools.register_native(
+            name="search_tools",
+            description=(
+                "Discover available tools by keyword. "
+                "Call this first to find the right tool for your task."
+            ),
+            params_schema={
+                "type": "object",
+                "properties": {
+                    "query": {
+                        "type": "string",
+                        "description": "Keyword(s) to match tool names/descriptions. Use '' for all.",
+                    }
+                },
+                "required": ["query"],
+            },
+            fn=_search_tools_handler,
+        )
+
     # ------------------------------------------------------------------
     # Lifecycle
     # ------------------------------------------------------------------
@@ -158,21 +208,58 @@ class AgentLoop:
 
     async def _session_worker(self, session_key: str) -> None:
         """Drain the per-session queue; process each message sequentially."""
-        q = self._bus.session_queue(session_key)
-        while self._running:
-            msg = await q.get()
-            if msg is None:  # shutdown sentinel
-                break
-            try:
-                outbound = await self._process(msg)
-                if outbound is not None:
-                    await self._bus.dispatch(outbound)
-            except asyncio.CancelledError:
-                raise
-            except Exception:
-                logger.exception(
-                    "Unhandled error processing message from session %s", session_key
-                )
+        try:
+            q = self._bus.session_queue(session_key)
+            while self._running:
+                msg = await q.get()
+                if msg is None:  # shutdown sentinel
+                    break
+                try:
+                    outbound = await self._process(msg)
+                    if outbound is not None:
+                        await self._bus.dispatch(outbound)
+                except asyncio.CancelledError:
+                    raise
+                except Exception:
+                    logger.exception(
+                        "Unhandled error processing message from session %s", session_key
+                    )
+        finally:
+            self._abort_events.pop(session_key, None)
+
+    # ------------------------------------------------------------------
+    # Deterministic Middle — clean tool output before LLM sees it
+    # ------------------------------------------------------------------
+
+    def _process_tool_output(self, raw: str, tool_name: str) -> str:
+        """Normalise raw tool output: JSON pretty-print → strip ANSI → collapse
+        whitespace → truncate.  Applied to every tool result before it enters
+        the message history (the "Deterministic Middle" pattern).
+        """
+        # 1. Pretty-print if valid JSON
+        try:
+            parsed = json.loads(raw)
+            raw = json.dumps(parsed, indent=2, ensure_ascii=False)
+        except (ValueError, TypeError):
+            pass
+
+        # 2. Strip ANSI escape codes
+        raw = re.sub(r"\x1b\[[0-9;]*[mGKHF]", "", raw)
+
+        # 3. Normalise whitespace — collapse tabs/spaces; collapse 3+ blank lines
+        raw = re.sub(r"[ \t]+", " ", raw)
+        raw = re.sub(r"\n{3,}", "\n\n", raw)
+        raw = raw.strip()
+
+        # 4. Truncate — keep context window bounded on low-RAM hardware
+        if len(raw) > self._max_tool_output:
+            logger.debug(
+                "Truncating tool output for %s: %d → %d chars",
+                tool_name, len(raw), self._max_tool_output,
+            )
+            raw = raw[: self._max_tool_output] + "…[truncated]"
+
+        return raw
 
     # ------------------------------------------------------------------
     # Tool execution helper (Rec 1 + Rec 3: extract + per-tool isolation)
@@ -183,13 +270,17 @@ class AgentLoop:
         tool_calls: list[ToolCall],
         messages: list[Message],
         session_key: str,
-    ) -> None:
+    ) -> dict[str, str]:
         """Execute tool calls, append results to messages and session.
+
+        Returns a mapping of tool-name → processed-result so the caller can
+        inspect results (e.g. to expand active_schemas from search_tools).
 
         Each tool call is isolated: an exception from one tool injects an
         error string into the message history so the LLM can self-correct
         rather than crashing the entire loop iteration.
         """
+        results: dict[str, str] = {}
         for tc in tool_calls:
             logger.debug("Tool call: %s(%s)", tc.name, tc.arguments)
             try:
@@ -200,22 +291,19 @@ class AgentLoop:
                 # Per-tool error isolation — inject error, LLM can self-correct
                 raw_result = f"[tool error] {tc.name}: {exc}"
                 logger.warning("Tool %s raised: %s", tc.name, exc)
-            if len(raw_result) > self._max_tool_output:
-                logger.debug(
-                    "Truncating tool output for %s: %d → %d chars",
-                    tc.name, len(raw_result), self._max_tool_output,
-                )
-                raw_result = raw_result[: self._max_tool_output] + "…[truncated]"
+            processed = self._process_tool_output(raw_result, tc.name)
+            results[tc.name] = processed
             await self._sessions.append(
-                session_key, "tool", raw_result,
+                session_key, "tool", processed,
                 tool_call_id=tc.id,
                 tool_name=tc.name,
             )
             messages.append(Message(
-                "tool", raw_result,
+                "tool", processed,
                 tool_call_id=tc.id,
                 tool_name=tc.name,
             ))
+        return results
 
     # ------------------------------------------------------------------
     # Middleware chains + core ReAct
@@ -292,11 +380,31 @@ class AgentLoop:
             *self._sessions.to_messages(history),
         ]
 
-        tool_schemas = self._tools.schemas() if self._tools.has_tools() else None
+        # Per-turn ephemeral tool set — starts with only search_tools when service
+        # tools exist so the LLM discovers them via search_tools().  Discarded
+        # when this coroutine returns (never bleeds across turns).
+        if self._tools.has_service_tools():
+            active_schemas: list[dict[str, Any]] | None = [self._search_tools_schema]
+        elif self._tools.has_tools():
+            active_schemas = self._tools.schemas()
+        else:
+            active_schemas = None
+
         final_content = ""
+        iteration = 0
 
         try:
-            for iteration in range(self._max_iterations):
+            while True:
+                # Hard backstop — limit as last resort, not primary exit
+                if iteration >= self._max_iterations:
+                    logger.warning(
+                        "Session %s hit max_iterations=%d; returning partial reply",
+                        session_key, self._max_iterations,
+                    )
+                    if not final_content:
+                        final_content = "[max iterations reached — partial response]"
+                    break
+
                 # Abort check (Rec 7)
                 if self._abort_events.get(session_key, asyncio.Event()).is_set():
                     logger.info(
@@ -310,7 +418,7 @@ class AgentLoop:
                 try:
                     # Single code path — stream_with_tools always (Rec 5)
                     async for event in self._provider.stream_with_tools(
-                        messages, tools=tool_schemas
+                        messages, tools=active_schemas
                     ):
                         if not isinstance(event, StreamEvent):
                             continue
@@ -344,23 +452,33 @@ class AgentLoop:
                         accumulated or "",
                         tool_calls=response_tool_calls,
                     ))
-                    # Execute tools — per-tool isolation inside (Rec 1 + Rec 3)
-                    await self._execute_tool_calls(
+                    # Execute tools — per-tool isolation + Deterministic Middle
+                    results = await self._execute_tool_calls(
                         response_tool_calls, messages, session_key
                     )
+                    # Expand ephemeral set with schemas returned by search_tools
+                    if "search_tools" in results and active_schemas is not None:
+                        try:
+                            found: list[dict[str, Any]] = json.loads(results["search_tools"])
+                            if isinstance(found, list):
+                                existing = {
+                                    s["function"]["name"]
+                                    for s in active_schemas
+                                    if "function" in s
+                                }
+                                for schema in found:
+                                    fn_name = schema.get("function", {}).get("name")
+                                    if fn_name and fn_name not in existing:
+                                        active_schemas.append(schema)
+                                        existing.add(fn_name)
+                        except (ValueError, TypeError, KeyError):
+                            pass
+                    iteration += 1
                     continue  # next iteration with tool results in context
 
                 # No tool calls — LLM produced its final answer
                 final_content = accumulated
                 break
-
-            else:
-                logger.warning(
-                    "Session %s hit max_iterations=%d; returning partial reply",
-                    session_key, self._max_iterations,
-                )
-                if not final_content:
-                    final_content = "[max iterations reached — partial response]"
 
         finally:
             # Clean up abort event regardless of how the loop exited (Rec 7)

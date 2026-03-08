@@ -198,6 +198,23 @@ async def list_whitelist(request: Request):
     return {"entries": entries}
 
 
+def _normalize_whitelist_channel_id(platform: str, channel_id: str) -> str:
+    """Normalize channel_id for storage so it matches incoming event format.
+
+    WhatsApp: +916356737267 -> 916356737267@s.whatsapp.net (JID format from whatsmeow).
+    """
+    if platform != "whatsapp" or not channel_id:
+        return channel_id
+    cid = channel_id.strip()
+    if "@s.whatsapp.net" in cid:
+        return cid
+    # Strip + and spaces, append JID suffix
+    digits = "".join(ch for ch in cid if ch.isdigit())
+    if not digits:
+        return channel_id
+    return f"{digits}@s.whatsapp.net"
+
+
 @router.post("/api/settings/whitelist")
 async def add_whitelist_entry(request: Request):
     """Add a new whitelist entry."""
@@ -209,6 +226,8 @@ async def add_whitelist_entry(request: Request):
 
     if not platform or not channel_id:
         return {"ok": False, "error": "platform and channel_id are required"}
+
+    channel_id = _normalize_whitelist_channel_id(platform, channel_id)
 
     backend = _session_backend(request)
     if not backend:
