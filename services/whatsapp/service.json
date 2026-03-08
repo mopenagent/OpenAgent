@@ -62,6 +62,7 @@
     "events": [
         "whatsapp.qr",
         "whatsapp.message.received",
+        "whatsapp.call.received",
         "whatsapp.connection.status"
     ],
     "runtime": "go"
