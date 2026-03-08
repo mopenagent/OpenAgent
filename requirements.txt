@@ -1,7 +1,5 @@
 -e .
 -e app
--e extensions/tts
--e extensions/stt
 pydantic>=2.8.0
 qrcode[pil]>=7.0.0
 pytest>=8.0.0

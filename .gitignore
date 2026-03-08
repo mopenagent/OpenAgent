@@ -5,7 +5,6 @@ __pycache__/
 *.pyo
 *.pyd
 .Python
-*.so
 *.egg
 *.egg-info/
 *.egg-info
@@ -46,31 +45,34 @@ dmypy.json
 *.whl
 
 # ---
+# Compiled binaries (all land in <project-root>/bin/ via Makefile)
+# ---
+
+# Root output directory — authoritative location for all service binaries
+bin/
+
+# Per-service bin/ dirs created by cargo/go local builds — use root bin/ instead
+services/*/bin/
+
+# ---
 # Go
 # ---
 
-# Binaries
 *.exe
 *.exe~
 *.dll
 *.so
 *.dylib
-
-# Test binary
 *.test
-
-# Output
 *.out
-
-# Go workspace file
 go.work
 
-# Build output (binaries in service dirs)
-services/*/slack
-services/*/telegram
+# ---
+# Rust build artifacts — all services
+# ---
 
-# Cross-compiled binaries
-bin/
+services/*/target/
+services/*/.cargo/
 
 # ---
 # IDE / editors
@@ -89,16 +91,8 @@ bin/
 config/openagent.yaml
 data/
 inspire/
-services/sandbox/target
-services/sdk-rust/target
-bin/
-services/browser/target
 
 # ---
 # OpenTelemetry file output
 # ---
 logs/
-services/memory/target
-services/memory/.cargo
-services/tts/target
-services/tts/.cargo

@@ -1,0 +1,38 @@
+{
+    "name": "stt",
+    "description": "Whisper STT via whisper-rs (whisper.cpp). Transcribes audio files on disk to text. Model: whisper-ggml-small (~244 MB RSS warmed). Requires ffmpeg at runtime for audio decoding.",
+    "version": "0.1.0",
+    "binary": {
+        "linux/arm64": "bin/stt-linux-arm64",
+        "linux/amd64": "bin/stt-linux-amd64",
+        "darwin/arm64": "bin/stt-darwin-arm64"
+    },
+    "socket": "data/sockets/stt.sock",
+    "health": {
+        "interval_ms": 5000,
+        "timeout_ms": 3000,
+        "restart_backoff_ms": [1000, 2000, 5000, 10000, 30000]
+    },
+    "tools": [
+        {
+            "name": "stt.transcribe",
+            "description": "Transcribe an audio file to text using Whisper. Accepts any format ffmpeg can decode (WAV, OGG/Opus, MP3, M4A, WebM, FLAC). Returns the transcript text.",
+            "params": {
+                "type": "object",
+                "properties": {
+                    "audio_path": {
+                        "type": "string",
+                        "description": "Absolute or relative path to the audio file."
+                    },
+                    "language": {
+                        "type": "string",
+                        "description": "ISO 639-1 language code (e.g. 'en', 'es', 'fr'). Omit for auto-detect."
+                    }
+                },
+                "required": ["audio_path"]
+            }
+        }
+    ],
+    "events": [],
+    "runtime": "rust"
+}

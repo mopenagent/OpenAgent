@@ -1,34 +1,43 @@
 # OpenAgent — build targets
 #
 # Usage:
-#   make                    # cross-compile all Go services + Rust sandbox + browser
-#   make local              # build all services for your current host platform only
-#   make <service>          # cross-compile a single Go service
-#   make sandbox            # cross-compile the Rust sandbox service
-#   make browser            # build the Rust browser service
-#   make memory             # cross-compile the Rust memory service
-#   make tts                # cross-compile the Rust TTS service
+#   make                    # cross-compile all services (Go + Rust)
+#   make local              # build all services for the current host platform only
+#   make <service>          # cross-compile one service by name
 #   make test-go            # run Go tests for all Go services + sdk-go
-#   make test-rust          # run Rust tests for sdk-rust + sandbox
+#   make test-rust          # run Rust tests for sdk-rust + all Rust services
 #   make test-py            # run Python tests (openagent/ + app/)
-#   make clean              # remove all compiled binaries
+#   make clean              # remove all compiled binaries from bin/
 #
-# All binaries are placed in <project-root>/bin/ so the services/ tree stays source-only.
+# All binaries land in <project-root>/bin/ — one clean directory, gitignored.
+# service.json binary paths are relative to the project root (e.g. bin/stt-darwin-arm64).
 #
 # Prerequisites:
-#   Go services   : go 1.21+
-#   Rust services : rustup (1.75+)
-#                   Cross-compilation uses `cross` (cargo install cross --locked)
-#                   and requires Docker.  Darwin (arm64 and amd64) builds natively on Mac.
+#   Go services    : go 1.21+
+#   Rust services  : rustup (1.75+)
+#   Cross-compile  : `cargo install cross --locked` + Docker (for linux targets)
+#                    Darwin (arm64 + amd64) builds natively on Mac without Docker.
+#
+# Model files (download once into data/models/):
+#   TTS (Kokoro-82M):
+#     curl -L -o data/models/kokoro-v1.0.onnx  <kokoros-release-url>
+#     curl -L -o data/models/voices-v1.0.bin    <kokoros-release-url>
+#   STT (Whisper small):
+#     curl -L -o data/models/whisper-ggml-small.bin \
+#       https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-small.bin
+#     (HF serves file as ggml-small.bin; -o renames it locally)
 
-GO_SERVICES := discord telegram slack whatsapp
+# ---------------------------------------------------------------------------
+# Service lists
+# ---------------------------------------------------------------------------
 
-PLATFORMS := linux/arm64 linux/amd64 darwin/arm64 darwin/amd64
+GO_SERVICES   := telegram slack whatsapp
+RUST_SERVICES := sandbox browser memory tts stt discord
 
-# All compiled binaries land here — one clean directory, gitignored.
-BIN := bin
+# ---------------------------------------------------------------------------
+# Platform detection
+# ---------------------------------------------------------------------------
 
-# Detect host platform for `make local`
 UNAME_S := $(shell uname -s)
 UNAME_M := $(shell uname -m)
 
@@ -48,18 +57,21 @@ endif
 
 HOST_SUFFIX := $(HOST_OS)-$(HOST_ARCH)
 
-.PHONY: all local clean test-go test-rust test-py help sandbox browser memory tts $(GO_SERVICES)
+BIN := bin
+
+.PHONY: all local clean test-go test-rust test-py help \
+        $(GO_SERVICES) $(RUST_SERVICES)
 
 # Default: cross-compile everything
-all: $(GO_SERVICES) sandbox browser memory tts
+all: $(GO_SERVICES) $(RUST_SERVICES)
 
 # ---------------------------------------------------------------------------
-# Go services — per-service cross-compile rule
+# Go services — cross-compile to all targets
 # ---------------------------------------------------------------------------
 
-define build_service
+define build_go_service
 $(1):
-	@echo "==> services/$(1)"
+	@echo "==> services/$(1) (Go)"
 	@mkdir -p $(BIN)
 	cd services/$(1) && GOOS=linux  GOARCH=arm64 go build -ldflags="-s -w" -o ../../$(BIN)/$(1)-linux-arm64  .
 	cd services/$(1) && GOOS=linux  GOARCH=amd64 go build -ldflags="-s -w" -o ../../$(BIN)/$(1)-linux-amd64  .
@@ -68,186 +80,79 @@ $(1):
 	@echo "   ✓ $(BIN)/$(1)-{linux,darwin}-{arm64,amd64}"
 endef
 
-$(foreach svc,$(GO_SERVICES),$(eval $(call build_service,$(svc))))
+$(foreach svc,$(GO_SERVICES),$(eval $(call build_go_service,$(svc))))
 
 # ---------------------------------------------------------------------------
-# Rust sandbox — cross-compile via `cross`
+# Rust services — native Darwin build + cross via `cross` for Linux
 # ---------------------------------------------------------------------------
 
-sandbox:
-	@echo "==> services/sandbox (Rust)"
+define build_rust_service
+$(1):
+	@echo "==> services/$(1) (Rust)"
 	@mkdir -p $(BIN)
 ifeq ($(HOST_OS),darwin)
-	cd services/sandbox && cargo build --release --target aarch64-apple-darwin
-	cp services/sandbox/target/aarch64-apple-darwin/release/sandbox \
-	   $(BIN)/sandbox-darwin-arm64
+	cd services/$(1) && cargo build --release --target aarch64-apple-darwin
+	cp services/$(1)/target/aarch64-apple-darwin/release/$(1) \
+	   $(BIN)/$(1)-darwin-arm64
 	@if rustup target list --installed 2>/dev/null | grep -q x86_64-apple-darwin; then \
-	  cd services/sandbox && cargo build --release --target x86_64-apple-darwin && \
-	  cp services/sandbox/target/x86_64-apple-darwin/release/sandbox \
-	     $(BIN)/sandbox-darwin-amd64; \
+	  cd services/$(1) && cargo build --release --target x86_64-apple-darwin && \
+	  cp services/$(1)/target/x86_64-apple-darwin/release/$(1) \
+	     $(BIN)/$(1)-darwin-amd64; \
 	else \
 	  echo "   Skipping darwin/amd64 (run: rustup target add x86_64-apple-darwin)"; \
 	fi
+else
+	cd services/$(1) && cargo build --release
+	cp services/$(1)/target/release/$(1) $(BIN)/$(1)-$(HOST_SUFFIX)
 endif
 	@if command -v cross >/dev/null 2>&1; then \
-	  cd services/sandbox && cross build --release --target aarch64-unknown-linux-musl && \
-	  cp services/sandbox/target/aarch64-unknown-linux-musl/release/sandbox \
-	     $(BIN)/sandbox-linux-arm64 && \
-	  cd services/sandbox && cross build --release --target x86_64-unknown-linux-musl && \
-	  cp services/sandbox/target/x86_64-unknown-linux-musl/release/sandbox \
-	     $(BIN)/sandbox-linux-amd64; \
+	  cd services/$(1) && cross build --release --target aarch64-unknown-linux-musl && \
+	  cp services/$(1)/target/aarch64-unknown-linux-musl/release/$(1) \
+	     $(BIN)/$(1)-linux-arm64; \
+	  cd services/$(1) && cross build --release --target x86_64-unknown-linux-musl && \
+	  cp services/$(1)/target/x86_64-unknown-linux-musl/release/$(1) \
+	     $(BIN)/$(1)-linux-amd64; \
 	else \
 	  echo "   Skipping linux targets (install: cargo install cross --locked)"; \
 	fi
-	@echo "   ✓ sandbox binaries in $(BIN)/"
+	@echo "   ✓ $(1) binaries in $(BIN)/"
+endef
+
+$(foreach svc,$(RUST_SERVICES),$(eval $(call build_rust_service,$(svc))))
 
 # ---------------------------------------------------------------------------
-# Rust browser — headless browser automation service
-# ---------------------------------------------------------------------------
-
-browser:
-	@echo "==> services/browser (Rust)"
-	@mkdir -p $(BIN)
-ifeq ($(HOST_OS),darwin)
-	cd services/browser && cargo build --release --target aarch64-apple-darwin
-	cp services/browser/target/aarch64-apple-darwin/release/browser \
-	   $(BIN)/browser-darwin-arm64
-	@if rustup target list --installed 2>/dev/null | grep -q x86_64-apple-darwin; then \
-	  cd services/browser && cargo build --release --target x86_64-apple-darwin && \
-	  cp services/browser/target/x86_64-apple-darwin/release/browser \
-	     $(BIN)/browser-darwin-amd64; \
-	else \
-	  echo "   Skipping darwin/amd64 (run: rustup target add x86_64-apple-darwin)"; \
-	fi
-endif
-	@if command -v cross >/dev/null 2>&1; then \
-	  cd services/browser && cross build --release --target aarch64-unknown-linux-musl && \
-	  cp services/browser/target/aarch64-unknown-linux-musl/release/browser \
-	     $(BIN)/browser-linux-arm64 && \
-	  cd services/browser && cross build --release --target x86_64-unknown-linux-musl && \
-	  cp services/browser/target/x86_64-unknown-linux-musl/release/browser \
-	     $(BIN)/browser-linux-amd64; \
-	else \
-	  echo "   Skipping linux targets (install: cargo install cross --locked)"; \
-	fi
-	@echo "   ✓ browser binaries in $(BIN)/"
-
-# ---------------------------------------------------------------------------
-# Rust memory — Agentic Memory (LanceDB + FastEmbed)
-# ---------------------------------------------------------------------------
-
-memory:
-	@echo "==> services/memory (Rust)"
-	@mkdir -p $(BIN)
-ifeq ($(HOST_OS),darwin)
-	cd services/memory && cargo build --release --target aarch64-apple-darwin
-	cp services/memory/target/aarch64-apple-darwin/release/memory \
-	   $(BIN)/memory-darwin-arm64
-	@if rustup target list --installed 2>/dev/null | grep -q x86_64-apple-darwin; then \
-	  cd services/memory && cargo build --release --target x86_64-apple-darwin && \
-	  cp services/memory/target/x86_64-apple-darwin/release/memory \
-	     $(BIN)/memory-darwin-amd64; \
-	else \
-	  echo "   Skipping darwin/amd64 (run: rustup target add x86_64-apple-darwin)"; \
-	fi
-endif
-	@if command -v cross >/dev/null 2>&1; then \
-	  cd services/memory && cross build --release --target aarch64-unknown-linux-musl && \
-	  cp services/memory/target/aarch64-unknown-linux-musl/release/memory \
-	     $(BIN)/memory-linux-arm64 && \
-	  cd services/memory && cross build --release --target x86_64-unknown-linux-musl && \
-	  cp services/memory/target/x86_64-unknown-linux-musl/release/memory \
-	     $(BIN)/memory-linux-amd64; \
-	else \
-	  echo "   Skipping linux targets (install: cargo install cross --locked)"; \
-	fi
-	@echo "   ✓ memory binaries in $(BIN)/"
-
-# ---------------------------------------------------------------------------
-# Rust TTS — Kokoros (Kokoro TTS)
-# ---------------------------------------------------------------------------
-
-tts:
-	@echo "==> services/tts (Rust)"
-	@mkdir -p $(BIN)
-ifeq ($(HOST_OS),darwin)
-	cd services/tts && cargo build --release --target aarch64-apple-darwin
-	cp services/tts/target/aarch64-apple-darwin/release/tts \
-	   $(BIN)/tts-darwin-arm64
-	@if rustup target list --installed 2>/dev/null | grep -q x86_64-apple-darwin; then \
-	  cd services/tts && cargo build --release --target x86_64-apple-darwin && \
-	  cp services/tts/target/x86_64-apple-darwin/release/tts \
-	     $(BIN)/tts-darwin-amd64; \
-	else \
-	  echo "   Skipping darwin/amd64 (run: rustup target add x86_64-apple-darwin)"; \
-	fi
-endif
-	@if command -v cross >/dev/null 2>&1; then \
-	  cd services/tts && cross build --release --target aarch64-unknown-linux-musl && \
-	  cp services/tts/target/aarch64-unknown-linux-musl/release/tts \
-	     $(BIN)/tts-linux-arm64 && \
-	  cd services/tts && cross build --release --target x86_64-unknown-linux-musl && \
-	  cp services/tts/target/x86_64-unknown-linux-musl/release/tts \
-	     $(BIN)/tts-linux-amd64; \
-	else \
-	  echo "   Skipping linux targets (install: cargo install cross --locked)"; \
-	fi
-	@echo "   ✓ tts binaries in $(BIN)/"
-
-# ---------------------------------------------------------------------------
-# Build only for the current host (faster dev loop)
+# Local build — current host platform only (fastest dev loop)
 # ---------------------------------------------------------------------------
 
 local:
-	@echo "==> Building Go services for $(HOST_OS)/$(HOST_ARCH)"
+	@echo "==> Building for $(HOST_OS)/$(HOST_ARCH)"
 	@mkdir -p $(BIN)
+	@echo "--- Go services ---"
 	@for svc in $(GO_SERVICES); do \
 	  echo "  → $$svc"; \
-	  cd services/$$svc && \
-	    GOOS=$(HOST_OS) GOARCH=$(HOST_ARCH) go build -ldflags="-s -w" -o ../../$(BIN)/$$svc-$(HOST_SUFFIX) . && \
-	    cd ../..; \
+	  (cd services/$$svc && \
+	    GOOS=$(HOST_OS) GOARCH=$(HOST_ARCH) go build -ldflags="-s -w" \
+	    -o ../../$(BIN)/$$svc-$(HOST_SUFFIX) .) || exit 1; \
 	done
-	@echo "==> Building sandbox (Rust) for $(HOST_OS)/$(HOST_ARCH)"
+	@echo "--- Rust services ---"
 ifeq ($(HOST_OS),darwin)
-	cd services/sandbox && cargo build --release --target aarch64-apple-darwin
-	cp services/sandbox/target/aarch64-apple-darwin/release/sandbox \
-	   $(BIN)/sandbox-$(HOST_SUFFIX)
+	@for svc in $(RUST_SERVICES); do \
+	  echo "  → $$svc"; \
+	  (cd services/$$svc && \
+	    cargo build --release --target aarch64-apple-darwin && \
+	    cp target/aarch64-apple-darwin/release/$$svc \
+	       ../../$(BIN)/$$svc-$(HOST_SUFFIX)) || exit 1; \
+	done
 else
-	cd services/sandbox && cargo build --release
-	cp services/sandbox/target/release/sandbox \
-	   $(BIN)/sandbox-$(HOST_SUFFIX)
+	@for svc in $(RUST_SERVICES); do \
+	  echo "  → $$svc"; \
+	  (cd services/$$svc && \
+	    cargo build --release && \
+	    cp target/release/$$svc \
+	       ../../$(BIN)/$$svc-$(HOST_SUFFIX)) || exit 1; \
+	done
 endif
-	@echo "==> Building browser (Rust) for $(HOST_OS)/$(HOST_ARCH)"
-ifeq ($(HOST_OS),darwin)
-	cd services/browser && cargo build --release --target aarch64-apple-darwin
-	cp services/browser/target/aarch64-apple-darwin/release/browser \
-	   $(BIN)/browser-$(HOST_SUFFIX)
-else
-	cd services/browser && cargo build --release
-	cp services/browser/target/release/browser \
-	   $(BIN)/browser-$(HOST_SUFFIX)
-endif
-	@echo "==> Building memory (Rust) for $(HOST_OS)/$(HOST_ARCH)"
-ifeq ($(HOST_OS),darwin)
-	cd services/memory && cargo build --release --target aarch64-apple-darwin
-	cp services/memory/target/aarch64-apple-darwin/release/memory \
-	   $(BIN)/memory-$(HOST_SUFFIX)
-else
-	cd services/memory && cargo build --release
-	cp services/memory/target/release/memory \
-	   $(BIN)/memory-$(HOST_SUFFIX)
-endif
-	@echo "==> Building tts (Rust) for $(HOST_OS)/$(HOST_ARCH)"
-ifeq ($(HOST_OS),darwin)
-	cd services/tts && cargo build --release --target aarch64-apple-darwin
-	cp services/tts/target/aarch64-apple-darwin/release/tts \
-	   $(BIN)/tts-$(HOST_SUFFIX)
-else
-	cd services/tts && cargo build --release
-	cp services/tts/target/release/tts \
-	   $(BIN)/tts-$(HOST_SUFFIX)
-endif
-	@echo "Done — binaries in $(BIN)/<name>-$(HOST_SUFFIX)"
+	@echo "Done — binaries in $(BIN)/*-$(HOST_SUFFIX)"
 
 # ---------------------------------------------------------------------------
 # Tests
@@ -256,20 +161,14 @@ endif
 test-go:
 	@for pkg in sdk-go $(GO_SERVICES); do \
 	  echo "→ testing services/$$pkg ..."; \
-	  cd services/$$pkg && go test ./... && cd ../..; \
+	  (cd services/$$pkg && go test ./...) || exit 1; \
 	done
 
 test-rust:
-	@echo "→ testing services/sdk-rust ..."
-	cd services/sdk-rust && cargo test
-	@echo "→ testing services/sandbox ..."
-	cd services/sandbox && cargo test
-	@echo "→ testing services/browser ..."
-	cd services/browser && cargo test
-	@echo "→ testing services/memory ..."
-	cd services/memory && cargo test
-	@echo "→ testing services/tts ..."
-	cd services/tts && cargo test
+	@for svc in sdk-rust $(RUST_SERVICES); do \
+	  echo "→ testing services/$$svc ..."; \
+	  (cd services/$$svc && cargo test) || exit 1; \
+	done
 
 test-py:
 	python -m pytest openagent/ app/ -q
@@ -282,24 +181,30 @@ clean:
 	rm -f $(BIN)/*
 	@echo "  cleaned $(BIN)/"
 
+# ---------------------------------------------------------------------------
+# Help
+# ---------------------------------------------------------------------------
+
 help:
 	@echo ""
 	@echo "OpenAgent build targets"
-	@echo "  make              Cross-compile all services ($(PLATFORMS))"
-	@echo "  make local        Build for current host only ($(HOST_OS)/$(HOST_ARCH))"
-	@echo "  make <service>    Cross-compile one Go service: $(GO_SERVICES)"
-	@echo "  make sandbox      Cross-compile Rust sandbox"
-	@echo "  make browser      Cross-compile Rust browser"
-	@echo "  make memory       Cross-compile Rust memory"
-	@echo "  make tts         Cross-compile Rust TTS (Kokoros)"
-	@echo "                   darwin/amd64: rustup target add x86_64-apple-darwin"
-	@echo "                   linux: cargo install cross --locked"
-	@echo "  make test-go      Run Go tests"
-	@echo "  make test-rust    Run Rust tests"
+	@echo "  make              Cross-compile all services"
+	@echo "  make local        Build for current host: $(HOST_OS)/$(HOST_ARCH)"
+	@echo ""
+	@echo "  Go  ($(GO_SERVICES)):"
+	@echo "    make <name>     → linux/arm64 linux/amd64 darwin/arm64 darwin/amd64"
+	@echo ""
+	@echo "  Rust ($(RUST_SERVICES)):"
+	@echo "    make <name>     → darwin natively; linux via cross"
+	@echo "    Darwin/amd64:   rustup target add x86_64-apple-darwin"
+	@echo "    Linux:          cargo install cross --locked  (requires Docker)"
+	@echo ""
+	@echo "  make test-go      Run Go unit tests"
+	@echo "  make test-rust    Run Rust unit tests"
 	@echo "  make test-py      Run Python tests"
 	@echo "  make clean        Remove all binaries from $(BIN)/"
 	@echo ""
-	@echo "  All binaries land in: $(BIN)/"
-	@echo "  Rust cross-compile: cargo install cross --locked"
-	@echo "  MSB required at runtime: msb server start --dev"
+	@echo "  Binaries:   $(BIN)/"
+	@echo "  Models:     data/models/whisper-ggml-small.bin  kokoro-v1.0.onnx  voices-v1.0.bin"
+	@echo "  Sandbox:    msb server start --dev"
 	@echo ""
