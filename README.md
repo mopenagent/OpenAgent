@@ -17,7 +17,7 @@ Python is the control plane (orchestration, routing). Rust services are the data
 - **Platform adapters** — Discord, Telegram, WhatsApp, Slack (Python MCP-lite clients)
 - **Rust services** — `sandbox`, `discord`, `telegram`, `slack`, `stt`, `tts`, `browser`, `memory`
 - **Go service** — `whatsapp` (only remaining Go service)
-- **Web UI** — FastAPI + HTMX (dashboard, chat, services, config)
+- **Web UI** — FastAPI + HTMX (dashboard, chat, services, settings)
 
 **In progress:**
 - Config schema extension (agents, bindings, session, tools)
@@ -214,7 +214,7 @@ Visit `http://<pi-ip>:8080`.
 | Dashboard | `/` | Service status + system stats |
 | Chat | `/chat` | Chat surface |
 | Services | `/services` | Rust/Go services with status and restart controls |
-| Config | `/config` | Read-only view of `openagent.yaml` |
+| Settings | `/settings` | Connectors, provider, whitelist, WhatsApp QR |
 
 Logging is OTEL-compliant (OpenTelemetry); traces, logs, and metrics are written to `logs/` as JSONL.
 

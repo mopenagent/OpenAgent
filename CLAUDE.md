@@ -389,7 +389,7 @@ A minimalist admin/debug UI for the agent. POC only — **no authentication**, i
 - `/` Dashboard — agent status, Python packages, Go/Rust services, system stats
 - `/chat` — Send messages to the agent, stream responses via WebSocket; sessions sidebar
 - `/services` — Go and Rust services with status, restart button
-- `/config` — Read-only view of `config/openagent.yaml`
+- `/settings` — Connectors, provider, whitelist, WhatsApp QR
 - `/settings` — Connectors (enable/disable), provider, whitelist, WhatsApp QR
 - `/browser` — Headless browser sessions (screenshots, agent-driven automation)
 
@@ -401,7 +401,6 @@ app/
     dashboard.py    # GET /
     chat.py         # GET /chat, WS /ws/chat, /api/chat/sessions
     services.py     # GET /services, POST /services/{name}/restart
-    config.py       # GET /config
     settings.py     # GET /settings, connectors, whitelist, WhatsApp QR
     llm.py          # Provider/LLM config
     provider.py     # Provider API
@@ -411,7 +410,6 @@ app/
     dashboard.html
     chat.html
     services.html
-    config.html
   settings.html
   browser.html
   static/
