@@ -2,12 +2,12 @@
 
 ## What We're Building
 
-**OpenAgent** is a **deterministic**, **extension-first** hybrid Python + Go agent platform. It orchestrates multi-agent pipelines using offline 14B-parameter models on low-power hardware (Raspberry Pi primary target).
+**OpenAgent** is a **deterministic**, **extension-first** hybrid Python + Rust agent platform. It orchestrates multi-agent pipelines using offline 14B-parameter models on low-power hardware (Raspberry Pi primary target).
 
 The architecture has two planes:
 - **Python Control Plane (Brain)** — LLM interfacing, multi-agent orchestration, platform integrations, stateless async core loop.
-- **Go Services (Hands)** — Long-lived daemon processes for platform connectors (discord, telegram, slack, whatsapp) and compute. Python spawns, monitors, and manages them. They communicate via MCP-lite (tagged JSON over Unix sockets).
-- **Rust Services (Muscles)** — Performance-critical services: sandbox (VM execution), browser (headless automation).
+- **Rust Services (Hands)** — Long-lived daemon processes for platform connectors (discord), compute (sandbox, stt, tts), automation (browser), memory. **Rust-first** — all new services are Rust.
+- **Go** — Only WhatsApp remains in Go (whatsmeow). Telegram and Slack are still Go but will migrate to Rust.
 
 OpenAgent uses a **custom ReAct loop** and thin provider layer (no framework dependency). Session/memory uses a `SessionBackend` protocol. OpenAgent remains responsible for extension/service orchestration, MCP-lite lifecycle, and deployment constraints for low-power hardware. See `roadmap.md` for rationale.
 
@@ -16,11 +16,11 @@ OpenAgent uses a **custom ReAct loop** and thin provider layer (no framework dep
 1. **Communication Protocol** — Whenever the user sends an input where their intention needs clarification or context needs expansion, do not assume the correct path. Ask clarifying questions **one by one**, provide possible options/paths, and record/apply this explicitly in every conversation.
 2. **Deterministic behavior** — Explicit control flow, reproducible execution paths. Aligns with smaller local models where reliability matters more than flexibility.
 3. **Two planes, clear boundary** — Python extensions handle platforms (WhatsApp, Discord) and media (TTS, STT). Go services handle compute and data-intensive work. Never mix them.
-4. **Service-first for compute** — New heavy capabilities go in `services/<name>/` as Go daemons, not in Python extensions.
+4. **Service-first for compute** — New heavy capabilities go in `services/<name>/` as Rust daemons (Rust-first). Only WhatsApp stays in Go.
 5. **First-class async** — Python core and all extensions are async-first. No blocking I/O in Python extension code.
 6. **Tool-oriented** — Capabilities are exposed as tools the LLM can call. Python tools run in-process; Go service tools are declared in `service.json` and proxied through `ServiceManager`.
 7. **Offline and low-power friendly** — Designed for a 14B local model on Raspberry Pi. Keep core lean, keep context concise, lazy-load everything heavy. Vector search (LanceDB) executes directly via Python to leverage Rust core without JSON IPC serialization tax.
-8. **Workflow Orchestrator (Zero-Copy Artifacts)** — Python acts as a workflow router. Go services dump heavy binaries to `data/artifacts/` and return a file path. Python pipes that path as an argument to the next step. LLMs are treated as non-deterministic nodes in a larger deterministic workflow graph. No direct Go-to-Go (East-West) communication.
+8. **Workflow Orchestrator (Zero-Copy Artifacts)** — Python acts as a workflow router. Services dump heavy binaries to `data/artifacts/` and return a file path. Python pipes that path as an argument to the next step. LLMs are treated as non-deterministic nodes in a larger deterministic workflow graph. No direct service-to-service (East-West) communication.
 
 ## Reference Implementations
 
@@ -42,11 +42,9 @@ Key files:
 ```
 openagent/      # Core Python — orchestration, discovery, interfaces ONLY
   tests/         # Core tests (including platform adapters)
-extensions/     # Python platform/media integrations (tts, stt)
-  <name>/tests/ # Extension-local tests
-services/       # Go (discord, telegram, slack, whatsapp) + Rust (sandbox, browser)
+services/       # Rust (primary) + Go (whatsapp only; telegram, slack in transition)
 app/            # Minimalist web UI — FastAPI 3.x + HTMX, no auth (POC/Pi only)
-  routes/       # dashboard, chat, logs, extensions, services, config, settings, llm, provider, browser
+  routes/       # dashboard, chat, logs, services, config, settings, llm, provider, browser
   tests/        # Web UI tests
 data/           # Runtime: openagent.db, memory/, sockets/, artifacts/
 config/         # openagent.yaml
@@ -63,34 +61,14 @@ inspire/        # Reference implementations (gitignored)
 | Session manager | `openagent/session/` | Python | SessionBackend protocol, SQLite impl |
 | Message bus | `openagent/bus/` | Python | InboundMessage, OutboundMessage, SenderInfo |
 | Service platform adapters (MCP-lite clients) | `openagent/platforms/` | Python | Shared `mcplite.py` + per-service adapter |
-| Platform connectors | `services/` (Go) | Go | discord, telegram, slack, whatsapp — MCP-lite |
-| Media (TTS, STT) | `extensions/` | Python | tts, stt — AsyncExtension + entry points |
-| Compute/automation | `services/` | Go + Rust | sandbox (Rust), browser (Rust), filesystem (Go) |
+| Platform connectors | `services/` | Rust + Go | discord (Rust), telegram/slack/whatsapp (Go; only whatsapp retained) |
+| Compute/automation | `services/` | Rust | sandbox, stt, tts, browser, memory |
 
 See `roadmap.md` for consolidated Nanobot/Picoclaw comparison and build order.
 
-## Extension Contract
-
-Python extensions implement `AsyncExtension` from `openagent.interfaces`:
-
-```python
-async def initialize(self) -> None: ...   # startup — no blocking
-async def shutdown(self) -> None: ...     # graceful stop
-def get_status(self) -> dict[str, Any]: ...
-```
-
-Extend `BaseAsyncExtension`. Register via `pyproject.toml` entry point:
-
-```toml
-[project.entry-points."openagent.extensions"]
-my-ext = "plugin:MyExtension"
-```
-
-Extension source layout: flat at `extensions/<name>/src/` — no nested package folders.
-
 ## Service Contract
 
-Go services implement the **MCP-lite** wire protocol over a Unix Domain Socket:
+Services (Rust or Go) implement the **MCP-lite** wire protocol over a Unix Domain Socket:
 
 ```
 Socket:  data/sockets/<name>.sock
@@ -112,17 +90,6 @@ Service manifest (`service.json`) declares: name, binary paths per arch, socket 
 
 `ServiceManager` in core: reads manifests → spawns binary → connects socket → registers tools → health-checks → restarts on crash.
 
-## Files to Change: Extensions
-
-When editing a Python extension, change only files under `extensions/<name>/`:
-
-- `pyproject.toml` — package metadata, dependencies, entry point
-- `src/plugin.py` — extension entry point, implements `AsyncExtension`
-- `src/<component>.py` — component logic (connector, bridge, schema, etc.)
-- `tests/` — extension tests
-
-Do not change `openagent/` or other extensions.
-
 ## Files to Change: Web UI
 
 When editing the web UI, change only files under `app/`:
@@ -135,33 +102,33 @@ When editing the web UI, change only files under `app/`:
 
 Do not add FastAPI routes or UI logic to `openagent/`. The UI is a consumer of core, not part of it.
 
-## Files to Change: Go Services
+## Files to Change: Services (Rust or Go)
 
-When editing a Go service, change only files under `services/<name>/`:
+When editing a service, change only files under `services/<name>/`:
 
-- `main.go` — UDS server, MCP-lite protocol handler
-- `service.json` — service manifest (the only contract with Python core)
-- `go.mod` / `go.sum` — Go module definition
-- `bin/` — compiled binaries (gitignored)
-- `*_test.go` — Go unit tests
+- **Rust:** `Cargo.toml`, `src/main.rs`, `service.json`, `bin/` (gitignored)
+- **Go (WhatsApp only):** `main.go`, `service.json`, `go.mod`/`go.sum`, `bin/`, `*_test.go`
 
-Do not change `openagent/` or any extension when working on a service.
+Do not change `openagent/` when working on a service.
 
 ## Development Conventions
 
 **Python:**
 - Python ≥ 3.11
-- `pip install -r requirements.txt` for all extensions
+- `pip install -r requirements.txt` for core
 - Run: `python -m openagent.main` or `openagent`
-- Verify extensions: `python -c "import importlib.metadata as m; print(m.entry_points(group='openagent.extensions'))"`
 - `httpx` for HTTP — never `requests` or OpenAI SDK
 - `asyncio.to_thread()` for sync libs in async context
 
-**Go:**
+**Rust (primary):**
+- Build: `make local` or `make all`
+- Run tests: `cd services/<name> && cargo test`
+
+**Go (WhatsApp only):**
 - Go ≥ 1.21
-- Build: `cd services/<name> && go build -o bin/<name> .`
-- Cross-compile for Pi: `GOOS=linux GOARCH=arm64 go build -o bin/<name>-linux-arm64 .`
-- Run tests: `cd services/<name> && go test ./...`
+- Build: `cd services/whatsapp && go build -o bin/whatsapp .`
+- Cross-compile for Pi: `GOOS=linux GOARCH=arm64 go build -o bin/whatsapp-linux-arm64 .`
+- Run tests: `cd services/whatsapp && go test ./...`
 
 **Config:** `config/openagent.yaml` — primary config. Env vars override with `OPENAGENT_` prefix.
 
@@ -175,10 +142,9 @@ uvicorn app.main:app --host 0.0.0.0 --port 8080 --reload
 ## When Editing This Project
 
 - **Core** — Keep it minimal. Add orchestration and interfaces; avoid domain logic and heavy dependencies.
-- **New platform/media feature** — New Python extension under `extensions/`.
-- **New compute/data feature** — New Go service under `services/` with `service.json`.
+- **New compute/data feature** — New Rust service under `services/` with `service.json` (Rust-first).
 - **Async only (Python)** — All extension lifecycle and handlers must be `async def`. No blocking.
-- **Goroutine per request (Go)** — Never block the accept loop. Graceful SIGTERM handling.
+- **Rust-first for services** — New services are Rust. Only WhatsApp stays in Go.
 - **Determinism** — Explicit, reproducible flows. Stable tool schemas. Clear LLM-readable descriptions.
 - **14B / Pi target** — Lean context, lazy loading, no heavy deps in core.
 
@@ -189,4 +155,4 @@ uvicorn app.main:app --host 0.0.0.0 --port 8080 --reload
 - Expose Prometheus metrics at `GET /metrics` from `app/main.py`.
 - Track operation latency/error for STT/TTS and MCP-lite request-response paths.
 - Keep logs privacy-safe: never log full message bodies or secrets.
-- Mirror structured request observability in Go services for parity.
+- Mirror structured request observability in Rust/Go services for parity.

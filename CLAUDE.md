@@ -2,15 +2,15 @@
 
 ## What We're Building
 
-**OpenAgent** is a deterministic, extension-first agent platform with a **hybrid Python + Go + Rust architecture**:
+**OpenAgent** is a deterministic, extension-first agent platform with a **hybrid Python + Rust architecture**:
 
 - **Python Control Plane (the Brain)** — LLM interfacing, multi-agent orchestration, state management, and high-level reasoning. Stateless asyncio core loop. Python is the babysitter.
-- **Go Services (the Hands)** — Long-lived service daemons for CPU/IO-intensive work: platform connectors, filesystem, channel adapters. Language-agnostic by design.
-- **Rust Services (the Muscles)** — Performance-critical or isolation-heavy services. Current: `sandbox` (VM-isolated code execution via microsandbox). Incrementally replaces Go services where load justifies it.
+- **Rust Services (the Hands)** — Long-lived service daemons for CPU/IO-intensive work: platform connectors (discord; telegram, slack in transition), compute (sandbox, stt, tts), automation (browser), memory. **Rust-first** — all new services are Rust.
+- **Go** — Only WhatsApp (`services/whatsapp/`) remains in Go (whatsmeow). No new Go services. Telegram and Slack are still Go but will migrate to Rust.
 
 The two planes communicate via a **MCP-lite wire protocol** (tagged JSON frames over Unix Domain Sockets). Services run as persistent daemons; the agent's `ServiceManager` owns the full lifecycle: spawn, health-check, restart, graceful shutdown.
 
-Primary deployment target: **Raspberry Pi / low-power hardware** (Go/Rust compile to arm64; Python core stays lean).
+Primary deployment target: **Raspberry Pi / low-power hardware** (Rust compiles to arm64; Python core stays lean).
 
 ## Communication Protocol (Rule #1)
 Whenever the user sends an input where their intention needs clarification or the context needs expansion, **do not assume the correct path.** Ask clarifying questions **one by one** (1-by-1) and provide possible **options/paths** for the user to choose from. Apply this explicitly in every conversation.
@@ -58,17 +58,13 @@ make all
 # Build for current host only (faster dev loop)
 make local
 
-# Build a single Go service
-cd services/my-service && go build -o bin/my-service .
+# Build Rust services (primary)
+make local    # Current host
+make all      # All targets (Pi, etc.)
 
-# Cross-compile Go service for Raspberry Pi (arm64)
-cd services/my-service && GOOS=linux GOARCH=arm64 go build -o bin/my-service-linux-arm64 .
-
-# Build sandbox Rust service (native darwin)
-cd services/sandbox && cargo build --release --target aarch64-apple-darwin
-
-# Cross-compile sandbox for Linux (requires: cargo install cross --locked + Docker)
-cd services/sandbox && cross build --release --target aarch64-unknown-linux-musl
+# Build WhatsApp (Go) — only Go service
+cd services/whatsapp && go build -o bin/whatsapp .
+cd services/whatsapp && GOOS=linux GOARCH=arm64 go build -o bin/whatsapp-linux-arm64 .
 
 # Start microsandbox server (required at runtime for sandbox service)
 msb server start --dev
@@ -92,26 +88,19 @@ openagent/              # Core Python — orchestration, discovery, interfaces
   observability/            # Logging, metrics, context
   tests/                    # Core tests (including platforms/)
 
-extensions/                 # Python platform integrations (independently installable)
-  tts/                      # Text-to-speech (EdgeTTS, MiniMax)
-  stt/                      # Speech-to-text (faster-whisper, Deepgram)
-  <name>/tests/             # Extension-local tests
-
-services/                   # Go or Rust service daemons
-  <name>/                   # Self-contained Go module (discord, telegram, slack, whatsapp)
-    main.go                 # UDS server + MCP-lite protocol handler
+services/                   # Rust (primary) or Go (WhatsApp only) service daemons
+  <name>/                   # Rust: Cargo.toml, src/main.rs; Go: main.go, go.mod
     service.json            # Service manifest — schema-first declaration
-    go.mod
-    bin/                    # Compiled binaries (gitignored, one per arch)
-      <name>-linux-arm64
-      <name>-linux-amd64
-      <name>-darwin-arm64
+    bin/                    # Compiled binaries (gitignored)
   sandbox/                  # Rust — VM-isolated code/shell execution
-  browser/                  # Rust — headless browser automation (Playwright)
-    Cargo.toml              # Rust package (uses sdk-rust crate)
-    src/main.rs             # MCP-lite server + microsandbox HTTP client
-    service.json            # Manifest: sandbox.execute, sandbox.shell tools
-    bin/                    # Cross-compiled binaries (gitignored)
+  discord/                  # Rust — Discord connector
+  telegram/                 # Go — Telegram (migration to Rust planned)
+  slack/                    # Go — Slack (migration to Rust planned)
+  whatsapp/                 # Go — WhatsApp (whatsmeow; only Go service retained)
+  stt/                      # Rust — Speech-to-text
+  tts/                      # Rust — Text-to-speech
+  browser/                  # Rust — Headless browser automation
+  memory/                   # Rust — Vector memory
 
 app/                        # Minimalist web UI (FastAPI + HTMX, no auth — POC only)
   main.py                   # FastAPI app, mounts routes and static files
@@ -153,10 +142,10 @@ inspire/                    # Reference implementations (gitignored)
                     └──────────────────────┼──────────────────┘
                                            │ JSON/UDS
                     ┌──────────────────────┼──────────────────┐
-                    │    Go Services Layer │                   │
+                    │    Rust/Go Services Layer │              │
                     │   ┌──────────────────▼──────────────┐   │
-                    │   │  services/my-service/main.go    │   │
-                    │   │  (UDS daemon, goroutine per req) │   │
+                    │   │  services/<name>/ (Rust or Go)  │   │
+                    │   │  UDS daemon, MCP-lite protocol  │   │
                     │   └─────────────────────────────────┘   │
                     └─────────────────────────────────────────┘
 ```
@@ -173,7 +162,7 @@ InboundMessage (from platform extension)
     → Call LLM (OpenAI-compatible /v1/chat/completions via aiohttp)
     → If tool call:
         → Python tool? execute directly
-        → Go service tool? ServiceManager.call(service, tool, params)
+        → Service tool? ServiceManager.call(service, tool, params)
         → Append result, loop (max 40 iterations)
     → Final answer → OutboundMessage → platform extension delivers it
 ```
@@ -187,46 +176,25 @@ InboundMessage (from platform extension)
 - Core loop is stateless — all state lives in `SessionManager`
 - **Zero-Copy Artifact Passing:** When dense data is generated or received by a service (e.g. media), the service writes the raw binary to disk (`data/artifacts/`). Python routes the small JSON artifact path payload, maintaining decoupling without IPC serialization taxes. Python is the absolute central router for all inter-service workflows (no east-west mesh between Go daemons).
 
-### Services Layer — Go and Rust
+### Services Layer — Rust (primary) and Go (WhatsApp only)
 
-Services are **long-lived daemon processes** managed by `ServiceManager`. One socket per service handles both directions. Services can be written in Go or Rust — both follow the same MCP-lite contract.
+Services are **long-lived daemon processes** managed by `ServiceManager`. One socket per service handles both directions. **Rust-first** — all new services are Rust. Only WhatsApp remains in Go.
 
 **ServiceManager responsibilities:**
 1. Read `service.json` manifests from `services/*/service.json` on startup
-2. Detect platform (`GOOS`/`GOARCH`), select correct binary
-3. Spawn Go binary (`asyncio.create_subprocess_exec`)
+2. Detect platform (`GOOS`/`GOARCH` or Rust target), select correct binary
+3. Spawn binary (`asyncio.create_subprocess_exec`)
 4. Connect async Unix socket client (`data/sockets/<name>.sock`)
 5. Send `{"id":"...","type":"tools.list"}` — register returned tools into agent loop
 6. Run health-check loop (ping/pong every 5s); restart on timeout (exponential backoff)
 7. Subscribe to event frames — route inbound events to message bus
 8. Expose `start(name)`, `stop(name)`, `restart(name)`, `status(name)` API
 
-**Go service structure:**
+**Rust service structure (primary):**
 ```
-services/my-service/
-  main.go        # bind UDS → accept connections → handle JSON frames with goroutines
-  service.json   # manifest
-  go.mod
-  go.sum
-```
-
-**Go service internals (main.go pattern):**
-```go
-// 1. Create/bind Unix socket
-// 2. Accept one connection (agent connects on startup)
-// 3. Read newline-delimited JSON frames in goroutine
-// 4. Dispatch by type: tools.list → respond with tool schemas
-//                      tool.call  → dispatch to handler, respond with result
-//                      ping       → respond with pong
-// 5. Push event frames independently (no request ID)
-// 6. Handle SIGTERM gracefully
-```
-
-**Rust service structure:**
-```
-services/sandbox/
-  Cargo.toml     # package + dependencies (sdk-rust, minreq, tokio, serde_json)
-  src/main.rs    # McpLiteServer + tool handlers; MsbClient for HTTP to microsandbox
+services/<name>/
+  Cargo.toml     # package + dependencies (sdk-rust, tokio, serde_json)
+  src/main.rs    # McpLiteServer + tool handlers
   service.json   # manifest
   bin/           # cross-compiled binaries (gitignored)
 ```
@@ -344,8 +312,9 @@ Python extensions handle platforms and media. They do **not** do heavy CPU/IO wo
 | platform integrations (WhatsApp, Discord) | Python | `extensions/` | `AsyncExtension` + entry points |
 | Service-backed platform connectors | Python | `openagent/platforms/` | Shared `mcplite.py` + per-service adapters |
 | Media (TTS, STT) | Python | `extensions/` | Provider pattern, async wrappers |
-| Heavy compute / data tools | Go | `services/` | MCP-lite daemon + `service.json` |
+| Heavy compute / data tools | Rust | `services/` | MCP-lite daemon + `service.json` (Rust-first) |
 | VM-isolated code execution | Rust | `services/sandbox/` | MCP-lite daemon + microsandbox HTTP client |
+| WhatsApp | Go | `services/whatsapp/` | Only Go service (whatsmeow) |
 
 **WhatsApp:** Implemented as Go service (`services/whatsapp/`) using whatsmeow. No Python extension.
 
@@ -420,7 +389,6 @@ A minimalist admin/debug UI for the agent. POC only — **no authentication**, i
 - `/` Dashboard — agent status, Python packages, Go/Rust services, system stats
 - `/chat` — Send messages to the agent, stream responses via WebSocket; sessions sidebar
 - `/logs` — Live log stream via SSE (capped clients)
-- `/extensions` — Python packages (OpenAgent + extensions) with status
 - `/services` — Go and Rust services with status, restart button
 - `/config` — Read-only view of `config/openagent.yaml`
 - `/settings` — Connectors (enable/disable), provider, whitelist, WhatsApp QR
@@ -434,7 +402,6 @@ app/
     dashboard.py    # GET /
     chat.py         # GET /chat, WS /ws/chat, /api/chat/sessions
     logs.py         # GET /logs, GET /stream/logs (SSE)
-    extensions.py   # GET /extensions (renamed to Python)
     services.py     # GET /services, POST /services/{name}/restart
     config.py       # GET /config
     settings.py     # GET /settings, connectors, whitelist, WhatsApp QR
@@ -446,7 +413,6 @@ app/
     dashboard.html
     chat.html
     logs.html
-    extensions.html
     services.html
     config.html
   settings.html
@@ -473,8 +439,8 @@ app/
 - Pydantic for config and data models
 - No global mutable state
 
-### Go Services
-- Each service: standalone Go module (`go.mod`) in `services/<name>/`
+### Go Services (WhatsApp only)
+- WhatsApp: standalone Go module (`go.mod`) in `services/whatsapp/`
 - Socket path received via env var `OPENAGENT_SOCKET_PATH` or CLI flag
 - Goroutine per request — never block the accept loop
 - Graceful SIGTERM: drain in-flight requests, close socket, exit 0
@@ -514,9 +480,8 @@ app/
 - **Session manager** — `SessionBackend` protocol, SQLite impl, optional summarisation
 - **Tool registry** — dispatches to Go services via MCP-lite
 - **Provider layer** — Anthropic, OpenAI, OpenAI-compat (httpx)
-- Extensions: tts (edge + minimax), stt (faster-whisper + deepgram)
-- Go services: discord, telegram, slack, whatsapp (platform connectors)
-- Rust services: sandbox (VM execution), browser (headless automation)
+- Rust services: sandbox (VM execution), discord, stt, tts, browser, memory
+- Go services: whatsapp (only), telegram, slack (migration to Rust planned)
 - **Rust services: sandbox** — VM-isolated Python/Node/shell execution via microsandbox (v0.2.0; tools: `sandbox.execute`, `sandbox.shell`)
 - Config schema extended: `agents`, `session`, `platforms`, `tools.sandbox` + env overrides
 - Cross-platform build: `make all` / `make local` / `make sandbox` / `make browser`
@@ -532,7 +497,7 @@ See `roadmap.md` for consolidated Nanobot/Picoclaw comparison and detailed gaps.
 ## Deployment Notes
 
 **Raspberry Pi (primary):**
-- Go and Rust services compile to `linux/arm64`
+- Rust services compile to `linux/arm64`; Go (WhatsApp) to `linux/arm64`
 - Keep Python deps minimal — no heavy ML libs in core
 - Prefer EdgeTTS (no API key) for TTS, `faster-whisper int8 small` for STT
 - SQLite + LanceDB — no Postgres, no Redis
@@ -560,7 +525,7 @@ See `roadmap.md` for consolidated Nanobot/Picoclaw comparison and detailed gaps.
   - Propagate request correlation ids using MCP-lite frame ids.
 - App side:
   - Keep `/metrics` endpoint enabled for Prometheus scraping.
-- Go services:
+- Go/Rust services:
   - Emit one structured request log with request id, tool, outcome, duration.
   - Emit structured error logs for accept/decode/write failures.
 - Keep instrumentation lightweight and deterministic for Raspberry Pi targets.

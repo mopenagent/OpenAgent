@@ -4,7 +4,7 @@ This file defines how coding agents should work in this repository.
 
 ## Mission
 
-Build OpenAgent as a deterministic, extension-first Python + Go hybrid agent platform that orchestrates multi-agent pipelines on offline 14B-class models. Primary deployment target: Raspberry Pi / low-power hardware.
+Build OpenAgent as a deterministic, extension-first Python + Rust hybrid agent platform that orchestrates multi-agent pipelines on offline 14B-class models. **Rust-first** for services; only WhatsApp remains in Go. Primary deployment target: Raspberry Pi / low-power hardware.
 
 ## Agentic Layer
 
@@ -26,8 +26,8 @@ OpenAgent has two distinct planes. Do not mix their responsibilities.
 
 | Plane | Language | Location | Responsibility |
 |---|---|---|---|
-| Control Plane (Brain) | Python | `openagent/`, `extensions/` | LLM interfacing, orchestration, platform adapters |
-| Data Plane (Hands) | Go + Rust | `services/` | Platform connectors (Go), sandbox/browser (Rust) |
+| Control Plane (Brain) | Python | `openagent/` | LLM interfacing, orchestration, platform adapters |
+| Data Plane (Hands) | Rust + Go | `services/` | Platform connectors, compute (Rust-first); WhatsApp only in Go |
 
 The two planes communicate via **MCP-lite**: tagged JSON frames over Unix Domain Sockets (`data/sockets/<name>.sock`).
 
@@ -44,19 +44,13 @@ The two planes communicate via **MCP-lite**: tagged JSON frames over Unix Domain
 - Core is responsible for: extension discovery, service discovery, lifecycle management, shared interfaces, message bus, and agent loop orchestration.
 - Do not add domain-specific logic or heavy third-party dependencies to core.
 
-### 2. Python extensions = media only
-- Extensions under `extensions/<name>/` are for **media** (TTS, STT). Platform connectors (WhatsApp, Discord, etc.) live in `services/` as Go daemons with Python adapters in `openagent/platforms/`.
-- Extensions must be independently installable and register via entry points in `openagent.extensions`.
-- Extensions must be first-class async and event-driven.
-- Do not put CPU/IO-heavy compute in Python extensions — that goes in Go services.
-- **Workflow Orchestrator:** Python acts as a workflow orchestrator. A deterministic chain (e.g. WhatsApp -> STT -> LLM) saves tokens, memory, and latency. The LLM is just one node in Python's workflow graph.
-
-### 3. Go/Rust services = compute, data, platforms
+### 2. Rust-first services = compute, data, platforms
 - Platform connectors (discord, telegram, slack, whatsapp) and compute tools go in `services/<name>/`.
-- Go services: self-contained module with `service.json`. Rust services: sandbox, browser.
+- **Rust-first** — all new services are Rust (sandbox, discord, stt, tts, browser, memory). Only WhatsApp remains in Go.
 - Services communicate with the Python core via MCP-lite (not REST, not gRPC).
 - The Python `ServiceManager` owns the lifecycle: spawn, health-check, restart, shutdown.
 - Services never call back into Python — they only respond to requests and push events.
+- **Workflow Orchestrator:** Python acts as a workflow orchestrator. A deterministic chain (e.g. WhatsApp -> STT -> LLM) saves tokens, memory, and latency. The LLM is just one node in Python's workflow graph.
 
 ### 4. Service manifest is the only contract
 - `service.json` is the schema-first contract between core and service.
@@ -73,7 +67,7 @@ The two planes communicate via **MCP-lite**: tagged JSON frames over Unix Domain
 - Expose capabilities as tools the LLM can call.
 - Keep tool schemas stable, clear, and deterministic — write descriptions for a 14B model to understand.
 - Python tools: in-process Python callables registered with the agent loop.
-- Go service tools: declared in `service.json`, proxied through `ServiceManager`.
+- Service tools (Rust/Go): declared in `service.json`, proxied through `ServiceManager`.
 
 ### 6. Deterministic behavior
 - Prefer explicit control flow over hidden side effects.
@@ -86,22 +80,14 @@ The two planes communicate via **MCP-lite**: tagged JSON frames over Unix Domain
 - Core package name: `openagent-core`
 - Editable installs for local development:
   - `pip install -e .`
-  - `pip install -e extensions/<name>`
 - `httpx` for all external HTTP/API calls — no `requests`, no OpenAI SDK
 - `asyncio.to_thread()` when integrating sync libraries inside async flows
 - Pydantic for config and data models
 
-## Go and Services
+## Rust and Go Services
 
-- Go minimum version: 1.21+
-- Each service: standalone Go module (`go.mod`) in `services/<name>/`
-- Socket path received via env var `OPENAGENT_SOCKET_PATH`
-- Goroutine per request — never block the accept loop
-- Graceful SIGTERM: drain in-flight requests, close socket, exit 0
-- Cross-compile targets:
-  - `GOOS=linux GOARCH=arm64` — Raspberry Pi (primary)
-  - `GOOS=linux GOARCH=amd64` — Ubuntu server
-  - `GOOS=darwin GOARCH=arm64` — M4 Mac (dev)
+- **Rust (primary):** Each service: standalone Rust crate (`Cargo.toml`) in `services/<name>/`. Use `sdk-rust` for MCP-lite. Build: `make local` or `make all`. Socket path via `OPENAGENT_SOCKET_PATH`. Graceful SIGTERM.
+- **Go (WhatsApp only):** Go ≥ 1.21. Standalone Go module in `services/whatsapp/`. Goroutine per request — never block the accept loop. Cross-compile: `GOOS=linux GOARCH=arm64` for Pi.
 - Compiled binaries in `bin/` at project root (gitignored)
 
 ## MCP-lite Wire Protocol
@@ -125,9 +111,7 @@ Service → Agent:  {"id":"<uuid>","type":"tools.list.ok","tools":[...]}
 ```
 openagent/      # Core Python (minimal)
   tests/             # Core Python tests (including platforms/)
-extensions/         # Python platform integrations (independently installable)
-  <name>/tests/      # Extension-local tests (self-contained verticals)
-services/           # Go (discord, telegram, slack, whatsapp) + Rust (sandbox, browser)
+services/           # Rust (primary) + Go (whatsapp only)
 app/                # Minimalist web UI (FastAPI + HTMX, no auth — POC only)
   tests/             # Web UI tests (route-level and app-level)
 data/               # Runtime storage: sessions.db, memory/, sockets/, artifacts/
@@ -135,8 +119,7 @@ config/             # openagent.yaml (primary config)
 inspire/            # Reference implementations (gitignored)
 ```
 
-- Extension source layout: flat at `extensions/<name>/src/` — no nested package folders
-- Service source layout: `services/<name>/main.go` + `services/<name>/service.json`
+- Service source layout: Rust: `services/<name>/src/main.rs` + `Cargo.toml`; Go: `services/<name>/main.go` + `go.mod`
 - `data/` is gitignored — created at runtime
 
 ## Web UI (`app/`)
@@ -176,9 +159,8 @@ inspire/            # Reference implementations (gitignored)
 
 - Core tests: `openagent/tests/` (including `openagent/tests/platforms/`)
 - App tests: `app/tests/`
-- Extension tests: `extensions/<name>/tests/` only (self-contained per extension)
-- Go service tests: `services/<name>/` (Go `_test.go` files)
-- Mock Go services in Python tests with a minimal asyncio socket stub that speaks MCP-lite
+- Service tests: `services/<name>/` (Rust: `cargo test`; Go: `_test.go` files)
+- Mock services in Python tests with a minimal asyncio socket stub that speaks MCP-lite
 - No real network calls in tests, no real LLM calls in tests
 - `pytest-asyncio` for async Python tests
 - Every new core behaviour: tests covering discovery/loading, initialization, key execution paths
@@ -196,9 +178,9 @@ inspire/            # Reference implementations (gitignored)
 
 1. Read `CLAUDE.md` first, then `CURSOR.md` before substantial changes.
 2. Consult `roadmap.md` for consolidated Nanobot/Picoclaw comparison and build order.
-3. Determine: is this a platform/media concern (Python extension) or a compute concern (Go service)?
+3. Determine: is this a platform/media concern or a compute concern (Rust service)?
 4. Keep core changes minimal; push feature logic to extensions or services.
-5. Update/add tests in the appropriate `tests/` tree (Python) or `services/<name>/` (Go).
+5. Update/add tests in the appropriate `tests/` tree (Python) or `services/<name>/` (Rust/Go).
 6. Keep docs in sync: `README.md`, `CLAUDE.md`, `CURSOR.md`, `roadmap.md`, extension/service metadata.
 
 ## Observability Standards
@@ -208,4 +190,4 @@ inspire/            # Reference implementations (gitignored)
 - Every MCP-lite request path should emit correlation id (`id`), operation, status, and duration.
 - Prometheus metrics are exposed at `/metrics` from the web app and must include extension/provider and MCP-lite request latency/error counters.
 - Avoid logging raw message text or sensitive credentials; log payload sizes, identifiers, and status instead.
-- Go services should emit structured JSON logs per request with `service`, `request_id`, `tool`, `outcome`, and `duration_ms`.
+- Rust/Go services should emit structured JSON logs per request with `service`, `request_id`, `tool`, `outcome`, and `duration_ms`.

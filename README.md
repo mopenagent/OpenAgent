@@ -1,22 +1,23 @@
 # OpenAgent
 
-A deterministic Python + Go hybrid agent platform for low-power/offline deployments (including Raspberry Pi).  
-Python is the control plane (extensions, orchestration, routing). Go services are the data plane (long-lived tools and integrations) over MCP-lite on Unix sockets.
+A deterministic Python + Rust hybrid agent platform for low-power/offline deployments (including Raspberry Pi).  
+Python is the control plane (orchestration, routing). Rust services are the data plane (long-lived tools and integrations) over MCP-lite on Unix sockets. Only WhatsApp remains implemented in Go.
 
 ## Current Status
 
 **Implemented:**
-- **ServiceManager** — spawns, health-checks, restarts Go daemons (`openagent/services/manager.py`)
+- **ServiceManager** — spawns, health-checks, restarts service daemons (`openagent/services/manager.py`)
 - **Message bus** — `InboundMessage`, `OutboundMessage`, `SenderInfo`, per-session fanout (`openagent/bus/`)
 - **Agent loop** — custom ReAct loop, no framework dependency (`openagent/agent/loop.py`)
 - **Session manager** — `SessionBackend` protocol, SQLite impl, optional summarisation (`openagent/session/`)
-- **Tool registry** — dispatches to Go services via MCP-lite (`openagent/agent/tools.py`)
+- **Tool registry** — dispatches to services via MCP-lite (`openagent/agent/tools.py`)
 - **Provider layer** — Anthropic, OpenAI, OpenAI-compat (httpx-based, no SDK)
-- **MCP-lite** — Python client + Go SDK (`openagent/platforms/mcplite.py`, `services/sdk-go/mcplite/`)
+- **MCP-lite** — Python client + Rust SDK (`openagent/platforms/mcplite.py`, `services/sdk-rust/`)
 - **Heartbeat** — periodic health/summary polling (`openagent/heartbeat/`)
-- **platform adapters** — Discord, Telegram, WhatsApp, Slack (Python MCP-lite clients)
-- **Go/Rust services** — `sandbox`, `discord`, `telegram`, `slack`, `whatsapp`
-- **Web UI** — FastAPI + HTMX (dashboard, chat, logs, extensions, services, config)
+- **Platform adapters** — Discord, Telegram, WhatsApp, Slack (Python MCP-lite clients)
+- **Rust services** — `sandbox`, `discord`, `telegram`, `slack`, `stt`, `tts`, `browser`, `memory`
+- **Go service** — `whatsapp` (only remaining Go service)
+- **Web UI** — FastAPI + HTMX (dashboard, chat, logs, services, config)
 
 **In progress:**
 - Config schema extension (agents, bindings, session, tools)
@@ -24,22 +25,24 @@ Python is the control plane (extensions, orchestration, routing). Go services ar
 ## Architecture
 
 ```
-Python Control Plane (Brain)          Go Services (Hands)
-─────────────────────────────         ───────────────────
- platform/media extensions              Long-lived daemons
- Provider calls + orchestration ──JSON──► Compute/data integrations
- Message bus + health/heartbeat ◄─UDS──  Managed by ServiceManager
+Python Control Plane (Brain)          Rust Services (Hands)
+─────────────────────────────         ────────────────────
+ Provider calls + orchestration ──JSON──► Long-lived daemons
+ Message bus + health/heartbeat ◄─UDS──  Compute/data integrations
+                                          Managed by ServiceManager
 ```
 
 Two clear planes, one socket each, no REST overhead:
-- **Python extensions** for platform/media integration
-- **Go services** for compute/data-heavy and long-lived connectors
+- **Python** — control plane, orchestration, platform adapters
+- **Rust services** — compute, data, and platform connectors (Rust-first)
+- **Go** — WhatsApp only (whatsmeow)
 - **MCP-lite** newline-delimited JSON frames over Unix Domain Sockets
 
 ## Requirements
 
 - **Python 3.11+**
-- **Go 1.21+** (for building Go services)
+- **Rust** (for building Rust services; `cargo` + `cross` for cross-compilation)
+- **Go 1.21+** (only for WhatsApp service)
 - A local LLM via an OpenAI-compatible endpoint (e.g. [Ollama](https://ollama.com))
 
 ## Installation
@@ -48,15 +51,9 @@ Two clear planes, one socket each, no REST overhead:
 git clone https://github.com/kmaneesh/OpenAgent.git
 cd OpenAgent
 
-# Install core and all Python extensions
+# Install core
 pip install -r requirements.txt
-
-# Or selectively
-pip install -e .
-# WhatsApp is a Go service — no Python extension needed
-pip install -e extensions/discord
-pip install -e extensions/tts
-pip install -e extensions/stt
+# or: pip install -e .
 ```
 
 ## Quick Start
@@ -70,8 +67,6 @@ openagent
 # or
 python -m openagent.main
 
-# Verify extensions are registered
-python -c "import importlib.metadata as m; print(m.entry_points(group='openagent.extensions'))"
 ```
 
 ## Configuration
@@ -118,18 +113,17 @@ OpenAgent/
 │   ├── observability/      # Logging, metrics helpers, context
 │   └── tests/              # Core Python tests
 │
-├── extensions/             # Python platform/media integrations
-│   ├── discord/            # Discord bot
-│   ├── tts/                # Text-to-speech (EdgeTTS, MiniMax)
-│   └── stt/                # Speech-to-text (faster-whisper, Deepgram)
-│
-├── services/               # Go service daemons
-│   ├── sdk-go/             # Shared MCP-lite Go SDK
+├── services/               # Rust (primary) + Go (WhatsApp, telegram, slack)
+│   ├── sdk-rust/           # Shared MCP-lite Rust SDK
 │   ├── sandbox/            # Rust — VM-isolated code/shell execution (microsandbox)
-│   ├── discord/            # Discord service
-│   ├── telegram/           # Telegram service
-│   ├── slack/              # Slack service
-│   └── whatsapp/           # WhatsApp service
+│   ├── discord/            # Rust — Discord connector
+│   ├── telegram/           # Go — Telegram connector
+│   ├── slack/              # Go — Slack connector
+│   ├── whatsapp/           # Go — WhatsApp (whatsmeow; only Go service retained)
+│   ├── stt/                # Rust — Speech-to-text
+│   ├── tts/                # Rust — Text-to-speech
+│   ├── browser/            # Rust — Headless browser automation
+│   └── memory/             # Rust — Vector memory
 │
 ├── app/                    # Minimalist web UI (FastAPI + HTMX)
 │   ├── main.py             # FastAPI app
@@ -143,36 +137,33 @@ OpenAgent/
 └── inspire/                # Reference implementations
 ```
 
-## Python Extensions
-
-Extensions handle platforms and media. Each is independently installable.
-
-| Extension | Description | Dependencies |
-|-----------|-------------|--------------|
-| **discord** | Discord bot integration | discord.py, aiohttp |
-| **tts** | Text-to-speech (EdgeTTS / MiniMax) | edge-tts, aiohttp |
-| **stt** | Speech-to-text (faster-whisper / Deepgram) | faster-whisper, deepgram-sdk |
-
-## Go Services
+## Services (Rust-first, WhatsApp in Go)
 
 Services run as long-lived daemons managed by `ServiceManager`. Python spawns them, connects via Unix socket, and can start/stop/restart/inspect them at runtime.
 
-| Service | Description | Status |
-|---------|-------------|--------|
-| **sandbox** | VM-isolated code/shell execution (Rust, microsandbox); includes filesystem via shell | Implemented |
-| **discord** | Discord connector service | Implemented |
-| **telegram** | Telegram connector service (gotd/td) | Implemented |
-| **slack** | Slack connector service | Implemented |
-| **whatsapp** | WhatsApp service (whatsmeow) | Implemented |
-| **sdk-go** | Shared MCP-lite server/client codec helpers | Implemented |
+| Service | Language | Description |
+|---------|----------|-------------|
+| **sandbox** | Rust | VM-isolated code/shell execution (microsandbox) |
+| **discord** | Rust | Discord connector |
+| **telegram** | Go | Telegram connector |
+| **slack** | Go | Slack connector |
+| **whatsapp** | Go | WhatsApp (whatsmeow) |
+| **stt** | Rust | Speech-to-text |
+| **tts** | Rust | Text-to-speech |
+| **browser** | Rust | Headless browser automation (Playwright) |
+| **memory** | Rust | Vector memory (LanceDB) |
 
-Build a service:
+Build Rust services:
 ```bash
-cd services/my-service
-go build -o bin/my-service .
+make local    # Build for current host
+make all      # Cross-compile for all targets (Pi, etc.)
+```
 
-# Cross-compile for Raspberry Pi
-GOOS=linux GOARCH=arm64 go build -o bin/my-service-linux-arm64 .
+Build WhatsApp (Go):
+```bash
+cd services/whatsapp && go build -o bin/whatsapp .
+# Cross-compile for Raspberry Pi:
+GOOS=linux GOARCH=arm64 go build -o bin/whatsapp-linux-arm64 .
 ```
 
 ## Development
@@ -180,35 +171,31 @@ GOOS=linux GOARCH=arm64 go build -o bin/my-service-linux-arm64 .
 **Python tests:**
 ```bash
 python -m pytest openagent/tests app/tests
-python -m pytest extensions/discord/tests
-# WhatsApp is a Go service — no extension tests
-python -m pytest extensions/stt/tests
-python -m pytest extensions/tts/tests
 ```
 
 Note: avoid running `pytest` blindly at repository root if `inspire/` contains vendored/reference test trees.
 
-**Go tests:**
+**Rust service tests:**
 ```bash
-# from repo root
-for d in services/*; do
-  if [ -f "$d/go.mod" ]; then
-    (cd "$d" && GOCACHE=/tmp/go-build go test ./...)
-  fi
-done
+cd services/<name> && cargo test
 ```
 
-**Adding a new Python extension (platform/media):**
-1. Create `extensions/<name>/` with its own `pyproject.toml`
-2. Implement `BaseAsyncExtension` in `src/plugin.py`
-3. Register via entry point in `openagent.extensions` group
-4. Install: `pip install -e extensions/<name>`
+**Go tests (WhatsApp only):**
+```bash
+cd services/whatsapp && go test ./...
+```
 
-**Adding a new Go service (compute/data):**
+**Adding a new Rust service:**
+1. Create `services/<name>/` with `Cargo.toml` and `src/main.rs`
+2. Use `sdk-rust` for MCP-lite server boilerplate
+3. Write `service.json` manifest declaring tool schemas and binary paths
+4. Add to Makefile; `ServiceManager` picks up the manifest automatically
+
+**Adding a new Go service (rare; prefer Rust):**
 1. Create `services/<name>/` with `go.mod` and `main.go`
 2. Implement MCP-lite protocol: handle `tools.list`, `tool.call`, `ping` on a Unix socket
-3. Write `service.json` manifest declaring tool schemas and binary paths
-4. Build for all targets; `ServiceManager` picks up the manifest automatically
+3. Write `service.json` manifest
+4. Build for all targets
 
 ## Web UI
 
@@ -223,23 +210,13 @@ Visit `http://<pi-ip>:8080`.
 
 | Page | URL | Description |
 |------|-----|-------------|
-| Dashboard | `/` | Extension status + service status |
-| Chat | `/chat` | Chat surface (agent loop wiring still being finalized) |
+| Dashboard | `/` | Service status + system stats |
+| Chat | `/chat` | Chat surface |
 | Logs | `/logs` | Live log stream |
-| Extensions | `/extensions` | Loaded Python extensions and status |
-| Services | `/services` | Go services with status and restart controls |
+| Services | `/services` | Rust/Go services with status and restart controls |
 | Config | `/config` | Read-only view of `openagent.yaml` |
 
 Stack: FastAPI 3.x · Jinja2 · HTMX · Tailwind CSS (CDN) · WebSockets · SSE
-
-## Documentation
-
-| Doc | Purpose |
-|-----|---------|
-| [CLAUDE.md](CLAUDE.md) | Full development guide — architecture, MCP-lite, config, build order |
-| [AGENTS.md](AGENTS.md) | Agent workflow rules — two-plane architecture, naming, testing |
-| [CURSOR.md](CURSOR.md) | Cursor project context — layout, contracts, conventions |
-| [roadmap.md](roadmap.md) | Consolidated Nanobot + Picoclaw comparison, build order, gaps |
 
 ## License
 
