@@ -1,6 +1,6 @@
 {
     "name": "telegram",
-    "description": "Telegram bot service using gotd/td over MCP-lite.",
+    "description": "Telegram bot service using teloxide (Bot API) over MCP-lite.",
     "version": "0.1.0",
     "binary": {
         "linux/arm64": "bin/telegram-linux-arm64",
@@ -39,17 +39,17 @@
         },
         {
             "name": "telegram.send_message",
-            "description": "Send Telegram message with known user_id + access_hash.",
+            "description": "Send Telegram message. user_id = chat_id for private chats; access_hash ignored (Bot API).",
             "params": {
                 "type": "object",
                 "properties": {
                     "user_id": {
                         "type": "integer",
-                        "description": "Telegram user ID."
+                        "description": "Telegram user/chat ID."
                     },
                     "access_hash": {
                         "type": "integer",
-                        "description": "Telegram access hash."
+                        "description": "Ignored (Bot API)."
                     },
                     "text": {
                         "type": "string",
@@ -58,7 +58,6 @@
                 },
                 "required": [
                     "user_id",
-                    "access_hash",
                     "text"
                 ]
             }
@@ -68,5 +67,5 @@
         "telegram.connection.status",
         "telegram.message.received"
     ],
-    "runtime": "go"
+    "runtime": "rust"
 }
