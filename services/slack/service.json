@@ -1,6 +1,6 @@
 {
     "name": "slack",
-    "description": "Slack bot service using slack-go/slack over MCP-lite.",
+    "description": "Slack bot service using slack-morphism-rust over MCP-lite.",
     "version": "0.1.0",
     "binary": {
         "linux/arm64": "bin/slack-linux-arm64",
@@ -63,5 +63,5 @@
         "slack.connection.status",
         "slack.message.received"
     ],
-    "runtime": "go"
+    "runtime": "rust"
 }

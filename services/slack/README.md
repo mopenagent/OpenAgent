@@ -1,10 +1,10 @@
 # Slack Service
 
-Go service that connects OpenAgent to Slack via the [slack-go/slack](https://github.com/slack-go/slack) library. Runs as an MCP-lite daemon managed by `ServiceManager`; receives messages via Socket Mode and can send replies using `slack.send_message`.
+Rust service that connects OpenAgent to Slack via [slack-morphism-rust](https://github.com/abdolence/slack-morphism-rust). Runs as an MCP-lite daemon managed by `ServiceManager`; receives messages via Socket Mode and can send replies using `slack.send_message`.
 
 ## Overview
 
-- **Runtime:** Go (slack-go/slack)
+- **Runtime:** Rust (slack-morphism)
 - **Protocol:** MCP-lite over Unix socket (`data/sockets/slack.sock`)
 - **Events:** `slack.message.received`, `slack.connection.status`
 - **Tools:** `slack.status`, `slack.link_state`, `slack.send_message`
@@ -159,8 +159,10 @@ Or use the Slack API: `conversations.list` returns channel IDs.
 ```bash
 # From repo root
 make slack
+# or (current host only)
+make local
 # or
-cd services/slack && go build -o bin/slack .
+cd services/slack && cargo build --release && cp target/release/slack ../../bin/slack-darwin-arm64
 ```
 
 ---
