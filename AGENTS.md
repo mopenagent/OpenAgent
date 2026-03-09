@@ -111,7 +111,7 @@ Service → Agent:  {"id":"<uuid>","type":"tools.list.ok","tools":[...]}
 ```
 openagent/      # Core Python (minimal)
   tests/             # Core Python tests (including platforms/)
-services/           # Rust (primary) + Go (whatsapp only)
+services/           # Rust (primary) + Go (whatsapp only) - Modular (handlers.rs, metrics.rs, tools.rs, etc.)
 app/                # Minimalist web UI (FastAPI + HTMX, no auth — POC only)
   tests/             # Web UI tests (route-level and app-level)
 data/               # Runtime storage: sessions.db, memory/, sockets/, artifacts/
@@ -119,7 +119,7 @@ config/             # openagent.yaml (primary config)
 inspire/            # Reference implementations (gitignored)
 ```
 
-- Service source layout: Rust: `services/<name>/src/main.rs` + `Cargo.toml`; Go: `services/<name>/main.go` + `go.mod`
+- Service source layout: Rust: `services/<name>/src/{main.rs, handlers.rs, metrics.rs, tools.rs, context.rs}` + `Cargo.toml`; Go: `services/<name>/main.go` + `go.mod`
 - `data/` is gitignored — created at runtime
 
 ## Web UI (`app/`)
@@ -190,4 +190,5 @@ inspire/            # Reference implementations (gitignored)
 - Every MCP-lite request path should emit correlation id (`id`), operation, status, and duration.
 - Prometheus metrics are exposed at `/metrics` from the web app and must include extension/provider and MCP-lite request latency/error counters.
 - Avoid logging raw message text or sensitive credentials; log payload sizes, identifiers, and status instead.
-- Rust/Go services should emit structured JSON logs per request with `service`, `request_id`, `tool`, `outcome`, and `duration_ms`.
+- Rust services natively integrate `sdk-rust/otel.rs` and local `metrics.rs` to stream granular OpenTelemetry request traces, tracking tool execution outcomes and durations strictly. These spans power tools like Jaeger UI.
+- Go services emit structured JSON logs per request with `service`, `request_id`, `tool`, `outcome`, and `duration_ms`.

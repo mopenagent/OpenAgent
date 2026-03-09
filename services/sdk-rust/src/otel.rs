@@ -1,12 +1,16 @@
-//! OTEL tracing for Rust MCP-lite services.
+//! OTEL tracing for Rust MCP-lite services — dual export: file + optional Jaeger.
 //!
 //! Each service calls [`setup_otel`] at startup to initialise a TracerProvider
 //! that writes spans as OTLP-compatible JSON to:
 //!
 //!   `<logs_dir>/<service_name>-traces-YYYY-MM-DD.jsonl`
 //!
+//! If `OTEL_EXPORTER_OTLP_ENDPOINT` is set (e.g. `http://localhost:4318`),
+//! spans are also exported to a Jaeger/collector via `opentelemetry-otlp`
+//! (standard OTLP/HTTP with protobuf, retry, and proper headers).
+//! File export always runs regardless of whether the collector is reachable.
+//!
 //! Daily rotation and 1-day retention are managed by [`DailyFileWriter`].
-//! The exporter outputs one JSON object per line with OTLP-like structure.
 //!
 //! # Usage
 //! ```ignore
@@ -15,7 +19,7 @@
 //! #[tokio::main]
 //! async fn main() {
 //!     let _guard = setup_otel("browser", "logs").expect("otel init");
-//!     // spans from tracing! macros are forwarded to OTEL + file
+//!     // spans from tracing! macros are forwarded to OTEL + file (+ Jaeger if configured)
 //! }
 //! ```
 
@@ -178,7 +182,10 @@ fn days_to_ymd(days: u64) -> (u64, u64, u64) {
 // Custom file span exporter
 // ---------------------------------------------------------------------------
 
-/// Exports OTEL spans as newline-delimited JSON to a daily-rotating file.
+/// Exports OTEL spans to a daily-rotating JSONL file.
+///
+/// Jaeger / collector export is handled by a separate `opentelemetry-otlp`
+/// exporter added alongside this one in [`setup_otel_inner`].
 struct FileSpanExporter {
     inner: Arc<Mutex<DailyWriterInner>>,
     logs_dir: PathBuf,
@@ -214,7 +221,7 @@ impl SpanExporter for FileSpanExporter {
                     }
                 }
             }
-            for line in lines {
+            for line in &lines {
                 if let Err(e) = writeln!(guard.file, "{}", line) {
                     return Err(opentelemetry::trace::TraceError::from(e.to_string()));
                 }
@@ -225,8 +232,9 @@ impl SpanExporter for FileSpanExporter {
     }
 }
 
-/// Serialize a single span to an OTLP-compatible JSON string.
-fn serialize_span(span: &SpanData) -> String {
+/// Serialize a span's core fields into a JSON `Value` (no OTLP envelope).
+/// Used by both [`serialize_span`] (file) and [`batch_to_otlp_json`] (Jaeger).
+fn span_to_value(span: &SpanData) -> Value {
     let ctx = &span.span_context;
     let trace_id = format!("{:032x}", ctx.trace_id());
     let span_id = format!("{:016x}", ctx.span_id());
@@ -279,30 +287,31 @@ fn serialize_span(span: &SpanData) -> String {
         _ => (0, String::new()),
     };
 
-    let span_kind = span.span_kind.clone() as i32;
+    json!({
+        "traceId": trace_id,
+        "spanId": span_id,
+        "parentSpanId": parent_span_id,
+        "name": span.name.as_ref(),
+        "kind": span.span_kind.clone() as i32,
+        "startTimeUnixNano": start_ns,
+        "endTimeUnixNano": end_ns,
+        "attributes": attrs,
+        "events": events,
+        "status": { "code": status_code, "message": status_msg },
+    })
+}
 
+/// Serialize a single span into an OTLP-envelope JSON string (for file export).
+fn serialize_span(span: &SpanData) -> String {
+    let svc = span.instrumentation_scope.name();
     let obj = json!({
         "resourceSpans": [{
             "resource": {
-                "attributes": [{
-                    "key": "service.name",
-                    "value": { "stringValue": span.instrumentation_scope.name() }
-                }]
+                "attributes": [{"key": "service.name", "value": {"stringValue": svc}}]
             },
             "scopeSpans": [{
-                "scope": { "name": span.instrumentation_scope.name() },
-                "spans": [{
-                    "traceId": trace_id,
-                    "spanId": span_id,
-                    "parentSpanId": parent_span_id,
-                    "name": span.name.as_ref(),
-                    "kind": span_kind,
-                    "startTimeUnixNano": start_ns,
-                    "endTimeUnixNano": end_ns,
-                    "attributes": attrs,
-                    "events": events,
-                    "status": { "code": status_code, "message": status_msg },
-                }]
+                "scope": { "name": svc },
+                "spans": [span_to_value(span)],
             }]
         }]
     });
@@ -326,6 +335,7 @@ fn kv_to_json(v: &opentelemetry::Value) -> Value {
 /// Guard returned by [`setup_otel`]. Drop this to flush and shut down the tracer.
 pub struct OTELGuard {
     provider: TracerProvider,
+    _log_guard: tracing_appender::non_blocking::WorkerGuard,
 }
 
 impl std::fmt::Debug for OTELGuard {
@@ -372,33 +382,53 @@ fn setup_otel_inner(service_name: &str, logs_dir: &str) -> anyhow::Result<OTELGu
         current_date: today,
     }));
 
-    let exporter = FileSpanExporter {
-        inner,
-        logs_dir: logs_path,
-        prefix,
-    };
+    let file_exporter = FileSpanExporter { inner, logs_dir: logs_path, prefix };
 
     let resource = Resource::new(vec![
         KeyValue::new("service.name", service_name.to_owned()),
         KeyValue::new("telemetry.sdk.language", "rust"),
     ]);
 
-    let provider = TracerProvider::builder()
-        .with_batch_exporter(exporter, runtime::Tokio)
-        .with_resource(resource)
-        .build();
+    // Always write spans to daily-rotating JSONL files.
+    // If OTEL_EXPORTER_OTLP_ENDPOINT is set, also export via standard OTLP/HTTP
+    // to Jaeger or any compatible collector (retry, headers, compression included).
+    let mut builder = TracerProvider::builder()
+        .with_batch_exporter(file_exporter, runtime::Tokio)
+        .with_resource(resource);
+
+    if let Ok(ep) = std::env::var("OTEL_EXPORTER_OTLP_ENDPOINT") {
+        use opentelemetry_otlp::WithExportConfig as _;
+        let url = format!("{}/v1/traces", ep.trim_end_matches('/'));
+        match opentelemetry_otlp::SpanExporter::builder()
+            .with_http()
+            .with_endpoint(url)
+            .build()
+        {
+            Ok(otlp_exporter) => {
+                builder = builder.with_batch_exporter(otlp_exporter, runtime::Tokio);
+            }
+            Err(e) => eprintln!("OTLP span exporter init failed — Jaeger disabled: {e}"),
+        }
+    }
+
+    let provider = builder.build();
 
     let tracer = provider.tracer(service_name.to_owned());
+
+    // File appender for standard tracing logs
+    let file_appender = tracing_appender::rolling::daily(logs_dir, format!("{}-logs", service_name));
+    let (non_blocking_appender, log_guard) = tracing_appender::non_blocking(file_appender);
 
     // Bridge tracing → OTEL
     tracing_subscriber::registry()
         .with(EnvFilter::from_default_env().add_directive(tracing::Level::INFO.into()))
         .with(OpenTelemetryLayer::new(tracer))
         .with(tracing_subscriber::fmt::layer().with_writer(std::io::stderr))
+        .with(tracing_subscriber::fmt::layer().json().with_writer(non_blocking_appender))
         .try_init()
         .ok(); // ignore "already set" on repeated calls in tests
 
-    Ok(OTELGuard { provider })
+    Ok(OTELGuard { provider, _log_guard: log_guard })
 }
 
 // ---------------------------------------------------------------------------

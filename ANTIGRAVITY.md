@@ -29,3 +29,8 @@ Rust and Go services **never** talk to each other directly.
 The platform is designed to run entirely on a single 8GB Raspberry Pi (with the LLM/Vector DB potentially running on a dedicated local API/GPU).
 - **Vector DB (LanceDB):** Uses a direct Python client wrapper to leverage LanceDB's fast, native Rust core. We do *not* isolate this into a Rust service initially, as that would introduce the JSON IPC serialization tax for massive vector arrays. We only shift it if profiling shows it aggressively blocking the `asyncio` event loop.
 - The philosophy is: Build for a single node, monitor, profile, and optimize. Only distribute if absolutely necessary.
+
+## 6. Granular Edge Observability
+- **Modular Data Plane:** All Rust service logic (the Hands) is decoupled into strictly separated `handlers`, `tools`, `state`, and `metrics` modules.
+- **Native Telemetry:** Telemetry is explicitly wired up through the overarching `sdk-rust/otel.rs` implementation natively emitting granular tracing spans for all execution paths.
+- **Trace Ingestion:** We embrace Jaeger UI to ingest these traces, giving the Orchestrator high visibility into sub-component latencies and success metrics without the overhead of heavy polling solutions.

@@ -14,6 +14,8 @@
 //!   OPENAGENT_LOGS_DIR         — traces + metrics   (default: logs)
 //!   OPENAGENT_EMBED_CACHE_PATH — FastEmbed cache    (default: data/models)
 //!   OPENAGENT_EMBED_OFFLINE    — "1" → error if model not in cache (no download)
+//!   OPENAGENT_DOWNLOAD_ONLY    — "1" → download model, run warmup, then exit 0
+//!                                       (used by `make download-models`)
 //!
 //! # Abort
 //!
@@ -62,6 +64,9 @@ async fn main() -> Result<()> {
     let embed_offline = env::var("OPENAGENT_EMBED_OFFLINE")
         .map(|v| v == "1" || v.to_lowercase() == "true")
         .unwrap_or(false);
+    let download_only = env::var("OPENAGENT_DOWNLOAD_ONLY")
+        .map(|v| v == "1" || v.to_lowercase() == "true")
+        .unwrap_or(false);
 
     info!(
         memory_path = %memory_path,
@@ -93,6 +98,13 @@ async fn main() -> Result<()> {
         .expect("embedding model mutex poisoned")
         .embed(&["warmup".to_string()], None)?;
     info!(warmup_ms = t_warm.elapsed().as_millis(), "model warmup complete");
+
+    // Download-only mode: model is cached and warm — exit cleanly.
+    // Triggered by `make download-models` (OPENAGENT_DOWNLOAD_ONLY=1).
+    if download_only {
+        info!("download-only mode — model cached and verified, exiting");
+        return Ok(());
+    }
 
     let mut server = McpLiteServer::new(tools::make_tools(), "ready");
     tools::register_handlers(&mut server, Arc::clone(&db), Arc::clone(&model), Arc::clone(&tel));
