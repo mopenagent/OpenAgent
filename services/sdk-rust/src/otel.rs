@@ -51,6 +51,15 @@ pub struct DailyFileWriter {
     inner: Arc<Mutex<DailyWriterInner>>,
 }
 
+impl std::fmt::Debug for DailyFileWriter {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("DailyFileWriter")
+            .field("logs_dir", &self.logs_dir)
+            .field("prefix", &self.prefix)
+            .finish_non_exhaustive()
+    }
+}
+
 struct DailyWriterInner {
     file: File,
     current_date: String,
@@ -314,6 +323,12 @@ fn kv_to_json(v: &opentelemetry::Value) -> Value {
 /// Guard returned by [`setup_otel`]. Drop this to flush and shut down the tracer.
 pub struct OTELGuard {
     provider: TracerProvider,
+}
+
+impl std::fmt::Debug for OTELGuard {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("OTELGuard").finish_non_exhaustive()
+    }
 }
 
 impl Drop for OTELGuard {
