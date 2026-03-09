@@ -57,6 +57,23 @@ endif
 
 HOST_SUFFIX := $(HOST_OS)-$(HOST_ARCH)
 
+# ---------------------------------------------------------------------------
+# TTS: espeak-ng (required by kokoros / espeak-rs-sys)
+#
+# On macOS, espeak-rs-sys cmake fails on case-insensitive HFS+ (phoneme
+# filenames get truncated).  Point it at the Homebrew system library instead:
+#   brew install espeak-ng
+#
+# Use ?= so the user can still override with env vars if needed.
+# These vars are ignored by all other Rust services.
+# ---------------------------------------------------------------------------
+ifeq ($(HOST_OS),darwin)
+  ESPEAK_NG_LIB_DIR     ?= /opt/homebrew/opt/espeak-ng/lib
+  ESPEAK_NG_INCLUDE_DIR ?= /opt/homebrew/opt/espeak-ng/include
+  export ESPEAK_NG_LIB_DIR
+  export ESPEAK_NG_INCLUDE_DIR
+endif
+
 BIN := bin
 
 .PHONY: all local clean test-go test-rust test-py help \
@@ -207,4 +224,5 @@ help:
 	@echo "  Binaries:   $(BIN)/"
 	@echo "  Models:     data/models/whisper-ggml-small.bin  kokoro-v1.0.onnx  voices-v1.0.bin"
 	@echo "  Sandbox:    msb server start --dev"
+	@echo "  TTS/macOS:  brew install espeak-ng  (auto-detected; override with ESPEAK_NG_LIB_DIR)"
 	@echo ""
