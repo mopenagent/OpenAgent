@@ -19,8 +19,8 @@ templates: Jinja2Templates  # injected by main.py
 def _discover_services(root: Path) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     """Scan ``root/services/*/service.json`` and split into Go and Rust service lists.
 
-    Uses the ``runtime`` field in each manifest to classify. Defaults to ``"go"``
-    if not present. Returns (go_services, rust_services).
+    Uses the ``runtime`` field in each manifest to classify (``"rust"`` or ``"go"``).
+    Defaults to ``"go"`` if not present. Returns (go_services, rust_services).
     """
     services_dir = root / "services"
     go_services: list[dict[str, Any]] = []

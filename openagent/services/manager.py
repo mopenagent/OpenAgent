@@ -1,4 +1,4 @@
-"""ServiceManager — spawn, watch, and reconnect Go service binaries."""
+"""ServiceManager — spawn, watch, and reconnect Go and Rust service binaries."""
 
 from __future__ import annotations
 
@@ -95,7 +95,7 @@ class ServiceStatus(str, Enum):
 
 
 class ManagedService:
-    """Runtime state for one managed Go service."""
+    """Runtime state for one managed Go or Rust service."""
 
     __slots__ = (
         "manifest",
@@ -162,7 +162,7 @@ def _current_platform() -> str:
 
 
 class ServiceManager:
-    """Spawn, watch, and reconnect Go service binaries via MCP-lite sockets.
+    """Spawn, watch, and reconnect Go and Rust service binaries via MCP-lite sockets.
 
     Each service listed in ``services/*/service.json`` is started as a
     subprocess. A persistent ``McpLiteClient`` is maintained per service.
