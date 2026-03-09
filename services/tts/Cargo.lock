@@ -2210,13 +2210,14 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "base64",
+ "hex",
  "kokoros",
  "mimalloc",
+ "opentelemetry",
  "sdk-rust",
  "serde_json",
  "tokio",
  "tracing",
- "tracing-subscriber",
  "uuid",
 ]
 
