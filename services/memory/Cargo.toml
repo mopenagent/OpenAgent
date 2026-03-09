@@ -38,7 +38,8 @@ uuid = { version = "1", features = ["v4"] }
 
 # Observability
 tracing = "0.1"
-tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+opentelemetry = { version = "0.27", features = ["trace"] }
+hex = "0.4"
 
 # Async streams (for try_collect on LanceDB result streams)
 futures = "0.3"

@@ -3665,15 +3665,16 @@ dependencies = [
  "arrow-schema",
  "fastembed",
  "futures",
+ "hex",
  "lancedb",
  "mimalloc",
+ "opentelemetry",
  "ort",
  "sdk-rust",
  "serde",
  "serde_json",
  "tokio",
  "tracing",
- "tracing-subscriber",
  "uuid",
 ]
 

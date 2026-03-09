@@ -1,7 +1,7 @@
 //! Tool definitions and MCP-lite handler registration for the memory service.
 
 use crate::handlers::{handle_index_trace, handle_search_memory};
-use crate::metrics::MetricsWriter;
+use crate::metrics::MemoryTelemetry;
 use fastembed::TextEmbedding;
 use lancedb::connection::Connection;
 use sdk_rust::{McpLiteServer, ToolDefinition};
@@ -69,15 +69,15 @@ pub fn register_handlers(
     server: &mut McpLiteServer,
     db: Arc<Connection>,
     model: Arc<Mutex<TextEmbedding>>,
-    metrics: Arc<MetricsWriter>,
+    tel: Arc<MemoryTelemetry>,
 ) {
-    let (db1, m1, mx1) = (Arc::clone(&db), Arc::clone(&model), Arc::clone(&metrics));
+    let (db1, m1, t1) = (Arc::clone(&db), Arc::clone(&model), Arc::clone(&tel));
     server.register_tool("memory.index_trace", move |p| {
-        handle_index_trace(p, Arc::clone(&db1), Arc::clone(&m1), Arc::clone(&mx1))
+        handle_index_trace(p, Arc::clone(&db1), Arc::clone(&m1), Arc::clone(&t1))
     });
 
-    let (db2, m2, mx2) = (Arc::clone(&db), Arc::clone(&model), Arc::clone(&metrics));
+    let (db2, m2, t2) = (Arc::clone(&db), Arc::clone(&model), Arc::clone(&tel));
     server.register_tool("memory.search_memory", move |p| {
-        handle_search_memory(p, Arc::clone(&db2), Arc::clone(&m2), Arc::clone(&mx2))
+        handle_search_memory(p, Arc::clone(&db2), Arc::clone(&m2), Arc::clone(&t2))
     });
 }

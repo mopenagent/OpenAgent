@@ -1,13 +1,20 @@
 //! Tool handler implementations: memory.index_trace and memory.search_memory.
+//!
+//! Each handler wires all four OTEL pillars via MemoryTelemetry:
+//!   Traces  — tracing::info_span! with per-operation attributes
+//!   Metrics — MemoryTelemetry::record() on success and error
+//!   Logs    — structured tracing::{info!, warn!, error!} events on every path
+//!   Baggage — attach_context() propagates remote parent + tool/store tags
 
 use crate::db::{batch_stream, err_json, make_batch, LTS_TABLE, STS_TABLE, TOP_K};
-use crate::metrics::{ts_ms, MetricsWriter};
+use crate::metrics::{round1, round3, ts_ms, MemoryTelemetry};
 use anyhow::Result;
 use arrow_array::{ArrayRef, Float32Array, StringArray};
 use fastembed::TextEmbedding;
 use futures::TryStreamExt as _;
 use lancedb::connection::Connection;
 use lancedb::query::{ExecutableQuery as _, QueryBase as _};
+use opentelemetry::KeyValue;
 use serde_json::{json, Value};
 use std::sync::{Arc, Mutex};
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
@@ -18,7 +25,7 @@ pub fn handle_index_trace(
     params: Value,
     db: Arc<Connection>,
     model: Arc<Mutex<TextEmbedding>>,
-    metrics: Arc<MetricsWriter>,
+    tel: Arc<MemoryTelemetry>,
 ) -> Result<String> {
     let p = params
         .as_object()
@@ -41,8 +48,16 @@ pub fn handle_index_trace(
     let content_owned = content.to_owned();
     let store_owned = store.clone();
 
-    // Span: child of tool.call span set by sdk-rust server.rs, parented to the
-    // Python AgentLoop span via propagated trace_id/span_id.
+    // ── Pillar: Baggage ───────────────────────────────────────────────────────
+    let _cx_guard = MemoryTelemetry::attach_context(
+        &params,
+        vec![
+            KeyValue::new("tool", "memory.index_trace"),
+            KeyValue::new("store", store.clone()),
+        ],
+    );
+
+    // ── Pillar: Traces ────────────────────────────────────────────────────────
     let op_span = tracing::info_span!(
         "memory.store",
         index = %store,
@@ -50,8 +65,12 @@ pub fn handle_index_trace(
         embed_ms = tracing::field::Empty,
         store_ms = tracing::field::Empty,
         doc_id = tracing::field::Empty,
+        status = tracing::field::Empty,
     );
     let _enter = op_span.enter();
+
+    // ── Pillar: Logs ─────────────────────────────────────────────────────────
+    info!(index = %store, content_len, "memory.index_trace start");
 
     let result = tokio::task::block_in_place(|| {
         tokio::runtime::Handle::current().block_on(async {
@@ -84,13 +103,15 @@ pub fn handle_index_trace(
 
             op_span.record("store_ms", store_ms);
             op_span.record("doc_id", id.as_str());
+            op_span.record("status", "ok");
             info!(
                 index = %table_name, doc_id = %id,
                 embed_ms = embed_ms, store_ms = store_ms,
                 "document stored"
             );
 
-            metrics.record(&json!({
+            // Metrics
+            tel.record(&json!({
                 "ts_ms": ts_ms(), "service": "memory", "op": "store", "status": "ok",
                 "index": store_owned, "content_len": content_len,
                 "embed_ms": round1(embed_ms), "store_ms": round1(store_ms),
@@ -101,8 +122,9 @@ pub fn handle_index_trace(
     });
 
     if let Err(ref e) = result {
+        op_span.record("status", "error");
         error!(index = %store, error = %e, "store failed");
-        metrics.record(&json!({
+        tel.record(&json!({
             "ts_ms": ts_ms(), "service": "memory", "op": "store", "status": "error",
             "index": store, "content_len": content_len,
         }));
@@ -114,7 +136,7 @@ pub fn handle_search_memory(
     params: Value,
     db: Arc<Connection>,
     model: Arc<Mutex<TextEmbedding>>,
-    metrics: Arc<MetricsWriter>,
+    tel: Arc<MemoryTelemetry>,
 ) -> Result<String> {
     let p = params
         .as_object()
@@ -141,6 +163,16 @@ pub fn handle_search_memory(
     let query_owned = query.to_owned();
     let store_owned = store.clone();
 
+    // ── Pillar: Baggage ───────────────────────────────────────────────────────
+    let _cx_guard = MemoryTelemetry::attach_context(
+        &params,
+        vec![
+            KeyValue::new("tool", "memory.search_memory"),
+            KeyValue::new("store", store.clone()),
+        ],
+    );
+
+    // ── Pillar: Traces ────────────────────────────────────────────────────────
     let op_span = tracing::info_span!(
         "memory.search",
         index = %store,
@@ -149,8 +181,12 @@ pub fn handle_search_memory(
         search_ms = tracing::field::Empty,
         result_count = tracing::field::Empty,
         top_score = tracing::field::Empty,
+        status = tracing::field::Empty,
     );
     let _enter = op_span.enter();
+
+    // ── Pillar: Logs ─────────────────────────────────────────────────────────
+    info!(index = %store, query_len, "memory.search_memory start");
 
     let result = tokio::task::block_in_place(|| {
         tokio::runtime::Handle::current().block_on(async {
@@ -222,7 +258,6 @@ pub fn handle_search_memory(
                                 .map(|a| a.value(i).to_string())
                                 .unwrap_or_else(|| fallback.to_string())
                         };
-                        // _distance: lower = more similar (L2 on normalised vecs)
                         let distance = dist_col
                             .and_then(|c| c.as_any().downcast_ref::<Float32Array>())
                             .map(|a| a.value(i))
@@ -242,7 +277,6 @@ pub fn handle_search_memory(
 
             let search_ms = t_search.elapsed().as_secs_f64() * 1000.0;
 
-            // Global top-K: sort by distance ascending (closest = most relevant)
             hits.sort_by(|a, b| {
                 a.distance.partial_cmp(&b.distance).unwrap_or(std::cmp::Ordering::Equal)
             });
@@ -253,6 +287,7 @@ pub fn handle_search_memory(
 
             op_span.record("search_ms", search_ms);
             op_span.record("result_count", result_count as i64);
+            op_span.record("status", "ok");
             if let Some(s) = top_score {
                 op_span.record("top_score", f64::from(s));
             }
@@ -276,7 +311,8 @@ pub fn handle_search_memory(
                 })
                 .collect();
 
-            metrics.record(&json!({
+            // Metrics
+            tel.record(&json!({
                 "ts_ms": ts_ms(), "service": "memory", "op": "search", "status": "ok",
                 "index": store_owned, "query_len": query_len,
                 "embed_ms": round1(embed_ms), "search_ms": round1(search_ms),
@@ -291,21 +327,12 @@ pub fn handle_search_memory(
     });
 
     if let Err(ref e) = result {
+        op_span.record("status", "error");
         error!(index = %store, error = %e, "search failed");
-        metrics.record(&json!({
+        tel.record(&json!({
             "ts_ms": ts_ms(), "service": "memory", "op": "search", "status": "error",
             "index": store, "query_len": query_len,
         }));
     }
     result
-}
-
-/// Round to 1 decimal place for timing metrics.
-pub fn round1(v: f64) -> f64 {
-    (v * 10.0).round() / 10.0
-}
-
-/// Round to 3 decimal places for similarity scores.
-pub fn round3(v: f64) -> f64 {
-    (v * 1000.0).round() / 1000.0
 }

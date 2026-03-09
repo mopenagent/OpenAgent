@@ -31,7 +31,7 @@ use db::{
     DEFAULT_SOCKET_PATH, LTS_TABLE, STS_TABLE,
 };
 use fastembed::{EmbeddingModel, InitOptions, TextEmbedding};
-use metrics::MetricsWriter;
+use metrics::MemoryTelemetry;
 use mimalloc::MiMalloc;
 use sdk_rust::{setup_otel, McpLiteServer};
 use std::env;
@@ -47,25 +47,11 @@ async fn main() -> Result<()> {
     let logs_dir =
         env::var("OPENAGENT_LOGS_DIR").unwrap_or_else(|_| DEFAULT_LOGS_DIR.to_string());
 
-    // Traces → logs/memory-traces-YYYY-MM-DD.jsonl
-    // Bridges tracing macros → OTEL spans → OTLP-JSON file exporter (sdk-rust)
-    let _otel_guard = match setup_otel("memory", &logs_dir) {
-        Ok(g) => Some(g),
-        Err(e) => {
-            eprintln!("otel init failed (traces disabled): {e}");
-            tracing_subscriber::fmt()
-                .with_env_filter(
-                    tracing_subscriber::EnvFilter::from_default_env()
-                        .add_directive("memory=info".parse().expect("valid log directive")),
-                )
-                .try_init()
-                .ok();
-            None
-        }
-    };
+    if let Err(e) = setup_otel("memory", &logs_dir) {
+        eprintln!("{{\"level\":\"WARN\",\"message\":\"otel init failed\",\"error\":\"{e}\"}}");
+    }
 
-    // Metrics → logs/memory-metrics-YYYY-MM-DD.jsonl (one line per op)
-    let metrics = Arc::new(MetricsWriter::new(&logs_dir)?);
+    let tel = Arc::new(MemoryTelemetry::new(&logs_dir)?);
 
     let memory_path =
         env::var("OPENAGENT_MEMORY_PATH").unwrap_or_else(|_| DEFAULT_MEMORY_PATH.to_string());
@@ -109,7 +95,7 @@ async fn main() -> Result<()> {
     info!(warmup_ms = t_warm.elapsed().as_millis(), "model warmup complete");
 
     let mut server = McpLiteServer::new(tools::make_tools(), "ready");
-    tools::register_handlers(&mut server, Arc::clone(&db), Arc::clone(&model), Arc::clone(&metrics));
+    tools::register_handlers(&mut server, Arc::clone(&db), Arc::clone(&model), Arc::clone(&tel));
 
     info!(socket = %socket_path, "memory service ready");
     server.serve(&socket_path).await?;
