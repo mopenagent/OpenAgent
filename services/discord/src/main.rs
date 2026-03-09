@@ -13,16 +13,20 @@
 //! - `discord.connection.status`  — emitted on Ready / disconnect / error
 //! - `discord.message.received`   — emitted for every inbound message
 //!
-//! # Abort
-//! Fatal on invalid socket path (OS-level bind failure).
-//! Serenity reconnects automatically on gateway disconnect.
+//! # Environment variables
+//! - `DISCORD_BOT_TOKEN` or `OPENAGENT_DISCORD_BOT_TOKEN`
+//! - `OPENAGENT_SOCKET_PATH` (default: `data/sockets/discord.sock`)
+//! - `OPENAGENT_LOGS_DIR`    (default: `logs`)
 
 mod handler;
+mod handlers;
+mod metrics;
 mod state;
 mod tools;
 
 use anyhow::Context as _;
 use handler::Handler;
+use metrics::DiscordTelemetry;
 use mimalloc::MiMalloc;
 use sdk_rust::McpLiteServer;
 use serenity::prelude::*;
@@ -54,12 +58,16 @@ async fn main() -> anyhow::Result<()> {
         eprintln!("{{\"level\":\"WARN\",\"message\":\"otel init failed\",\"error\":\"{e}\"}}");
     }
 
+    let tel = Arc::new(
+        DiscordTelemetry::new(&logs_dir).context("failed to init discord telemetry")?,
+    );
+
     // Build MCP-lite server and grab the event sender before serve() consumes it.
     let mut server = McpLiteServer::new(tools::make_tools(), "ready");
     let event_tx = server.event_sender();
 
     let state = Arc::new(DiscordState::new(event_tx));
-    tools::register_handlers(&mut server, Arc::clone(&state));
+    tools::register_handlers(&mut server, Arc::clone(&state), tel);
 
     // Build Serenity client.
     let intents = GatewayIntents::GUILD_MESSAGES
@@ -73,11 +81,8 @@ async fn main() -> anyhow::Result<()> {
 
     info!(socket = %socket_path, "discord.start");
 
-    // Capture the shard manager before moving `client` into the spawn task so
-    // we can request a clean gateway shutdown when the MCP-lite server exits.
     let shard_manager = Arc::clone(&client.shard_manager);
 
-    // Run Serenity in the background; serve MCP-lite in the foreground.
     let discord_handle = tokio::spawn(async move {
         if let Err(e) = client.start().await {
             error!(error = %e, "discord.client.error");
@@ -86,8 +91,6 @@ async fn main() -> anyhow::Result<()> {
 
     let serve_result = server.serve(&socket_path).await;
 
-    // Graceful shutdown: tell Serenity to close the gateway WebSocket before
-    // aborting the task, so Discord doesn't see an unclean disconnect.
     shard_manager.shutdown_all().await;
     discord_handle.abort();
 
