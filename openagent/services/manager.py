@@ -22,8 +22,6 @@ from openagent.observability.logging import get_logger
 
 logger = get_logger(__name__)
 
-# Seconds to wait for socket file to appear after process is spawned
-_SOCKET_WAIT_S = 10.0
 _SOCKET_POLL_S = 0.05
 
 
@@ -39,6 +37,10 @@ class HealthConfig:
     restart_backoff_ms: list[int] = field(
         default_factory=lambda: [1000, 2000, 5000, 10000, 30000]
     )
+    # How long to wait for the socket file to appear after the process is
+    # spawned.  Services that load large models on init (e.g. memory/fastembed)
+    # need a higher value.  Default matches the historical _SOCKET_WAIT_S.
+    start_timeout_ms: int = 30_000
 
 
 @dataclass(slots=True)
@@ -62,6 +64,7 @@ class ServiceManifest:
             interval_ms=int(health_raw.get("interval_ms", 5000)),
             timeout_ms=int(health_raw.get("timeout_ms", 1000)),
             restart_backoff_ms=[int(x) for x in backoff_raw],
+            start_timeout_ms=int(health_raw.get("start_timeout_ms", 30_000)),
         )
         name = str(data.get("name") or manifest_path.parent.name)
         return cls(
@@ -508,8 +511,9 @@ class ServiceManager:
             )
 
     async def _wait_for_socket(self, svc: ManagedService, socket_path: Path) -> None:
+        timeout_s = svc.manifest.health.start_timeout_ms / 1000.0
         loop = asyncio.get_running_loop()
-        deadline = loop.time() + _SOCKET_WAIT_S
+        deadline = loop.time() + timeout_s
         while loop.time() < deadline:
             if socket_path.exists():
                 return
@@ -520,7 +524,7 @@ class ServiceManager:
                 )
             await asyncio.sleep(_SOCKET_POLL_S)
         raise RuntimeError(
-            f"socket {socket_path} did not appear within {_SOCKET_WAIT_S}s"
+            f"socket {socket_path} did not appear within {timeout_s:.0f}s"
         )
 
     async def _pipe_stdout(

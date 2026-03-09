@@ -59,7 +59,7 @@ async def lifespan(app: FastAPI):
 
     app.state.root = ROOT
 
-    # Load extensions (discord, tts, stt, etc.)
+    # Load extensions (whatsapp, etc.)
     loaded_extensions = await load_extensions()
     app.state.extensions = {e.name: e.instance for e in loaded_extensions}
 

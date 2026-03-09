@@ -1,4 +1,4 @@
-"""OpenTelemetry observability — OTLP/JSON file-only output.
+"""OpenTelemetry observability — dual export: OTLP/JSON files + optional Jaeger.
 
 Each signal type gets its own daily-rotated JSONL file in the ``logs/``
 directory (configurable via ``setup_otel``).
@@ -10,8 +10,16 @@ directory (configurable via ``setup_otel``).
 Files older than 1 day are deleted automatically on rotation.  Sampling is
 100 % (AlwaysOnSampler).
 
-Wire format: OTLP/JSON — identical to what an OTLP/HTTP collector expects,
-so zero transformation is needed when a collector is added later.
+Wire format: OTLP/JSON — identical to what an OTLP/HTTP collector expects.
+
+Jaeger / collector export
+--------------------------
+Set ``OTEL_EXPORTER_OTLP_ENDPOINT`` to enable live export alongside the files::
+
+    OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318  # Jaeger OTLP/HTTP
+
+Requires ``opentelemetry-exporter-otlp-proto-http`` (already in requirements.txt).
+The file export always runs; Jaeger is additive and best-effort.
 
 Usage::
 
@@ -71,6 +79,26 @@ try:
     _OTEL_AVAILABLE = True
 except ImportError:  # pragma: no cover
     _OTEL_AVAILABLE = False
+
+# Optional OTLP/HTTP exporters — present when opentelemetry-exporter-otlp-proto-http is installed
+try:
+    from opentelemetry.exporter.otlp.proto.http.trace_exporter import (
+        OTLPSpanExporter as _OTLPSpanExporter,
+    )
+    try:
+        from opentelemetry.exporter.otlp.proto.http.log_exporter import (
+            OTLPLogExporter as _OTLPLogExporter,
+        )
+    except ImportError:
+        from opentelemetry.exporter.otlp.proto.http._log_exporter import (  # type: ignore[no-redef]
+            OTLPLogExporter as _OTLPLogExporter,
+        )
+    from opentelemetry.exporter.otlp.proto.http.metric_exporter import (
+        OTLPMetricExporter as _OTLPMetricExporter,
+    )
+    _OTLP_HTTP_AVAILABLE = True
+except ImportError:
+    _OTLP_HTTP_AVAILABLE = False
 
 _log = logging.getLogger(__name__)
 
@@ -580,21 +608,43 @@ def setup_otel(
         resource_attrs.update(extra_resource_attrs)
     resource = Resource(attributes=resource_attrs)
 
+    # Resolve OTLP endpoint — controls whether Jaeger/collector export is enabled
+    otlp_endpoint = os.getenv("OTEL_EXPORTER_OTLP_ENDPOINT", "").rstrip("/")
+    use_otlp = bool(otlp_endpoint) and _OTLP_HTTP_AVAILABLE
+    if otlp_endpoint and not _OTLP_HTTP_AVAILABLE:
+        _log.warning(
+            "OTEL_EXPORTER_OTLP_ENDPOINT is set but opentelemetry-exporter-otlp-proto-http "
+            "is not installed — Jaeger export disabled.  Run: pip install "
+            "opentelemetry-exporter-otlp-proto-http"
+        )
+
     # -- Traces --
     span_writer = DailyFileWriter(logs_dir, f"{service_name}-traces")
     _writers.append(span_writer)
-    span_exporter = OTLPJsonSpanExporter(span_writer)
     tracer_provider = TracerProvider(resource=resource, sampler=ALWAYS_ON)
-    tracer_provider.add_span_processor(BatchSpanProcessor(span_exporter))
+    tracer_provider.add_span_processor(BatchSpanProcessor(OTLPJsonSpanExporter(span_writer)))
+    if use_otlp:
+        try:
+            tracer_provider.add_span_processor(
+                BatchSpanProcessor(_OTLPSpanExporter(endpoint=f"{otlp_endpoint}/v1/traces"))
+            )
+        except Exception as exc:
+            _log.warning("OTLP span exporter init failed — Jaeger traces disabled: %s", exc)
     trace.set_tracer_provider(tracer_provider)
     _providers.append(tracer_provider)
 
     # -- Logs --
     log_writer = DailyFileWriter(logs_dir, f"{service_name}-logs")
     _writers.append(log_writer)
-    log_exporter = OTLPJsonLogExporter(log_writer)
     logger_provider = LoggerProvider(resource=resource)
-    logger_provider.add_log_record_processor(BatchLogRecordProcessor(log_exporter))
+    logger_provider.add_log_record_processor(BatchLogRecordProcessor(OTLPJsonLogExporter(log_writer)))
+    if use_otlp:
+        try:
+            logger_provider.add_log_record_processor(
+                BatchLogRecordProcessor(_OTLPLogExporter(endpoint=f"{otlp_endpoint}/v1/logs"))
+            )
+        except Exception as exc:
+            _log.warning("OTLP log exporter init failed — Jaeger logs disabled: %s", exc)
     # Bridge Python logging → OTEL logs
     otel_handler = LoggingHandler(level=logging.NOTSET, logger_provider=logger_provider)
     logging.getLogger().addHandler(otel_handler)
@@ -603,17 +653,32 @@ def setup_otel(
     # -- Metrics --
     metric_writer = DailyFileWriter(logs_dir, f"{service_name}-metrics")
     _writers.append(metric_writer)
-    metric_exporter = OTLPJsonMetricExporter(metric_writer)
-    reader = PeriodicExportingMetricReader(
-        metric_exporter, export_interval_millis=metric_export_interval_ms
-    )
-    meter_provider = MeterProvider(resource=resource, metric_readers=[reader])
+    metric_readers: list[Any] = [
+        PeriodicExportingMetricReader(
+            OTLPJsonMetricExporter(metric_writer),
+            export_interval_millis=metric_export_interval_ms,
+        )
+    ]
+    if use_otlp:
+        try:
+            metric_readers.append(
+                PeriodicExportingMetricReader(
+                    _OTLPMetricExporter(endpoint=f"{otlp_endpoint}/v1/metrics"),
+                    export_interval_millis=metric_export_interval_ms,
+                )
+            )
+        except Exception as exc:
+            _log.warning("OTLP metric exporter init failed — Jaeger metrics disabled: %s", exc)
+    meter_provider = MeterProvider(resource=resource, metric_readers=metric_readers)
     from opentelemetry import metrics
     metrics.set_meter_provider(meter_provider)
     _providers.append(meter_provider)
 
     _log.info(
-        "OTEL initialized — service=%s logs_dir=%s", service_name, logs_dir
+        "OTEL initialized — service=%s logs_dir=%s jaeger=%s",
+        service_name,
+        logs_dir,
+        otlp_endpoint or "disabled",
     )
 
 
