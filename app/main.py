@@ -10,7 +10,7 @@ from pathlib import Path
 from fastapi import FastAPI, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
-from app.routes import dashboard, chat, services, config, llm, provider, settings, browser
+from app.routes import dashboard, chat, services, config, llm, provider, settings, browser, logs
 from openagent.agent.platform_tools import make_platform_tools
 from openagent.agent.skill_tools import make_skill_tools
 from openagent.agent.loop import AgentLoop
@@ -276,6 +276,7 @@ services.templates = templates
 config.templates = templates
 settings.templates = templates
 browser.templates = templates
+logs.templates = templates
 
 app.include_router(dashboard.router)
 app.include_router(chat.router)
@@ -285,6 +286,7 @@ app.include_router(settings.router)
 app.include_router(llm.router)
 app.include_router(provider.router)
 app.include_router(browser.router)
+app.include_router(logs.router)
 
 
 @app.get("/metrics")

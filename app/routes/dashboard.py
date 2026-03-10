@@ -124,6 +124,28 @@ def _python_packages(root: Path) -> list[dict[str, Any]]:
     return result
 
 
+def _get_latest_log_content(root: Path, max_lines: int = 1000) -> str:
+    """Read the last N lines from the latest log file in the logs/ directory."""
+    logs_dir = root / "logs"
+    if not logs_dir.exists() or not logs_dir.is_dir():
+        return ""
+    
+    # Find the most recently modified .log file
+    log_files = list(logs_dir.glob("*.log"))
+    if not log_files:
+        return ""
+    
+    latest_log_file = max(log_files, key=lambda f: f.stat().st_mtime)
+    
+    try:
+        # Read the file and return the last N lines
+        with open(latest_log_file, "r", encoding="utf-8") as f:
+            lines = f.readlines()
+            return "".join(lines[-max_lines:])
+    except Exception:
+        return ""
+
+
 @router.get("/")
 async def dashboard(request: Request):
     import asyncio

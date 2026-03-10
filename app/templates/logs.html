@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+{% block title %}Logs — OpenAgent{% endblock %}
+{% block page_title %}System Logs{% endblock %}
+
+{% block content %}
+<div class="flex flex-col h-full gap-4 pb-4">
+  
+  <div class="flex flex-wrap items-center gap-4 bg-white dark:bg-stone-800 border border-[#DEE2E6] dark:border-stone-700 rounded-xl p-4 shadow-sm dark:shadow-none shrink-0">
+    <label for="log-file-select" class="text-sm font-semibold text-stone-900 dark:text-stone-100 whitespace-nowrap">Select Log File:</label>
+    <select id="log-file-select" onchange="window.location.href='/logs?file=' + this.value" class="bg-stone-50 dark:bg-stone-900 border border-[#DEE2E6] dark:border-stone-700 text-stone-900 dark:text-stone-100 text-sm rounded-lg focus:ring-[#dea584] focus:border-[#dea584] block p-2.5 min-w-48 outline-none">
+      {% for lf in log_files %}
+        <option value="{{ lf }}" {% if lf == selected_file %}selected{% endif %}>{{ lf }}</option>
+      {% endfor %}
+      {% if not log_files %}
+        <option value="" disabled selected>No logs available</option>
+      {% endif %}
+    </select>
+  </div>
+
+  <div class="bg-white dark:bg-stone-800 border border-[#DEE2E6] dark:border-stone-700 rounded-xl overflow-hidden shadow-sm dark:shadow-none flex-1 flex flex-col min-h-0">
+    <div class="px-4 py-3 border-b border-[#DEE2E6] dark:border-stone-700 flex items-center justify-between shrink-0">
+      <h2 class="text-sm font-semibold text-stone-900 dark:text-stone-100">{{ selected_file or "No file selected" }}</h2>
+      <span class="text-xs text-stone-500 dark:text-stone-400">Latest 2000 lines</span>
+    </div>
+    <div class="flex-1 overflow-auto bg-stone-50 dark:bg-stone-900 p-0 m-0 relative">
+      <pre class="font-mono text-[11px] leading-snug text-stone-600 dark:text-stone-300 whitespace-pre-wrap p-4 m-0 min-h-full" id="logs-container">{% if log_content %}{{ log_content }}{% else %}No logs found.{% endif %}</pre>
+    </div>
+  </div>
+
+</div>
+
+<script>
+  (function() {
+    var preElement = document.getElementById('logs-container');
+    var container = preElement ? preElement.parentElement : null;
+    if (container) {
+        // Simple trick to scroll the container to the bottom 
+        setTimeout(function() {
+            container.scrollTop = container.scrollHeight;
+        }, 10);
+    }
+  })();
+</script>
+{% endblock %}
