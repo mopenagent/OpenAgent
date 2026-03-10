@@ -184,6 +184,8 @@ class ServiceManager:
         *,
         root: Path,
         env_extras: dict[str, dict[str, str]] | None = None,
+        state_store: Any | None = None,
+        disabled_names: frozenset[str] = frozenset(),
     ) -> None:
         self._root = root
         self._platform = _current_platform()
@@ -196,22 +198,41 @@ class ServiceManager:
         # Optional async callback fired each time a service becomes ready.
         # Signature: async fn(service_name: str) -> None
         self._service_ready_cb: Callable[[str], Awaitable[None]] | None = None
+        # SettingsStore (duck-typed) — writes service lifecycle events to service_state
+        # table. None means no persistence (e.g. tests without a DB).
+        self._state_store: Any | None = state_store
+        # Services that the operator has explicitly disabled — skip on startup.
+        self._disabled_names: frozenset[str] = disabled_names
 
     # ------------------------------------------------------------------
     # Public API
     # ------------------------------------------------------------------
 
     async def start(self) -> None:
-        """Discover manifests and start a watchdog task per service."""
+        """Discover manifests and start a watchdog task per enabled service."""
         self._running = True
         manifests = self._discover_manifests()
+        skipped: list[str] = []
         for manifest in manifests:
             svc = ManagedService(manifest)
             self._services[manifest.name] = svc
+            if manifest.name in self._disabled_names:
+                svc.status = ServiceStatus.STOPPED
+                skipped.append(manifest.name)
+                continue
             task = asyncio.create_task(
                 self._watchdog(svc), name=f"svcmgr.watchdog.{svc.name}"
             )
             self._watchdog_tasks[svc.name] = task
+        if skipped:
+            log_event(
+                logger,
+                logging.INFO,
+                "services skipped (disabled by operator)",
+                component="service_manager",
+                operation="start",
+                skipped=skipped,
+            )
         log_event(
             logger,
             logging.INFO,
@@ -273,6 +294,7 @@ class ServiceManager:
                 pass
         await self._teardown(svc)
         svc.status = ServiceStatus.STOPPED
+        self._record(self._state_store.record_service_stop(svc.name)) if self._state_store else None
         log_event(
             logger,
             logging.INFO,
@@ -403,6 +425,7 @@ class ServiceManager:
             delay_ms = backoff[min(attempt, len(backoff) - 1)]
             attempt += 1
             svc.restart_count += 1
+            self._record(self._state_store.record_service_restart(svc.name)) if self._state_store else None
             try:
                 await asyncio.sleep(delay_ms / 1000.0)
             except asyncio.CancelledError:
@@ -504,6 +527,7 @@ class ServiceManager:
             service=svc.name,
             socket=str(socket_path),
         )
+        self._record(self._state_store.record_service_start(svc.name)) if self._state_store else None
         if self._service_ready_cb is not None:
             asyncio.create_task(
                 self._service_ready_cb(svc.name),
@@ -526,6 +550,31 @@ class ServiceManager:
         raise RuntimeError(
             f"socket {socket_path} did not appear within {timeout_s:.0f}s"
         )
+
+    # ------------------------------------------------------------------
+    # State store helpers
+    # ------------------------------------------------------------------
+
+    async def _safe_record(self, coro: Any) -> None:  # noqa: ANN401
+        """Await a state_store coroutine; swallow errors so DB issues never
+        interrupt service lifecycle management."""
+        try:
+            await coro
+        except Exception as exc:
+            log_event(
+                logger,
+                logging.DEBUG,
+                "service_state DB write failed (non-fatal)",
+                component="service_manager",
+                error=str(exc),
+            )
+
+    def _record(self, coro: Any) -> None:  # noqa: ANN401
+        """Fire-and-forget a state_store write on the event loop."""
+        if self._state_store is not None:
+            asyncio.create_task(
+                self._safe_record(coro), name="svcmgr.state_db"
+            )
 
     async def _pipe_stdout(
         self, svc: ManagedService, process: asyncio.subprocess.Process

@@ -106,20 +106,30 @@ async def lifespan(app: FastAPI):
     app.state.heartbeat = heartbeat
     await heartbeat.start()
 
+    # Build the set of services the operator has explicitly disabled so the
+    # ServiceManager skips them on startup (start-then-stop is wasteful and
+    # can leave sockets in a bad state).  Two sources are merged:
+    #   1. service_state.enabled=0  (written by Services page Start/Stop buttons)
+    #   2. settings connector.<name>.enabled=0  (written by Settings connectors toggle)
+    _disabled: set[str] = set()
+    _svc_states = await settings_store.get_all_service_states()
+    for _svc_name, _svc_st in _svc_states.items():
+        if not _svc_st["enabled"]:
+            _disabled.add(_svc_name)
+    _connector_settings = await settings_store.get_all(prefix="connector.")
+    for _key, _val in _connector_settings.items():
+        if _key.endswith(".enabled") and _val == "0":
+            _disabled.add(_key.split(".")[1])
+
     # Service manager — inject platform credentials as env vars into Go services
     service_manager = ServiceManager(
         root=ROOT,
         env_extras=build_service_env_extras(cfg, ROOT),
+        state_store=settings_store,
+        disabled_names=frozenset(_disabled),
     )
     app.state.service_manager = service_manager
     await service_manager.start()
-
-    # Stop connectors that were explicitly disabled in settings
-    _connector_settings = await settings_store.get_all(prefix="connector.")
-    for _key, _val in _connector_settings.items():
-        if _key.endswith(".enabled") and _val == "0":
-            _svc_name = _key.split(".")[1]
-            await service_manager.stop_service(_svc_name)
 
     # Message bus
     bus = MessageBus()
