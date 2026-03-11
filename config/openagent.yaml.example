@@ -3,11 +3,13 @@
 # Secrets should be set as environment variables — env vars always take
 # priority over values in this file.
 #
-# ── Provider env vars ────────────────────────────────────────────────────────
+# ── Cortex / genai provider env vars ────────────────────────────────────────
+#   Cortex is the only LLM caller. These values are read by Cortex from config
+#   and env vars, then routed through the Rust `genai` client layer.
 #   OPENAGENT_PROVIDER_KIND   — openai_compat | anthropic | openai
 #   OPENAGENT_LLM_BASE_URL    — full base URL (e.g. http://localhost:1234/v1)
 #   OPENAGENT_API_KEY         — API key / bearer token
-#   OPENAGENT_MODEL           — model name to request
+#   OPENAGENT_MODEL           — concrete model name (required by Cortex)
 #   OPENAGENT_LLM_TIMEOUT     — request timeout in seconds (float)
 #
 # ── Platform env vars (preferred over storing secrets in YAML) ─────────────
@@ -24,13 +26,18 @@
 #   MSB_API_KEY               — microsandbox API key (required; run: msb server keygen)
 #   MSB_MEMORY_MB             — VM memory per sandbox call in MB (default 512)
 
-# ── Provider ─────────────────────────────────────────────────────────────────
+# ── Provider (consumed by Cortex via genai) ─────────────────────────────────
 provider:
-  # Option A: local OpenAI-compatible server (LM Studio, Ollama, llama.cpp)
+  # genai adapter mapping inside Cortex:
+  #   openai_compat -> genai OpenAI adapter with a custom endpoint (LM Studio, llama.cpp, vLLM)
+  #   openai        -> genai OpenAI adapter
+  #   anthropic     -> genai Anthropic adapter
+  #
+  # Option A: local OpenAI-compatible server (LM Studio)
   kind: openai_compat
   base_url: http://100.74.210.70:1234/v1
   api_key: ""          # leave blank for unauthenticated local servers
-  model: ""            # empty = use server default / first available model
+  model: qwen2.5-7b-instruct
   timeout: 60.0
   max_tokens: 2048
 

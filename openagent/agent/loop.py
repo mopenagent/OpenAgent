@@ -438,7 +438,7 @@ class AgentLoop:
                     try:
                         # Single code path — stream_with_tools always (Rec 5)
                         async for event in self._provider.stream_with_tools(
-                            messages, tools=active_schemas
+                            messages, tools=active_schemas, session_key=session_key
                         ):
                             if not isinstance(event, StreamEvent):
                                 continue

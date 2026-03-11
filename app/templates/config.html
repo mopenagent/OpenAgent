@@ -35,6 +35,12 @@
           <span x-text="error"></span>
         </div>
       </template>
+      <div class="flex items-center gap-2 text-xs text-stone-400 bg-stone-400/10 border border-stone-400/20 rounded-lg px-3 py-2">
+        <svg class="w-3.5 h-3.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+        </svg>
+        Cortex is the only runtime LLM provider. Edit `config/openagent.yaml` and restart to change provider settings.
+      </div>
 
       <!-- Kind selector -->
       <div class="grid grid-cols-3 gap-2">
@@ -76,19 +82,8 @@
         </div>
       </div>
 
-      <!-- Save button -->
-      <div class="flex justify-end">
-        <button @click="save()"
-                :disabled="saving"
-                class="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium
-                       bg-[#FF9933] text-stone-950 hover:bg-amber-400 disabled:opacity-50
-                       transition-colors">
-          <svg x-show="saving" class="w-3.5 h-3.5 animate-spin" fill="none" viewBox="0 0 24 24">
-            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"></path>
-          </svg>
-          <span x-text="saving ? 'Saving…' : 'Save'"></span>
-        </button>
+      <div class="text-xs text-stone-400">
+        This panel is read-only.
       </div>
 
     </div>
@@ -144,44 +139,18 @@ function providerForm() {
       anthropic:     'Anthropic / Claude',
       openai:        'OpenAI / Codex',
     },
-    saving: false,
     saved:  false,
     error:  null,
 
     init() {
-      // Pre-fill model from LLM health if blank
+      // Pre-fill model from provider models if blank
       if (!this.form.model) {
         const stored = localStorage.getItem('llm_model')
         if (stored) { this.form.model = stored; return }
-        fetch('/api/llm/health')
+        fetch('/api/config/models?base_url=' + encodeURIComponent(this.form.base_url))
           .then(r => r.json())
           .then(d => { if (d.ok && d.models.length) this.form.model = d.models[0] })
           .catch(() => {})
-      }
-    },
-
-    async save() {
-      this.saving = true
-      this.saved  = false
-      this.error  = null
-      try {
-        const body = { ...this.form }
-        if (!body.api_key) delete body.api_key
-        const r = await fetch('/api/config/provider', {
-          method:  'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body:    JSON.stringify(body),
-        })
-        if (!r.ok) throw new Error(`HTTP ${r.status}`)
-        const d = await r.json()
-        if (d.ok) {
-          this.saved = true
-          setTimeout(() => { this.saved = false }, 3000)
-        }
-      } catch (e) {
-        this.error = e.message
-      } finally {
-        this.saving = false
       }
     },
   }

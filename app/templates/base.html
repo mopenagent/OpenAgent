@@ -213,7 +213,7 @@
 
       async check() {
         try {
-          const r = await fetch('/api/llm/health')
+          const r = await fetch('/api/config/models')
           const d = await r.json()
           if (d.ok && d.models.length > 0) {
             this.models = d.models

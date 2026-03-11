@@ -28,14 +28,16 @@
   <div x-show="tab === 'provider'" x-cloak>
     <div class="bg-white dark:bg-charcoalLayer border border-[#DEE2E6] dark:border-[#21262D] rounded-xl p-6 space-y-5">
       <p class="text-xs text-mutedCharcoal dark:text-steelMist">
-        Overrides are applied in memory — changes take effect immediately without restarting.
-        The config file on disk is not modified.
+        Cortex is the only LLM runtime. Provider settings are read from
+        <code class="font-mono bg-stone-100 dark:bg-stone-800 px-1 py-0.5 rounded">config/openagent.yaml</code>
+        at startup. This panel is read-only and can help inspect available models for the configured endpoint.
       </p>
 
       <!-- Kind -->
       <div class="space-y-1">
         <label class="block text-xs font-medium text-mutedCharcoal dark:text-steelMist uppercase tracking-wide">Provider type</label>
         <select x-model="provider.kind"
+                disabled
                 class="w-full px-3 py-2 text-sm rounded-lg border border-[#DEE2E6] dark:border-[#21262D]
                        bg-white dark:bg-deepSpaceBlue text-stone-900 dark:text-stone-100
                        focus:outline-none focus:ring-2 focus:ring-saffron/40">
@@ -49,6 +51,7 @@
       <div x-show="provider.kind !== 'anthropic'" class="space-y-1">
         <label class="block text-xs font-medium text-mutedCharcoal dark:text-steelMist uppercase tracking-wide">Base URL</label>
         <input x-model="provider.base_url" type="text" placeholder="http://localhost:11434/v1"
+               readonly
                class="w-full px-3 py-2 text-sm rounded-lg border border-[#DEE2E6] dark:border-[#21262D]
                       bg-white dark:bg-deepSpaceBlue text-stone-900 dark:text-stone-100
                       focus:outline-none focus:ring-2 focus:ring-saffron/40"/>
@@ -58,6 +61,7 @@
       <div class="space-y-1">
         <label class="block text-xs font-medium text-mutedCharcoal dark:text-steelMist uppercase tracking-wide">Model</label>
         <select x-model="provider.model"
+                disabled
                 x-show="provider.kind !== 'anthropic' && providerModels.length > 0"
                 class="w-full px-3 py-2 text-sm rounded-lg border border-[#DEE2E6] dark:border-[#21262D]
                        bg-white dark:bg-deepSpaceBlue text-stone-900 dark:text-stone-100
@@ -67,6 +71,7 @@
           </template>
         </select>
         <input x-model="provider.model" type="text" placeholder="Model name"
+               readonly
                x-show="provider.kind === 'anthropic' || (provider.kind !== 'anthropic' && providerModels.length === 0)"
                class="w-full px-3 py-2 text-sm rounded-lg border border-[#DEE2E6] dark:border-[#21262D]
                       bg-white dark:bg-deepSpaceBlue text-stone-900 dark:text-stone-100
@@ -78,10 +83,11 @@
       <div class="space-y-1">
         <label class="block text-xs font-medium text-mutedCharcoal dark:text-steelMist uppercase tracking-wide">API Key</label>
         <input x-model="provider.api_key" type="password" placeholder="Leave blank to keep current"
+               disabled
                class="w-full px-3 py-2 text-sm rounded-lg border border-[#DEE2E6] dark:border-[#21262D]
                       bg-white dark:bg-deepSpaceBlue text-stone-900 dark:text-stone-100
                       focus:outline-none focus:ring-2 focus:ring-saffron/40"/>
-        <p class="text-xs text-mutedCharcoal dark:text-steelMist">Never shown after save. Leave blank to keep the current key.</p>
+        <p class="text-xs text-mutedCharcoal dark:text-steelMist">API keys are never exposed in the UI.</p>
       </div>
 
       <!-- Max tokens + timeout -->
@@ -89,6 +95,7 @@
         <div class="space-y-1">
           <label class="block text-xs font-medium text-mutedCharcoal dark:text-steelMist uppercase tracking-wide">Max tokens</label>
           <input x-model.number="provider.max_tokens" type="number" min="256" max="131072" placeholder="4096"
+                 readonly
                  class="w-full px-3 py-2 text-sm rounded-lg border border-[#DEE2E6] dark:border-[#21262D]
                         bg-white dark:bg-deepSpaceBlue text-stone-900 dark:text-stone-100
                         focus:outline-none focus:ring-2 focus:ring-saffron/40"/>
@@ -96,23 +103,19 @@
         <div class="space-y-1">
           <label class="block text-xs font-medium text-mutedCharcoal dark:text-steelMist uppercase tracking-wide">Timeout (s)</label>
           <input x-model.number="provider.timeout" type="number" min="10" max="300" placeholder="120"
+                 readonly
                  class="w-full px-3 py-2 text-sm rounded-lg border border-[#DEE2E6] dark:border-[#21262D]
                         bg-white dark:bg-deepSpaceBlue text-stone-900 dark:text-stone-100
                         focus:outline-none focus:ring-2 focus:ring-saffron/40"/>
         </div>
       </div>
 
-      <!-- Save -->
-      <div class="flex items-center gap-3 pt-2">
-        <button @click="saveProvider()"
-                :disabled="saving"
-                class="px-4 py-2 text-sm font-medium rounded-lg bg-saffron text-white
-                       hover:bg-saffron/80 disabled:opacity-50 transition-colors">
-          <span x-text="saving ? 'Saving…' : 'Save changes'"></span>
-        </button>
-        <span x-show="providerMsg" x-text="providerMsg"
-              :class="providerOk ? 'text-green-500' : 'text-red-500'"
-              class="text-xs font-medium"></span>
+      <div class="pt-2">
+        <p class="text-xs text-mutedCharcoal dark:text-steelMist">
+          Edit
+          <code class="font-mono bg-stone-100 dark:bg-stone-800 px-1 py-0.5 rounded">config/openagent.yaml</code>
+          and restart the stack to change Cortex provider behavior.
+        </p>
       </div>
     </div>
   </div>
@@ -353,9 +356,6 @@
 function settingsApp() {
   return {
     tab: 'connector',
-    saving: false,
-    providerMsg: '',
-    providerOk: true,
     provider: { kind: '', base_url: '', model: '', api_key: '', max_tokens: '', timeout: '' },
     providerModels: [],
     modelsLoading: false,
@@ -464,36 +464,6 @@ function settingsApp() {
         }
         this.loadWhatsAppQR()
       }, 2000)
-    },
-
-    async saveProvider() {
-      this.saving = true
-      this.providerMsg = ''
-      const body = { ...this.provider }
-      if (!body.api_key) delete body.api_key
-      if (!body.max_tokens) delete body.max_tokens
-      if (!body.timeout) delete body.timeout
-      try {
-        const r = await fetch('/api/config/provider', {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(body)
-        })
-        const d = await r.json()
-        if (d.ok) {
-          this.provider = { ...d.config, api_key: '' }
-          this.providerOk = true
-          this.providerMsg = 'Saved'
-        } else {
-          this.providerOk = false
-          this.providerMsg = d.detail || 'Error'
-        }
-      } catch (e) {
-        this.providerOk = false
-        this.providerMsg = 'Network error'
-      }
-      this.saving = false
-      setTimeout(() => this.providerMsg = '', 3000)
     },
 
     async loadWhitelist() {

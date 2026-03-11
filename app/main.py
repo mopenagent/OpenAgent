@@ -10,7 +10,7 @@ from pathlib import Path
 from fastapi import FastAPI, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
-from app.routes import dashboard, chat, services, config, llm, provider, settings, browser, logs
+from app.routes import dashboard, chat, services, config, provider, settings, browser, logs
 from openagent.agent.platform_tools import make_platform_tools
 from openagent.agent.skill_tools import make_skill_tools
 from openagent.agent.loop import AgentLoop
@@ -32,7 +32,7 @@ from openagent.cron import CronService, CronJob
 from openagent.bus.events import InboundMessage, SenderInfo
 from openagent.observability import configure_logging, setup_otel, shutdown_otel
 from openagent.observability.metrics import render_metrics
-from openagent.providers import get_provider
+from openagent.providers import CortexProvider
 from openagent.services.manager import ServiceManager
 from openagent.session import SessionManager, SqliteSessionBackend
 from openagent.session.settings import SettingsStore
@@ -44,6 +44,7 @@ from openagent.session.settings import SettingsStore
 ROOT = Path(__file__).resolve().parents[1]
 STATIC_DIR = Path(__file__).resolve().parent / "static"
 TEMPLATES_DIR = Path(__file__).resolve().parent / "templates"
+_CORTEX_START_TIMEOUT_S = 10.0
 
 # ---------------------------------------------------------------------------
 # Lifespan
@@ -68,25 +69,7 @@ async def lifespan(app: FastAPI):
     await settings_store.start()
     app.state.settings_store = settings_store
 
-    # Provider overrides from settings table (persist across restarts)
-    _provider_settings = await settings_store.get_all(prefix="provider.")
-    if _provider_settings:
-        _overrides = {k.replace("provider.", ""): v for k, v in _provider_settings.items()}
-        _merged = {}
-        for _f in ("kind", "base_url", "api_key", "model", "timeout", "max_tokens"):
-            if _f not in _overrides:
-                continue
-            _val = _overrides[_f]
-            if _f in ("timeout", "max_tokens"):
-                try:
-                    _val = float(_val) if _f == "timeout" else int(_val)
-                except (ValueError, TypeError):
-                    continue
-            _merged[_f] = _val
-        if _merged:
-            cfg.provider = cfg.provider.model_copy(update=_merged)
     app.state.provider_config = cfg.provider
-    app.state.active_provider = get_provider(cfg.provider)
 
     # Connector enable/disable — loaded from SQLite on each request; in-memory map
     # is populated lazily by the settings route when connectors are toggled.
@@ -125,6 +108,20 @@ async def lifespan(app: FastAPI):
     )
     app.state.service_manager = service_manager
     await service_manager.start()
+    cortex_client_getter = lambda: service_manager.get_client("cortex")
+    cortex_ready = False
+    started = asyncio.get_running_loop().time()
+    while asyncio.get_running_loop().time() - started < _CORTEX_START_TIMEOUT_S:
+        if cortex_client_getter() is not None:
+            cortex_ready = True
+            break
+        await asyncio.sleep(0.1)
+    if not cortex_ready:
+        raise RuntimeError("cortex service did not become ready during startup")
+    app.state.active_provider = CortexProvider(
+        get_client=cortex_client_getter,
+        default_agent_name=cfg.default_agent.name,
+    )
 
     # Message bus
     bus = MessageBus()
@@ -283,7 +280,6 @@ app.include_router(chat.router)
 app.include_router(services.router)
 app.include_router(config.router)
 app.include_router(settings.router)
-app.include_router(llm.router)
 app.include_router(provider.router)
 app.include_router(browser.router)
 app.include_router(logs.router)

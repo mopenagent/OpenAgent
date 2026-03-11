@@ -8,6 +8,7 @@ from openagent.observability import get_logger, log_event
 
 from .anthropic import AnthropicProvider
 from .base import LLMResponse, Message, Provider, ToolCall
+from .cortex import CortexProvider
 from .config import ProviderConfig, load_provider_config
 from .openai import OpenAIProvider
 from .openai_compat import OpenAICompatProvider
@@ -46,5 +47,6 @@ __all__ = [
     "get_provider",
     "OpenAICompatProvider",
     "AnthropicProvider",
+    "CortexProvider",
     "OpenAIProvider",
 ]
