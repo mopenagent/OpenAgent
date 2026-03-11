@@ -1,0 +1,30 @@
+{
+  "name": "cortex",
+  "description": "Cortex cognitive control-plane service. Phase 0 captures the service boundary and transport contract without taking over LLM execution yet.",
+  "version": "0.1.0",
+  "binary": {
+    "linux/arm64": "bin/cortex-linux-arm64",
+    "linux/amd64": "bin/cortex-linux-amd64",
+    "darwin/arm64": "bin/cortex-darwin-arm64",
+    "darwin/amd64": "bin/cortex-darwin-amd64"
+  },
+  "socket": "data/sockets/cortex.sock",
+  "health": {
+    "interval_ms": 5000,
+    "timeout_ms": 1000,
+    "restart_backoff_ms": [1000, 2000, 5000, 10000, 30000]
+  },
+  "tools": [
+    {
+      "name": "cortex.describe_boundary",
+      "description": "Describe Cortex Phase 0 boundaries, ownership, transport, and the planned library set for the first LLM execution step.",
+      "params": {
+        "type": "object",
+        "properties": {},
+        "required": []
+      }
+    }
+  ],
+  "events": [],
+  "runtime": "rust"
+}

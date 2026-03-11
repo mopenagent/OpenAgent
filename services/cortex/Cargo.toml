@@ -1,0 +1,42 @@
+[package]
+name = "cortex"
+version = "0.1.0"
+edition = "2021"
+description = "Agentic Operating System — Rust-based agent loop and orchestration"
+
+[dependencies]
+# MCP-lite (sdk-rust)
+sdk-rust = { path = "../sdk-rust" }
+
+# Runtime
+tokio = { version = "1.42", features = ["rt-multi-thread", "macros", "fs", "io-util"] }
+
+# Serialization
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+# Error handling
+anyhow = "1.0"
+
+# Observability
+tracing = "0.1"
+opentelemetry = { version = "0.27", features = ["trace"] }
+tracing-opentelemetry = "0.28"
+
+[lints.rust]
+ambiguous_negative_literals    = "warn"
+missing_debug_implementations  = "warn"
+redundant_imports              = "warn"
+redundant_lifetimes            = "warn"
+trivial_numeric_casts          = "warn"
+unsafe_op_in_unsafe_fn         = "warn"
+unused_lifetimes               = "warn"
+
+[lints.clippy]
+cargo      = { level = "warn", priority = -1 }
+complexity  = { level = "warn", priority = -1 }
+correctness = { level = "warn", priority = -1 }
+pedantic    = { level = "warn", priority = -1 }
+perf        = { level = "warn", priority = -1 }
+style       = { level = "warn", priority = -1 }
+suspicious  = { level = "warn", priority = -1 }
