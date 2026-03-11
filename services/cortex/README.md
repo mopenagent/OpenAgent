@@ -8,25 +8,26 @@ Rust service target for OpenAgent's cognitive control plane. Cortex is the futur
 
 OpenAgent's current Python outer loop is treated as a temporary shell that will call Cortex. The final architecture keeps Cortex as a separate service, not embedded in the Python app.
 
-## Phase 0 Status
+## Phase 1 Status
 
-Phase 0 is implemented as a boundary capture, not a reasoning engine.
+Phase 1 is implemented as a minimal single-step reasoning service.
 
 What exists now:
 - Cortex is a standalone Rust MCP-lite service.
 - Transport is locked to JSON over Unix Domain Sockets.
 - Service identity is declared in `service.json`.
-- A single introspection tool, `cortex.describe_boundary`, reports the frozen boundary.
+- `cortex.describe_boundary` reports the current service boundary.
+- `cortex.step` performs one LLM-backed response step.
+- The system prompt is loaded from `config/openagent.yaml` or `config/openagent.yml`.
+- Traces, metrics, and structured logs are emitted for each Cortex step.
 
 What does not exist yet:
-- session-step execution
-- LLM HTTP client
 - tool routing
 - memory retrieval
 - planner / DAG store
 - STM segmentation
 
-This keeps Phase 0 aligned with [`TODO.md`](./TODO.md): define the service boundary before adding cognition.
+This keeps Phase 1 aligned with [`TODO.md`](./TODO.md): one message in, one LLM response out, no tools or planning yet.
 
 ## Role
 
@@ -239,17 +240,18 @@ Memory service responsibilities:
 - knowledge persistence
 - diary persistence and diary indexing
 
-## Phase 0 Library Set
+## Phase 1 Library Set
 
 Libraries used now:
 - `sdk-rust` for the MCP-lite server and shared OTEL setup
 - `tokio` for the async service runtime
 - `serde` and `serde_json` for protocol payloads
+- `serde_yaml` for loading the OpenAgent config file
 - `anyhow` for process-level error handling
+- `reqwest` with `rustls-tls` for async LLM HTTP calls
 - `tracing`, `opentelemetry`, and `tracing-opentelemetry` for observability
 
-Libraries planned for Phase 1:
-- `reqwest` with `rustls-tls` for async LLM HTTP calls
+Libraries planned for later phases:
 - `uuid` for request/session correlation where the service generates identifiers
 
 Libraries intentionally avoided:
@@ -257,7 +259,7 @@ Libraries intentionally avoided:
 - embedded vector storage inside Cortex
 - direct browser/memory/sandbox implementation inside Cortex
 
-## Phase 0 Tool
+## Phase 1 Tools
 
 `cortex.describe_boundary`
 
@@ -266,6 +268,25 @@ Returns a JSON document describing:
 - non-goals for Phase 0
 - the transport contract
 - the Phase 1 dependency set
+
+`cortex.step`
+
+Request:
+- `session_id`
+- `user_input`
+- `agent_name` (optional)
+
+Behavior:
+- loads OpenAgent config from `OPENAGENT_CONFIG_PATH`, `config/openagent.yml`, or `config/openagent.yaml`
+- selects the requested agent or falls back to the first configured agent
+- reads `system_prompt` from config
+- sends `system_prompt` + `user_input` to the configured provider
+- returns plain response text plus provider metadata
+
+Observability:
+- traces: `logs/cortex-traces-YYYY-MM-DD.jsonl`
+- metrics: `logs/cortex-metrics-YYYY-MM-DD.jsonl`
+- logs: `logs/cortex-logs-YYYY-MM-DD.jsonl`
 
 ## Diary Layer
 

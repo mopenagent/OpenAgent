@@ -17,11 +17,33 @@
   "tools": [
     {
       "name": "cortex.describe_boundary",
-      "description": "Describe Cortex Phase 0 boundaries, ownership, transport, and the planned library set for the first LLM execution step.",
+      "description": "Describe Cortex boundaries, ownership, transport, and current implementation scope.",
       "params": {
         "type": "object",
         "properties": {},
         "required": []
+      }
+    },
+    {
+      "name": "cortex.step",
+      "description": "Execute one Cortex Phase 1 reasoning step. Loads the system prompt from OpenAgent config, combines it with user input, calls the configured LLM provider, and returns plain response text without tool use or planning.",
+      "params": {
+        "type": "object",
+        "properties": {
+          "session_id": {
+            "type": "string",
+            "description": "Stable session identifier for this turn"
+          },
+          "user_input": {
+            "type": "string",
+            "description": "Raw user message to send to Cortex"
+          },
+          "agent_name": {
+            "type": "string",
+            "description": "Optional configured agent name. Defaults to the first configured agent."
+          }
+        },
+        "required": ["session_id", "user_input"]
       }
     }
   ],

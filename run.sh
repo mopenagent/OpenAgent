@@ -14,6 +14,21 @@ PORT="${PORT:-8000}"
 RELOAD="${RELOAD:-false}"
 JAEGER="${JAEGER:-true}"   # set JAEGER=false to skip docker compose
 
+UNAME_S="$(uname -s)"
+UNAME_M="$(uname -m)"
+if [ "$UNAME_S" = "Darwin" ]; then
+  HOST_OS="darwin"
+else
+  HOST_OS="linux"
+fi
+if [ "$UNAME_M" = "arm64" ] || [ "$UNAME_M" = "aarch64" ]; then
+  HOST_ARCH="arm64"
+else
+  HOST_ARCH="amd64"
+fi
+HOST_SUFFIX="${HOST_OS}-${HOST_ARCH}"
+CORTEX_BIN="$ROOT/bin/cortex-${HOST_SUFFIX}"
+
 for arg in "$@"; do
   case $arg in
     --reload)
@@ -26,6 +41,11 @@ done
 # ---------------------------------------------------------------------------
 # Docker Compose (Jaeger) — start if available and not disabled
 # ---------------------------------------------------------------------------
+
+if [ ! -x "$CORTEX_BIN" ]; then
+  echo "Cortex binary missing for ${HOST_SUFFIX} — building it"
+  make -C "$ROOT" cortex
+fi
 
 COMPOSE_STARTED=false
 
