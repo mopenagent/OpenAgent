@@ -2,13 +2,20 @@ use crate::action::catalog::ActionCatalog;
 use crate::action::search::{search_catalog, SearchQuery, SearchResult};
 use crate::agent::CortexAgent;
 use crate::config::CortexConfig;
+use crate::llm::build_llm_provider;
+use crate::memory_adapter::{HybridMemoryAdapter, DEFAULT_STM_WINDOW};
 use crate::metrics::{elapsed_ms, step_err, step_ok, CortexTelemetry};
+use crate::step_service::{build_step_service, StepRequest, DEFAULT_STEP_TIMEOUT_SECS};
 use crate::tool_router::ToolRouter;
 use anyhow::{anyhow, Result};
+use autoagents_core::agent::{BaseAgent, DirectAgent};
+use autoagents_protocol::Event;
 use opentelemetry::KeyValue;
 use serde_json::{json, Value};
 use std::sync::Arc;
-use std::time::Instant;
+use std::time::{Duration, Instant};
+use tokio::sync::mpsc;
+use tower::Service;
 use tracing::{error, info};
 
 const DEFAULT_TOOL_NAMES: &[&str] = &[
@@ -144,14 +151,13 @@ pub fn handle_step(params: Value, ctx: Arc<AppContext>) -> Result<String> {
     };
     let structured_system_prompt = build_structured_system_prompt(&resolved.system_prompt);
 
-    // Phase 1B: construct a stateless CortexAgent per request and call step() directly.
-    // Phase 2+: wire AgentBuilder<CortexAgent, DirectAgent> → DirectAgentHandle::run(task).
     let cortex_agent = CortexAgent::new(
         resolved.agent_name.clone(),
         structured_system_prompt,
         action_context,
         resolved.provider.clone(),
         crate::agent_tools::default_tools(),
+        Arc::clone(&router),
     );
 
     span.record("agent_name", resolved.agent_name.as_str());
@@ -167,10 +173,46 @@ pub fn handle_step(params: Value, ctx: Arc<AppContext>) -> Result<String> {
         "cortex.step.start"
     );
 
-    // Phase 2: run the full ReAct loop — LLM → tool → LLM, up to MAX_REACT_ITERATIONS.
+    // Construct BaseAgent with HybridMemoryAdapter — wires the AutoAgents memory contract.
+    //   STM: AutoAgents SlidingWindowMemory (Drop strategy, DEFAULT_STM_WINDOW messages).
+    //   LTM: memory.sock via ToolRouter (semantic recall at loop start).
+    //   Eviction + clear hooks dump overflow messages to data/stm/{session_id}/.
+    let stm_dir = std::env::current_dir()
+        .unwrap_or_else(|_| std::path::PathBuf::from("."))
+        .join("data")
+        .join("stm")
+        .join(&session_id);
+    let memory_adapter = HybridMemoryAdapter::new(
+        &session_id,
+        DEFAULT_STM_WINDOW,
+        stm_dir,
+        Arc::clone(&router),
+    );
+    let llm_provider = build_llm_provider(&resolved.provider)
+        .map_err(|e| anyhow!("llm provider build failed: {e}"))?;
+    let (tx, _rx) = mpsc::channel::<Event>(32);
+
+    let step_timeout = Duration::from_secs(DEFAULT_STEP_TIMEOUT_SECS);
     let result = tokio::task::block_in_place(|| {
-        tokio::runtime::Handle::current()
-            .block_on(async { cortex_agent.run(&user_input, &router).await })
+        tokio::runtime::Handle::current().block_on(async {
+            let base_agent =
+                BaseAgent::<CortexAgent, DirectAgent>::new(
+                    cortex_agent,
+                    llm_provider,
+                    Some(Box::new(memory_adapter)),
+                    tx,
+                    false,
+                )
+                .await
+                .map_err(|e| anyhow!("base agent construction failed: {e}"))?;
+
+            let mut svc = build_step_service(step_timeout);
+            svc.call(StepRequest {
+                base_agent,
+                user_input: user_input.clone(),
+            })
+            .await
+        })
     });
 
     match result {
@@ -248,23 +290,23 @@ fn build_structured_system_prompt(system_prompt: &str) -> String {
     format!(
         concat!(
             "{system_prompt}\n\n",
-            "You must respond with exactly one JSON object and no surrounding prose.\n",
-            "Allowed shapes:\n",
-            "1. Final answer:\n",
-            "{{\"type\":\"final\",\"content\":\"...\"}}\n",
-            "2. Tool call:\n",
-            "{{\"type\":\"tool_call\",\"tool\":\"browser.open\",\"arguments\":{{...}}}}\n",
-            "Rules:\n",
-            "- Use only the listed tools. Do not invent tool names.\n",
-            "- If you use type=tool_call, tool must be one of the provided tools.\n",
-            "- Never return pseudo-code like browser.open(...). Return valid JSON only."
+            "## Output format\n\n",
+            "Every response is exactly one JSON object. ",
+            "Start your response with `{{`. No text before it, no text after it.\n\n",
+            "Final answer:\n",
+            "{{\"type\":\"final\",\"content\":\"<your complete answer>\"}}\n\n",
+            "Tool call:\n",
+            "{{\"type\":\"tool_call\",\"tool\":\"<tool_name>\",\"arguments\":{{\"<param>\":\"<value>\"}}}}\n\n",
+            "Never write prose, greetings, or explanations. ",
+            "Never wrap the JSON in markdown fences. ",
+            "The first character of your response must be `{{`."
         ),
         system_prompt = system_prompt.trim()
     )
 }
 
 fn collect_default_tools(catalog: &ActionCatalog) -> Vec<SearchResult> {
-    let mut by_name = DEFAULT_TOOL_NAMES
+    let by_name = DEFAULT_TOOL_NAMES
         .iter()
         .filter_map(|name| {
             catalog

@@ -113,18 +113,27 @@ fn looks_like_json_candidate(text: &str) -> bool {
 
 fn extract_json_candidate(text: &str) -> Option<String> {
     let trimmed = text.trim();
+
+    // Strip markdown code fences first.
     if let Some(rest) = trimmed.strip_prefix("```json") {
-        return rest
-            .strip_suffix("```")
-            .map(str::trim)
-            .map(ToOwned::to_owned);
+        if let Some(inner) = rest.find("```").map(|i| rest[..i].trim()) {
+            return Some(inner.to_owned());
+        }
     }
     if let Some(rest) = trimmed.strip_prefix("```") {
-        return rest
-            .strip_suffix("```")
-            .map(str::trim)
-            .map(ToOwned::to_owned);
+        if let Some(inner) = rest.find("```").map(|i| rest[..i].trim()) {
+            return Some(inner.to_owned());
+        }
     }
+
+    // If the response doesn't start with a JSON opener, scan for an embedded
+    // JSON object. Models frequently prepend prose before the JSON object.
+    if !trimmed.starts_with('{') && !trimmed.starts_with('[') {
+        if let Some(offset) = trimmed.find('{') {
+            return Some(trimmed[offset..].to_owned());
+        }
+    }
+
     None
 }
 
@@ -144,6 +153,26 @@ mod tests {
     fn extracts_fenced_json_candidate() {
         let candidate = extract_json_candidate("```json\n{\"ok\":true}\n```");
         assert_eq!(candidate.as_deref(), Some("{\"ok\":true}"));
+    }
+
+    #[test]
+    fn extracts_embedded_json_from_prose() {
+        let candidate = extract_json_candidate("Sure! Here is the JSON:\n{\"type\":\"final\",\"content\":\"hi\"}");
+        assert_eq!(candidate.as_deref(), Some("{\"type\":\"final\",\"content\":\"hi\"}"));
+    }
+
+    #[test]
+    fn no_extraction_when_starts_with_brace() {
+        // Already starts with { — no extraction needed, validator receives it as-is.
+        let candidate = extract_json_candidate("{\"type\":\"final\",\"content\":\"hi\"}");
+        assert!(candidate.is_none());
+    }
+
+    #[test]
+    fn no_extraction_for_pure_prose() {
+        // No { anywhere — extraction returns None, correction prompt fires in loop.
+        let candidate = extract_json_candidate("I cannot help with that request.");
+        assert!(candidate.is_none());
     }
 
     #[test]

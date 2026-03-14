@@ -24,12 +24,17 @@ autoagents-llm = { version = "0.3.6", features = ["openai", "anthropic"] }
 
 # Agent framework — CortexAgent implements AgentDeriveT + AgentExecutor + AgentHooks
 autoagents-core = "0.3.6"
+# Protocol types (Event, ActorID) — used for BaseAgent channel construction
+autoagents-protocol = "0.3.6"
 
 # Async trait support for autoagents-core trait impls
 async-trait = "0.1"
 
 # Stream accumulation for LLM streaming
 futures = "0.3"
+
+# Tower middleware stack — Cortex only (other services stay plain tokio)
+tower = { version = "0.4", features = ["timeout", "util"] }
 
 # Observability
 tracing = "0.1"

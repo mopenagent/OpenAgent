@@ -252,175 +252,137 @@ Memory service responsibilities:
 
 ## AutoAgents Integration Architecture
 
-Cortex uses [AutoAgents](https://github.com/liquidos-ai/AutoAgents) as its agent execution framework. The integration is selective — only the parts that strengthen Cortex without polluting its memory, protocol, or observability boundaries.
+Cortex uses [AutoAgents](https://github.com/liquidos-ai/AutoAgents) (v0.3.6) as its agent execution framework. The integration uses the framework as the **runtime** — `BaseAgent::run()` is the entry point, `AgentExecutor::execute()` contains the ReAct loop, and all `AgentHooks` lifecycle methods fire. One part of the framework is intentionally bypassed: the built-in `TurnEngine`/`ReActAgent` executor (see below).
 
 ### Crates adopted
 
 | Crate | Role in Cortex |
 |---|---|
-| `autoagents-llm` | Unified `LLMProvider` trait — replaces manual `reqwest` LLM calls. One trait covers OpenAI-compat, Anthropic, Ollama, etc. Built-in streaming and tool-calling. |
-| `autoagents-core` | `BaseAgent`, `AgentExecutor`, `ToolT` trait, `ActorAgent` for multi-agent via `ractor`. The execution engine. |
-| `autoagents-derive` | Proc macros where useful (`#[tool]`, `#[derive(ToolInput)]`). Not used for agent struct itself — see CortexAgent below. |
+| `autoagents-llm` | Unified `LLMProvider` trait — replaces manual `reqwest` LLM calls. Provider built once at `BaseAgent::new()`, reused for all loop iterations via `context.llm().chat_stream()`. |
+| `autoagents-core` | `BaseAgent`, `AgentDeriveT`, `AgentExecutor`, `AgentHooks`, `MemoryProvider`, `Context`. Full framework runtime — `base_agent.run(task)` is the step entry point. |
+| `autoagents-protocol` | `Event` type used for `BaseAgent::new()` channel construction only. |
 
 ### Crates deliberately excluded
 
 | Crate | Why excluded |
 |---|---|
-| `autoagents-core::memory` | Cortex has a segmented STM architecture (8 segments, per-segment budgets, LTM retrieval over MCP-lite). AutoAgents' `SlidingWindowMemory` is a flat buffer and would pollute this design. |
-| `autoagents-protocol` | OpenAgent uses MCP-lite (tagged JSON over UDS). AutoAgents' protocol types (`ActorID`, `Event`, `SubmissionId`) are incompatible and unnecessary. |
-| `autoagents-telemetry` | OpenAgent has its own OTEL pipeline via `sdk-rust` (file-based OTLP/JSON, daily rotation). Mixing two OTEL setups in one process causes provider conflicts. |
+| `autoagents-core::prebuilt::ReActAgent` + `TurnEngine` | Requires native LLM tool-calling format (`function_call`/`tool_use`). Local sub-30B models don't reliably produce this. Cortex uses JSON text output format instead. |
+| `autoagents-derive` | Tool inputs are `serde_json::Value` dispatched over UDS — proc macros add no safety at this boundary. |
+| `autoagents-telemetry` | OpenAgent has its own OTEL pipeline via `sdk-rust` (file-based OTLP/JSON, daily rotation). |
 
 ---
 
-### CortexAgent — single generic struct, config-driven
+### CortexAgent — framework runtime, custom ReAct loop
 
-Cortex does not use the `#[agent]` proc macro. A single `CortexAgent` struct implements `AgentDeriveT` manually, reading everything from `config/openagent.yaml` at construction time. Adding a new agent is an edit to YAML — no Rust recompile.
+`BaseAgent::run(Task)` is the entry point. The framework fires hooks in order:
+
+```
+base_agent.run(task)
+  → on_run_start(context)
+  → AgentExecutor::execute(task, context)   ← our ReAct loop lives here
+      for iteration in 0..MAX_REACT_ITERATIONS:
+          on_turn_start(iteration, context)
+          context.llm().chat_stream(messages, ...)  ← reuses pre-built provider
+          parse JSON output → "final" | "tool_call"
+          if tool_call:
+              on_tool_call(llm_tool_call, context)  → HookOutcome::Continue | Abort
+              on_tool_start(...)
+              self.router.call(tool_name, args)      ← UDS dispatch, not ToolProcessor
+              on_tool_result(...) | on_tool_error(...)
+          on_turn_complete(iteration, context)
+      return ReActOutput
+  → on_run_complete(output, context)
+```
+
+Why NOT the framework's `TurnEngine`/`ReActAgent`: AutoAgents' built-in ReAct executor dispatches tools via `context.tools()` using native LLM function-calling API. Local sub-30B models (Qwen, Llama, Mistral) don't reliably emit `tool_use` responses. Cortex instructs the model to output exactly one JSON object per turn (`{"type":"tool_call",...}` or `{"type":"final",...}`) and dispatches via `ToolRouter` over UDS. Everything else — `BaseAgent`, `MemoryProvider`, `AgentHooks` — is used as designed.
 
 ```rust
 pub struct CortexAgent {
-    config: AgentConfig,       // from openagent.yaml: name, description, system_prompt
-    tools: Vec<Box<dyn ToolT>>, // built from config at construction
+    agent_name: String,
+    system_prompt: String,          // pre-built with JSON format instructions
+    action_context: Option<String>, // candidate tool summaries for generation turns
+    provider_config: ProviderConfig, // for telemetry labels
+    tools: Vec<Box<dyn ToolT>>,     // AgentDeriveT compliance; empty at runtime
+    router: Arc<ToolRouter>,        // UDS dispatch: "browser.open" → browser.sock
 }
 
 impl AgentDeriveT for CortexAgent {
-    type Output = CortexOutput;
-    fn name(&self) -> &str { &self.config.name }
-    fn description(&self) -> &str { &self.config.description }
-    fn tools(&self) -> Vec<Box<dyn ToolT>> { self.tools.clone() }
-    fn output_schema(&self) -> Option<Value> { None }
+    type Output = ReActOutput;      // Serialize + DeserializeOwned + AgentOutputT
+    fn output_schema(&self) -> Option<Value> { Some(ReActOutput::structured_output_format()) }
+    fn tools(&self) -> Vec<Box<dyn ToolT>> { vec![] }  // ToolRouter handles dispatch
 }
 
-impl CortexAgent {
-    pub fn from_config(cfg: &AgentConfig, clients: &ServiceClients) -> Self {
-        // Validates eagerly at startup — panics with clear message on bad config
-        // Never fails silently mid-run
+impl AgentExecutor for CortexAgent {
+    type Output = ReActOutput;
+    type Error = CortexAgentError;  // → RunnableAgentError::ExecutorError via From<>
+    fn config(&self) -> ExecutorConfig { ExecutorConfig { max_turns: 10 } }
+    async fn execute(&self, task: &Task, context: Arc<Context>) -> Result<ReActOutput, CortexAgentError> {
+        // Full ReAct loop — see src/agent.rs
     }
 }
+
+impl AgentHooks for CortexAgent {}  // all no-ops in Phase 2; Phase 3 overrides on_run_complete
 ```
 
 ---
 
-### Tool Architecture — static set + one dynamic dispatcher
+### HybridMemoryAdapter — MemoryProvider implementation
 
-The LLM always sees a small, fixed tool set. Exposing the full service catalog per turn is expensive in tokens and unreliable on sub-30B models.
+`HybridMemoryAdapter` (`src/memory_adapter.rs`) implements AutoAgents' `MemoryProvider` trait:
 
-**Static tools** (always in LLM context, always needed):
+- **STM:** AutoAgents `SlidingWindowMemory` (`TrimStrategy::Drop`, `DEFAULT_STM_WINDOW = 40` messages). Eviction intercepted: when window full, oldest message is dumped to `data/stm/{session_id}/{unix_ms}_eviction.md` before `SlidingWindowMemory` pops it. `clear()` dumps full window to `{unix_ms}_clear.md`.
+- **LTM:** `memory.search` via `ToolRouter` on `memory.sock`. Query is `user_input` (semantic signal). Gracefully no-ops when memory service is down.
+- **Recall:** `[ltm_hits…, stm_window…]` — LTM prepended as background context, STM as recent window.
 
-```rust
-// Each wraps a MCP-lite call over UDS — AutoAgents never sees the socket
-Box::new(MemorySearchTool::new(clients.memory.clone()))
-Box::new(SandboxExecuteTool::new(clients.sandbox.clone()))
-Box::new(BrowserNavigateTool::new(clients.browser.clone()))
-```
-
-**One dynamic dispatcher** (for everything else):
-
-```rust
-pub struct ActionDispatcherTool {
-    catalog: Arc<ActionCatalog>,  // loaded from services/*/service.json at boot
-}
-
-// LLM calls: action.call(name="browser.search", args={...})
-// Dispatcher looks up catalog, routes over MCP-lite
-impl ToolT for ActionDispatcherTool {
-    fn name(&self) -> &str { "action.call" }
-    fn description(&self) -> &str {
-        "Call any available action by name. Available actions are listed in your context."
-    }
-    fn args_schema(&self) -> Value { /* { name: string, args: object } */ }
-}
-```
-
-**No two-step search.** Candidate action summaries are injected into the system prompt by `CortexMemoryAdapter::get_messages()` at turn start — the LLM reads them in context and calls `action.call` directly. This avoids the `search → call` two-step that fails on smaller models.
+`SlidingWindowMemory` (40-message window) is the permanent STM implementation.
 
 ---
 
-### CortexMemoryAdapter — own MemoryProvider implementation
+### Tool dispatch — string-keyed via ToolRouter, not ToolProcessor
 
-Cortex implements AutoAgents' `MemoryProvider` trait directly. AutoAgents calls the two methods; the implementation hides all STM/LTM complexity behind them.
+The LLM sees a fixed candidate set injected as text in the system prompt (not as native tool schemas). When the model outputs `{"type":"tool_call","tool":"browser.open","arguments":{...}}`:
 
-```rust
-pub struct CortexMemoryAdapter {
-    stm: SegmentedStm,              // 8 segments, per-segment budgets (local, in-process)
-    memory_client: McpLiteClient,   // → memory service over UDS
-    action_catalog: Arc<ActionCatalog>,
-    session_id: String,
-}
+1. `parse_step_model_output()` extracts `tool` name and `arguments`
+2. `on_tool_call()` hook fires — can abort
+3. `self.router.call(tool_name, &arguments)` dispatches over UDS to the owning service
+4. `on_tool_result()` or `on_tool_error()` fires
+5. Result injected back as the next user message
 
-impl MemoryProvider for CortexMemoryAdapter {
-    async fn get_messages(&self) -> Vec<ChatMessage> {
-        // 1. Assemble STM segments (system core, objective, plan snapshot,
-        //    conversation context, tool log, scratchpad, observations, curiosity)
-        // 2. Fetch LTM bundle from memory service over MCP-lite
-        // 3. Inject top-k action candidate summaries as a system message
-        // 4. Respect per-segment size budgets — compact if over limit
-        // 5. Return flat Vec<ChatMessage> — AutoAgents sees nothing unusual
-    }
-
-    async fn add_message(&mut self, message: ChatMessage) {
-        // 1. Route to correct STM segment by role and content type
-        //    (assistant → conversation context; tool → tool interaction log; etc.)
-        // 2. Keep heavy async writes (episode, diary) out of this hot path
-    }
-}
-
-// Diary and LTM writes happen at turn boundary, not per-message
-impl AgentHooks for CortexMemoryAdapter {
-    async fn on_turn_complete(&self, result: &TurnResult) {
-        // Fire episode write to memory service (MCP-lite)
-        // Fire deterministic diary write (markdown + LanceDB index row)
-        // Both are async and non-blocking to the main loop
-    }
-}
-```
+`ToolRouter` uses prefix-based routing: `browser.*` → `browser.sock`, `sandbox.*` → `sandbox.sock`, `memory.*` → `memory.sock`. AutoAgents' `ToolProcessor::process_tool_calls()` is not used — tool names are strings at runtime, not compile-time types.
 
 ---
 
-### Multi-agent — ractor actor model
+### Multi-agent — deferred to Phase 6
 
-Named agents from `config/openagent.yaml` (supervisor, worker-search, worker-code, etc.) each run as `ractor` actors inside the Cortex process. The supervisor actor dispatches tasks to worker actors via typed `ractor` messages. AutoAgents' `ActorAgent` wrapper is used directly.
-
-```
-ractor supervisor actor
-    ├── worker-search actor  (CortexAgent, search-tuned prompt)
-    ├── worker-code actor    (CortexAgent, code-tuned prompt)
-    └── worker-memory actor  (CortexAgent, memory-tuned prompt)
-```
-
-Each actor is a `CortexAgent` constructed from its YAML block. Adding a worker agent = one new entry in `agents:` YAML.
+Named agents from `config/openagent.yaml` are config-selectable via `agent_name` in the step request. A single `CortexAgent` is constructed per-request from the selected config block. Actor dispatch (`ractor`) deferred until memory and tool layers are stable.
 
 ---
 
-## Phase 1 Library Set
+## Current Library Set
 
-Libraries used now:
-- `sdk-rust` for the MCP-lite server and shared OTEL setup
-- `tokio` for the async service runtime
-- `serde` and `serde_json` for protocol payloads
-- `serde_yaml` for loading the OpenAgent config file
-- `anyhow` for process-level error handling
-- `reqwest` with `rustls-tls` for async LLM HTTP calls (transitional — replaced by `autoagents-llm`)
-- `tracing`, `opentelemetry`, and `tracing-opentelemetry` for observability
-
-Libraries being added (AutoAgents integration):
-- `autoagents-llm` — replaces manual `reqwest` LLM calls
-- `autoagents-core` — agent execution, tool trait, actor model
-- `autoagents-derive` — proc macros for tool input/output types
-- `ractor` — actor runtime for multi-agent (pulled in via `autoagents-core`)
+Libraries in use:
+- `sdk-rust` — MCP-lite server and shared OTEL setup
+- `tokio` — async service runtime
+- `serde`, `serde_json`, `serde_yaml` — protocol payloads and config loading
+- `anyhow` — process-level error handling
+- `autoagents-llm` — unified LLM provider trait; streaming via `chat_stream()`
+- `autoagents-core` — `BaseAgent`, `AgentDeriveT`, `AgentExecutor`, `AgentHooks`, `MemoryProvider`
+- `autoagents-protocol` — `Event` type for `BaseAgent` channel construction
+- `async-trait` — async trait support for AutoAgents impls
+- `futures` — stream accumulation for LLM streaming
+- `tower` — `CortexTraceLayer` + `TimeoutLayer` middleware stack
+- `tracing`, `opentelemetry`, `tracing-opentelemetry` — observability
 
 Libraries planned for later phases:
-- `uuid` for request/session correlation where the service generates identifiers
-- `tower` + `tower-http` — middleware stack (Phase 2); replaces Python middleware chain layer-by-layer
-- `axum` — HTTP/UDS control plane transport (Phase 4 endgame only); do not add before Phase 4
+- `axum` — HTTP/UDS control plane transport (Phase 4 endgame only)
 
 Libraries intentionally avoided:
-- `autoagents-core::memory` implementations — own `MemoryProvider` impl
-- `autoagents-protocol` — own MCP-lite protocol
+- `autoagents-core::prebuilt::ReActAgent` / `TurnEngine` — requires native LLM tool-calling; local models don't support this reliably
+- `autoagents-derive` — tool inputs are `Value` over UDS; proc macros add no benefit
 - `autoagents-telemetry` — own OTEL via `sdk-rust`
-- agent frameworks other than AutoAgents
 - embedded vector storage inside Cortex
 - direct browser/memory/sandbox implementation inside Cortex
-- `tower` or `axum` in any service other than Cortex
+- `axum` or `tower` in any service other than Cortex
 
 ## Phase 1 Tools
 

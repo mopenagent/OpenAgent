@@ -8,6 +8,7 @@ use autoagents_llm::chat::{
 };
 use futures::StreamExt;
 use serde_json::{json, Value};
+use std::sync::Arc;
 use tracing::info;
 
 #[derive(Debug, Clone)]
@@ -22,6 +23,39 @@ pub struct StepOutput {
     pub content: String,
     pub provider_kind: String,
     pub model: String,
+}
+
+/// Build a boxed `LLMProvider` from a `ProviderConfig`.
+///
+/// Used by `handle_step` to construct the `Arc<dyn LLMProvider>` required by
+/// `BaseAgent::new()`.  The resulting provider is used by the framework for memory
+/// context population; the raw ReAct loop continues to use `dispatch_llm` directly.
+pub fn build_llm_provider(config: &ProviderConfig) -> Result<Arc<dyn autoagents_llm::LLMProvider>> {
+    match config.kind.trim() {
+        "anthropic" => {
+            let p = LLMBuilder::<Anthropic>::new()
+                .api_key(&config.api_key)
+                .base_url(&config.base_url)
+                .model(&config.model)
+                .timeout_seconds(config.timeout as u64)
+                .max_tokens(config.max_tokens)
+                .build()
+                .map_err(|e| anyhow!("anthropic provider build failed: {e}"))?;
+            Ok(p)
+        }
+        _ => {
+            let api_key = if config.api_key.is_empty() { "none" } else { &config.api_key };
+            let p = LLMBuilder::<OpenAI>::new()
+                .api_key(api_key)
+                .base_url(&config.base_url)
+                .model(&config.model)
+                .timeout_seconds(config.timeout as u64)
+                .max_tokens(config.max_tokens)
+                .build()
+                .map_err(|e| anyhow!("openai provider build failed: {e}"))?;
+            Ok(p)
+        }
+    }
 }
 
 /// Single-prompt entry point used by `CortexAgent::step()`.
@@ -242,7 +276,16 @@ fn append_action_context(system_prompt: &str, action_context: Option<&str>) -> S
         return system_prompt.to_string();
     };
     format!(
-        "{system_prompt}\n\nAvailable candidate actions for this generation turn:\n{action_context}\n\nIf action use becomes necessary, prefer only these candidates."
+        concat!(
+            "{system_prompt}\n\n",
+            "## Available tools\n\n",
+            "{action_context}\n\n",
+            "To call a tool: {{\"type\":\"tool_call\",\"tool\":\"<name>\",\"arguments\":{{...}}}}\n",
+            "To answer directly: {{\"type\":\"final\",\"content\":\"<answer>\"}}\n",
+            "Only use tools listed above. Start your response with `{{`."
+        ),
+        system_prompt = system_prompt,
+        action_context = action_context,
     )
 }
 
@@ -264,10 +307,9 @@ mod tests {
             "user",
             Some("- browser.open [browser] - Open a URL".to_string()),
         );
-        assert!(prompt
-            .system_prompt
-            .contains("Available candidate actions for this generation turn"));
+        assert!(prompt.system_prompt.contains("## Available tools"));
         assert!(prompt.system_prompt.contains("browser.open"));
+        assert!(prompt.system_prompt.contains("Start your response with"));
     }
 
     #[test]

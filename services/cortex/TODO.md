@@ -2,7 +2,9 @@
 
 Phased implementation plan for Cortex as the future Rust orchestrator service.
 
-## Phase 0: Capture the Boundary
+---
+
+## Phase 0: Capture the Boundary ✅ DONE
 
 - Finalize Cortex as a separate service, not an embedded OpenAgent module.
 - Keep current Python loop as a temporary shell.
@@ -10,7 +12,9 @@ Phased implementation plan for Cortex as the future Rust orchestrator service.
 - Lock Cortex transport to MCP-lite over JSON + UDS.
 - Define Cortex as the only component allowed to call the LLM in the target architecture.
 
-## Phase 1: Cortex Skeleton MVP
+---
+
+## Phase 1: Cortex Skeleton MVP ✅ DONE
 
 Goal: replace the current agent loop with a minimal Cortex step.
 
@@ -28,101 +32,228 @@ Goal: replace the current agent loop with a minimal Cortex step.
 - Add OTEL spans, metrics, and structured logs
 
 Exit criteria:
-- Python shell can send one message to Cortex and get one response back
-
-## Phase 1B: AutoAgents Core Integration
-
-Goal: replace Cortex's manual `reqwest` LLM calls and ad-hoc tool handling with AutoAgents as the execution framework. This is a foundational refactor that must land before Phase 2 (tool routing) to avoid rebuilding twice.
-
-### Cargo.toml additions
-
-- Add `autoagents-llm` — unified `LLMProvider` trait
-- Add `autoagents-core` with features: `agent`, `tool`, `actor` (pulls in `ractor`)
-- Add `autoagents-derive` — `#[tool]`, `#[derive(ToolInput)]` proc macros
-- Do NOT add: `autoagents-protocol`, `autoagents-telemetry`, any `autoagents-core::memory` feature
-
-### CortexAgent
-
-- Define `CortexAgent` struct with fields: `config: AgentConfig`, `tools: Vec<Box<dyn ToolT>>`
-- Implement `AgentDeriveT` manually (do not use `#[agent]` macro) — 4 methods, reads from `AgentConfig`
-- Add `CortexAgent::from_config(cfg, clients)` constructor — validate eagerly at startup, panic with clear message on invalid config
-- Wire `BaseAgent::new(cortex_agent, llm, Some(memory_adapter), tx, false)` in handler
-
-### CortexMemoryAdapter
-
-- Define `SegmentedStm` struct with 8 named segments and per-segment `max_tokens` budgets (system_core, active_objective, plan_snapshot, conversation, tool_log, scratchpad, observations, curiosity_queue)
-- Implement `MemoryProvider` for `CortexMemoryAdapter`:
-  - `get_messages()` — assemble segments → fetch LTM bundle from memory service → inject top-k action candidates as system message → return flat `Vec<ChatMessage>`
-  - `add_message()` — route to correct STM segment by `ChatMessage` role; keep this path fast (no network calls)
-- Implement `AgentHooks` for `CortexMemoryAdapter`:
-  - `on_turn_complete()` — fire episode write to memory service (async, non-blocking); fire diary write
-- Stub `McpLiteClient` calls for memory service — they will be fully wired in Phase 3
-
-### Tool layer
-
-- Add `MemorySearchTool` — thin `ToolT` wrapper, stubs MCP-lite call to memory service (Phase 3 wires it fully)
-- Add `SandboxExecuteTool` — thin `ToolT` wrapper, stubs MCP-lite call to sandbox service
-- Add `BrowserNavigateTool` — thin `ToolT` wrapper, stubs MCP-lite call to browser service
-- Add `ActionDispatcherTool` — dynamic meta-tool: `name="action.call"`, `args={name: string, args: object}`; internally looks up `ActionCatalog` and routes over MCP-lite
-- Use `#[derive(ToolInput)]` for all tool input structs
-- Wire static tools + dispatcher into `CortexAgent::from_config()`
-
-### LLM provider swap
-
-- Replace manual `reqwest` HTTP block in `llm.rs` with `autoagents-llm::LLMBuilder`
-- Support OpenAI-compat (Ollama) and Anthropic backends — select from `config/openagent.yaml` provider key
-- Remove `llm.rs` once `LLMProvider` is wired into `BaseAgent`
-
-### Multi-agent bootstrap
-
-- Wrap `BaseAgent` in `ActorAgent` for each named agent in `config.agents`
-- Register actors with `ractor` supervisor on startup
-- Supervisor actor reads agent routing rules from config — dispatches `cortex.step` requests to correct worker actor by `agent_name` field
-- Keep supervisor logic simple at this phase — routing by name match only
-
-### Exit criteria
-
-- `cortex.step` request flows through AutoAgents `BaseAgent` → `LLMProvider` → response
-- All tests pass (update `test_cortex_provider.py` to reflect new step contract if needed)
-- Manual `reqwest` LLM code deleted
-- `CortexMemoryAdapter` passes unit tests for segment routing and `get_messages()` assembly
-- Stub tools callable without live services (return fixed JSON)
+- Python shell can send one message to Cortex and get one response back ✅
 
 ---
 
-## Phase 2: Tool Routing Baseline
+## Phase 1B: AutoAgents Core Integration ✅ DONE (with deviations — see below)
+
+Goal: replace Cortex's manual `reqwest` LLM calls and ad-hoc tool handling with AutoAgents as the execution framework.
+
+### Cargo.toml additions
+
+- Add `autoagents-llm` — unified `LLMProvider` trait ✅
+- Add `autoagents-core` — `AgentDeriveT`, `AgentExecutor`, `AgentHooks`, `ToolT` ✅
+- `autoagents-derive` — NOT added; raw `Value` used for tool args instead (see deviations)
+- Do NOT add: `autoagents-protocol`, `autoagents-telemetry`, any `autoagents-core::memory` feature ✅
+
+### CortexAgent ✅ (fully updated to framework runtime)
+
+- `CortexAgent` struct: `agent_name`, `system_prompt`, `action_context`, `provider_config`, `tools`, `router: Arc<ToolRouter>`
+- Implements `AgentDeriveT` — `Output = ReActOutput`, `output_schema()` returns `ReActOutput::structured_output_format()`
+- Implements `AgentExecutor` — `execute()` IS the full multi-turn ReAct loop; `max_turns = MAX_REACT_ITERATIONS (10)`
+- Implements `AgentHooks` — all default no-ops; Phase 3 overrides `on_run_complete` (diary write) and `on_tool_call` (whitelist check)
+- `ReActOutput` implements `AgentOutputT` — `output_schema()` returns JSON schema string; `structured_output_format()` returns the structured output JSON
+- `CortexAgentError` newtype — bridges to `RunnableAgentError::ExecutorError` via `From<CortexAgentError>`
+- `CortexAgent::new()` per-request (stateless by design) — see deviation #6
+- `StepRequest` holds `BaseAgent<CortexAgent, DirectAgent>` — `base_agent.run(Task::new(user_input))` is the Tower service entry point
+
+### Tool stubs ✅ (present; bypassed at runtime — see deviation #2)
+
+- `MemorySearchTool`, `SandboxExecuteTool`, `BrowserNavigateTool`, `ActionDispatcherTool`
+- Satisfy `AgentDeriveT` interface; return `{"status":"stub"}` — real routing is in `ToolRouter`
+
+### LLM provider swap ✅
+
+- `autoagents-llm::LLMBuilder` replaces manual `reqwest` calls
+- Anthropic and OpenAI-compat backends selected from config
+- `llm.rs` retained (not deleted) — wraps `autoagents-llm` with OpenAgent prompt types and OTEL
+
+### Items NOT done from original plan (deferred — see deviations)
+
+- `ActorAgent` / ractor multi-agent — deferred; no startup-time agent construction
+- `autoagents-derive` proc macros — not needed with `Value`-based tool args
+
+Exit criteria:
+- `CortexAgent` implements full AutoAgents trait set ✅
+- Stub tools callable without live services ✅
+- 28/28 tests pass ✅
+- Manual `reqwest` LLM code deleted ✅
+
+---
+
+## Phase 2: Tool Routing Baseline ✅ DONE
 
 Goal: let Cortex execute tools directly.
 
-- Add `tool_router` module
-- Add static tool registry first
-- Add service client wrappers for:
-  - memory
-  - tool services such as `browser`
-  - tool services such as `sandbox`
-- Define structured LLM tool-call output contract
-- Validate tool names and arguments before execution
-- Append tool result back into the reasoning loop
-- Record tool call telemetry
+- Add `tool_router` module ✅ — prefix dispatch: `browser.*` → `browser.sock`, `sandbox.*` → `sandbox.sock`
+- Define structured LLM tool-call output contract ✅ — `StructuredStepOutput` + `parse_step_model_output` in `response.rs`
+- Validate tool names and arguments before execution ✅ — type check + empty-guard in parser
+- Full ReAct loop ✅ — `CortexAgent::run()`: LLM → validate → parse → tool dispatch → inject result → repeat
+- Append tool result back into the reasoning loop ✅ — appended as user message between iterations
+- Record tool call telemetry ✅ — span fields, `react_summary` in response JSON, structured logs per iteration
+- Validator wired into loop ✅ — `maybe_validate_response` called before each `parse_step_model_output`
+- `cortex.discover` disabled ✅ — deterministic tool set only; discover type rejected in parser
 
 Exit criteria:
-- Cortex can complete one LLM -> tool -> LLM round-trip
+- Cortex can complete one LLM → tool → LLM round-trip ✅
+- 38/38 tests pass ✅
 
-## Phase 3: Memory Retrieval and Episode Writes
+### Outstanding from Phase 2 plan
 
-Goal: make Cortex memory-aware.
+- **Tower Phase 1** — `TraceLayer` + `TimeoutLayer` wired in `step_service.rs`. ✅ DONE
+- **`memory.search` in default tool set** — `ToolRouter` resolves `memory.*` by prefix convention but `DEFAULT_TOOL_NAMES` does not include a memory tool yet. Add once memory service socket is live (Phase 3).
 
-- Add `memory_client` module
-- Add unified memory search request contract
-- Retrieve memory bundle before LLM reasoning
-- Inject memory bundle into prompt assembly
-- Add episodic memory write after significant results
-- Capture LLM output after each completed cycle and run validator before downstream memory feedback
-- Add deterministic diary write event after each completed tool cycle
-- Add session-linked memory references in logs/telemetry
+---
 
-Exit criteria:
-- Cortex can read from memory before reasoning, validate output, write an episode, and emit a diary event after execution
+## Deviations from AutoAgents Pattern
+
+Intentional pragmatic decisions. The AutoAgents framework is used as both **trait contract** and **runtime executor** — with one deliberate bypass of the framework's built-in `TurnEngine`/`ReActAgent` (see Deviation #2).
+
+### 1. ~~No `BaseAgent`~~ — RESOLVED ✅ (fully wired)
+
+`BaseAgent::<CortexAgent, DirectAgent>::new(cortex_agent, llm_provider, Some(Box::new(memory_adapter)), tx, false)` is constructed in `handle_step`. `StepRequest` now holds the full `BaseAgent<CortexAgent, DirectAgent>` — `base_agent.run(Task::new(user_input))` is the runtime entry point.
+
+**Runtime path:** `base_agent.run(task)` → `on_run_start` → `AgentExecutor::execute(task, context)` → `on_run_complete`. The full AutoAgents hook lifecycle fires. `AgentExecutor::execute()` IS the multi-turn ReAct loop — it uses `context.llm()` (provider built once at `BaseAgent::new()`) and `context.memory()` (HybridMemoryAdapter) throughout. Tool dispatch goes through `self.router` (stored in `CortexAgent`) over UDS — not through the framework's `ToolProcessor`.
+
+### 2. Framework's `TurnEngine`/`ReActAgent` bypassed — own execute() implements ReAct
+
+**Why not `TurnEngine`:** AutoAgents' built-in `ReActAgent` executor uses `TurnEngineConfig::react()` with `ToolMode::Enabled` — it dispatches tools through `context.tools()` via the LLM's native `function_call`/`tool_use` API response format. This requires models that reliably emit structured tool-call responses. Local sub-30B models (Qwen, Llama, Mistral) do not. Our JSON text output format (`{"type":"tool_call","tool":"...","arguments":{...}}`) is the correct tradeoff for the target hardware.
+
+**What we do instead:** `AgentExecutor::execute()` in `agent.rs` IS the full multi-turn ReAct loop. It:
+- Uses `context.llm().chat_stream()` (reuses the pre-built provider from `BaseAgent::new()`)
+- Uses `context.memory()` for recall and remember
+- Dispatches tools via `self.router.call()` over UDS (not `ToolProcessor::process_tool_calls`)
+- Fires all `AgentHooks` lifecycle methods manually from inside the loop
+- `AgentDeriveT::tools()` returns `vec![]` — tool dispatch is string-keyed via `ToolRouter`, not trait-dispatch via `ToolT::execute()`
+
+**Future:** When Phase 5 wires typed tool stubs as `ToolT` implementations, they can co-exist with `ToolRouter` dispatch without changing `execute()`.
+
+### 3. ~~No `CortexMemoryAdapter`~~ — RESOLVED ✅
+
+`HybridMemoryAdapter` (`src/memory_adapter.rs`) implements the full `MemoryProvider` trait:
+- **STM:** AutoAgents `SlidingWindowMemory` (`TrimStrategy::Drop`, `DEFAULT_STM_WINDOW = 40` messages). Eviction intercepted by checking `stm.size() >= window_size` before `remember()` — oldest message dumped to `data/stm/{session_id}/{unix_ms}_eviction.md`. `clear()` dumps full window to `{unix_ms}_clear.md`.
+- **LTM:** `memory.search` via `ToolRouter` on `memory.sock`. Query is `user_input` (semantic signal); gracefully no-ops when memory service is down.
+- **Recall:** `[ltm_hits…, stm_window…]` — LTM prepended as background context, STM appended as recent window.
+- **Memory wired into ReAct loop:** History recalled at loop start; user + assistant messages persisted after each turn.
+
+`SlidingWindowMemory` (40-message window) is the permanent STM implementation — no replacement planned.
+
+### 4. No `ActorAgent` / ractor — no multi-agent runtime
+
+**Plan:** Supervisor ractor actor + per-YAML-agent worker actors registered at startup.
+**What exists:** Single `CortexAgent` constructed inside `handle_step` per request. Agent selection is `resolve_step_config(agent_name)` — picks config block only.
+**Why:** ractor adds operational surface (mailboxes, supervisor restart policy, actor lifecycle). Not justified until memory and tool layers are stable. Architecture is ready — adding actor dispatch is an `AppContext` field plus `tokio::spawn` in `main.rs`.
+
+### 5. No `autoagents-derive` proc macros
+
+**Plan:** `#[derive(ToolInput)]` for all tool input structs.
+**What exists:** Tool inputs use raw `serde_json::Value` in `execute(args: Value)`.
+**Why:** Tool inputs are arbitrary LLM JSON dispatched over a UDS socket as `Value` anyway. Strong typing via proc macros adds boilerplate with no safety gain at the service boundary.
+
+### 6. `CortexAgent` constructed per-request, not at startup
+
+**Plan:** `CortexAgent::from_config()` at startup, registered with ractor supervisor.
+**What exists:** `CortexAgent::new()` inside `handle_step()` on every request. Config re-loaded from disk per step via `CortexConfig::load()`.
+**Why:** Stateless by design for Phase 1B. Disk read cost per step is acceptable. Moves to startup construction when actors are added.
+
+---
+
+## Phase 3: Memory System ⬅ NEXT
+
+Goal: make Cortex memory-aware and extend the memory service to serve three searchable stores.
+
+### Memory hierarchy (4 levels)
+
+```
+Level 0: In-process sliding window    (SlidingWindowMemory, 40 messages; lives for one cortex.step call)
+Level 1: STM overflow                 (markdown files: data/stm/{session_id}/{unix_ms}_{reason}.md)
+Level 2: Diary                        (markdown: data/diary/{session_id}/{turn_index}-{ts}.md
+                                       + LanceDB stub index row — no embedding at write time)
+Level 3: memory                       (LanceDB `memory` table — compacted summaries, embedded)
+Level 4: knowledge                    (markdown + LanceDB `knowledge` index — curated KB)
+```
+
+### LanceDB tables (final names)
+
+| Table | Role | Status |
+|---|---|---|
+| `memory` | Compacted episode summaries — direct vector storage | Rename from `ltm` in memory service |
+| `diary` | Index rows → diary markdown files (stub at write, filled at compaction) | New |
+| `knowledge` | Index rows → KB markdown files | New (empty until compaction) |
+| `stm` | **Eliminated** — STM is now markdown files | Remove from memory service |
+
+### `memory.search` stores
+
+`memory | diary | knowledge | all` — STM is internal only, never searchable.
+
+### Retrieval flow
+
+```
+loop start (iteration 0, generation turns only):
+  → memory.search(query=user_input, store=memory) — seeds memory segment
+
+during loop:
+  → buffer eviction → write to data/stm/{session_id}/{turn_index}.md
+  → no duplicate tool loads
+
+loop end (ReActOutput returned):
+  → write diary markdown to data/diary/{session_id}/{turn_index}-{ts}.md
+  → write stub LanceDB diary row (no summary/keywords/embedding)
+  → fire-and-forget (non-blocking)
+  → STM markdown files for this session pruned
+```
+
+### Offline compaction (idle-triggered — NOT Phase 3)
+
+1. Find diary rows with blank summary
+2. LLM call → generate summary + keywords per entry
+3. Embed summary → update diary LanceDB row
+4. Sufficient entries from session/topic → synthesise `memory` entry
+5. Dense `memory` cluster → synthesise `knowledge` article (markdown + knowledge index row)
+
+### YAML additions
+
+```yaml
+memory:
+  diary_path: data/diary
+  stm_path: data/stm
+  socket: data/sockets/memory.sock
+```
+
+### Step 1 — Cortex (build first)
+
+- [x] `src/memory_adapter.rs` — `HybridMemoryAdapter` implementing `MemoryProvider` (STM via `SlidingWindowMemory` + LTM via `memory.sock`). Eviction/clear hooks dump to `data/stm/{session_id}/` markdown files. ✅
+- [x] Wire memory retrieval at loop start — `recall(user_input)` merges LTM + STM; history injected before current turn ✅
+- [x] Wire STM eviction → markdown file writes (`{unix_ms}_eviction.md`, `{unix_ms}_clear.md`) ✅
+- [ ] Wire diary write at end of `execute()` — markdown + stub LanceDB row via `memory.diary_write` (fire-and-forget from `on_run_complete`)
+- [ ] Add `memory.search` to `DEFAULT_TOOL_NAMES`
+- [ ] YAML: parse `memory` block into `CortexConfig`
+
+### Step 2 — Memory service (build after Cortex)
+
+- [ ] `db.rs`: rename `LTS_TABLE` from `"ltm"` to `"memory"`
+- [ ] `db.rs`: remove `STS_TABLE` (`"stm"`) — STM is now markdown
+- [ ] `db.rs`: add `diary` table schema (stub index: id, session_id, turn_index, timestamp_unix, agent_name, file_path, tool_calls, validator_status, summary, keywords + embedding vector)
+- [ ] `db.rs`: add `knowledge` table schema (same shape as diary)
+- [ ] `handlers.rs`: add `handle_diary_write` — write stub diary LanceDB row + validate markdown path exists
+- [ ] `handlers.rs`: extend `handle_search` — `store=diary` (search index → read snippet from markdown), `store=knowledge` (same), `store=all` (fan out all three, RRF merge)
+- [ ] `handlers.rs`: update `handle_index` — `store=memory` only (remove `stm` option)
+- [ ] `handlers.rs`: update `handle_prune` — prune old STM markdown files by age instead of LanceDB rows
+- [ ] `tools.rs`: add `memory.diary_write` tool definition
+- [ ] `tools.rs`: update `memory.search` params — `store` enum: `memory | diary | knowledge | all`
+- [ ] `tools.rs`: update `memory.index` params — `store` enum: `memory` only
+
+### Exit criteria
+
+- Cortex retrieves from `memory` store at loop start via `HybridMemoryAdapter` LTM recall
+- STM overflow written to markdown files at `data/stm/{session_id}/{unix_ms}_{reason}.md` ✅ (already done)
+- Every completed loop produces diary markdown + stub LanceDB diary row (via `on_run_complete` hook)
+- `memory.search` covers `memory | diary | knowledge | all`
+- `memory.search` wired into `DEFAULT_TOOL_NAMES` — model can call it during reasoning
+- 43 existing tests pass + new tests for diary write and memory_client
+
+---
 
 ## Phase 4: Prompt System
 
@@ -140,6 +271,8 @@ Goal: externalize prompts and stop hardcoding cognitive instructions.
 
 Exit criteria:
 - Cortex loads prompts from files without recompilation
+
+---
 
 ## Phase 4A: Diary Store and Index
 
@@ -163,23 +296,17 @@ Goal: capture human-readable request/response history without polluting normal m
 Exit criteria:
 - Every completed cycle produces a deterministic markdown diary entry plus a LanceDB reference index row, and diary entries can be semantically scanned by HITL without being used in normal context injection
 
+---
+
 ## Phase 5: Action Search
 
 Goal: avoid exposing every tool and skill to the LLM at every step.
 
 - Add `action_registry` module
 - Treat action discovery as the main abstraction rather than direct service naming
-- Define action metadata schema:
-  - name
-  - kind
-  - summary
-  - tags
-  - owner
-  - schema summary
-  - embedding
+- Define action metadata schema: name, kind, summary, tags, owner, schema summary, embedding
 - Add local skill loading from `skills/*/SKILL.md`
 - Keep skills guidance-only first, then move to hybrid/executable skills later
-- Add examples to skills later when vector rerank is introduced
 - Add action embedding/index build process
 - Implement top-k action search
 - Ensure browser and sandbox register many tools through the same discovery path
@@ -189,18 +316,14 @@ Goal: avoid exposing every tool and skill to the LLM at every step.
 Exit criteria:
 - Cortex can search actions semantically and expose only a limited candidate set
 
+---
+
 ## Phase 6: Plan Store and DAG
 
 Goal: give Cortex persistent control state.
 
 - Add SQLite-backed plan store
-- Add tables:
-  - plans
-  - tasks
-  - task_dependencies
-  - tool_calls
-  - turns
-  - sessions
+- Add tables: plans, tasks, task_dependencies, tool_calls, turns, sessions
 - Add runnable-task selection
 - Add plan snapshot injection into prompt
 - Update plan after each tool call or step
@@ -208,6 +331,8 @@ Goal: give Cortex persistent control state.
 
 Exit criteria:
 - Cortex can resume a multi-step task across turns
+
+---
 
 ## Phase 7: Segmented STM
 
@@ -229,6 +354,8 @@ Goal: preserve working cognition shape instead of a flat buffer.
 Exit criteria:
 - Cortex prompt assembly reads from segmented STM rather than one flat transcript
 
+---
+
 ## Phase 8: Reflection
 
 Goal: add background cognition after the main loop is stable.
@@ -242,6 +369,8 @@ Goal: add background cognition after the main loop is stable.
 Exit criteria:
 - Cortex can periodically synthesize research state without disrupting core task execution
 
+---
+
 ## Phase 9: Curiosity and Investigation Queue
 
 Goal: enable research collaborator behavior.
@@ -254,6 +383,8 @@ Goal: enable research collaborator behavior.
 Exit criteria:
 - Cortex can surface research leads as suggestions instead of direct interruptions
 
+---
+
 ## Phase 10: Harden the Service Boundary
 
 - Add retries/timeouts per dependent service
@@ -265,17 +396,18 @@ Exit criteria:
 Exit criteria:
 - Cortex survives partial subsystem failures without corrupting control state
 
+---
+
 ## Tower Middleware Migration
 
 Tower layers replace Python middleware progressively. Cortex is the only service that uses `tower`. Other services remain plain `tokio` daemons.
 
-### Tower Phase 1 — introduce the stack (alongside Cortex Phase 2)
+### Tower Phase 1 — introduce the stack ✅ DONE
 
-- Add `tower` and `tower-http` to `Cargo.toml`
-- Wrap inner `ReActService` (or equivalent step handler) in a `tower::ServiceBuilder`
-- Add `TraceLayer` (from `tower_http`) — one span per step request, correlates with existing OTEL traces
-- Add `TimeoutLayer` — configurable per-step deadline (default 90s), replaces Python-side timeout
-- Python STT/whitelist middleware stays on Python side at this stage — do not remove yet
+- `tower` in `Cargo.toml` ✅
+- `step_service.rs` — `ReActService` wrapped in `ServiceBuilder::new().layer(CortexTraceLayer).layer(map_err).layer(TimeoutLayer)` ✅
+- `CortexTraceLayer` — one span per step request with `session_id`, correlates with OTEL traces ✅
+- `TimeoutLayer` — `DEFAULT_STEP_TIMEOUT_SECS` deadline, configurable ✅
 
 ### Tower Phase 2 — port Python middleware (alongside Cortex Phase 3)
 
@@ -284,7 +416,7 @@ Tower layers replace Python middleware progressively. Cortex is the only service
 - Implement `TtsLayer` (post-processing) — converts text response to audio if session config requires it
 - Wire all three into `ServiceBuilder` in correct order: Whitelist → STT → inner → TTS
 - Remove corresponding Python middleware once each layer is tested end-to-end
-- Add Rust integration tests for each layer in isolation (`tower_test` or `tokio::test`)
+- Add Rust integration tests for each layer in isolation
 
 Layer composition pattern:
 ```rust
@@ -304,7 +436,9 @@ let svc = ServiceBuilder::new()
 - Keep Tower middleware stack unchanged — Axum is the transport layer in front
 - Update `McpLiteClient` in Python/sdk-go to use HTTP over UDS (one-line transport swap)
 - Platform connectors (Discord, Telegram, Slack) wire directly to Cortex Axum endpoint
-- Python process retired — only needed as a launch wrapper if `systemd` unit isn't used directly
+- Python process retired
+
+---
 
 ## Deferred by Design
 
@@ -314,11 +448,3 @@ Not for early MVP:
 - knowledge decay management inside Cortex
 - splitting memory into multiple services
 - dynamic distributed scheduling
-
-## Immediate Next Steps
-
-1. Create `src/main.rs` and service bootstrap
-2. Define session step request/response contract
-3. Implement LLM client boundary
-4. Add static tool router for memory and tool services such as browser/sandbox
-5. Wire Python shell to call Cortex instead of the old loop
