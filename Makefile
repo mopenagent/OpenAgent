@@ -32,7 +32,7 @@
 # ---------------------------------------------------------------------------
 
 GO_SERVICES   := whatsapp
-RUST_SERVICES := sandbox browser memory tts stt discord slack telegram validator cortex
+RUST_SERVICES := sandbox browser memory tts stt validator cortex channels
 
 # ---------------------------------------------------------------------------
 # Platform detection

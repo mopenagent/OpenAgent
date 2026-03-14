@@ -1,0 +1,116 @@
+{
+  "name": "channels",
+  "description": "Omnibus channels daemon — wraps zeroclaw platform connectors (Discord, Telegram, Slack, IRC, Mattermost, Signal, iMessage) behind a unified MCP-lite interface. Inbound messages are pushed as message.received events. Outbound operations (send, draft, react, typing) are dispatched via tool calls.",
+  "version": "0.2.0",
+  "binary": {
+    "linux/arm64": "bin/channels-linux-arm64",
+    "linux/amd64": "bin/channels-linux-amd64",
+    "darwin/arm64": "bin/channels-darwin-arm64",
+    "darwin/amd64": "bin/channels-darwin-amd64"
+  },
+  "socket": "data/sockets/channels.sock",
+  "health": {
+    "interval_ms": 5000,
+    "timeout_ms": 2000,
+    "restart_backoff_ms": [1000, 2000, 5000, 10000, 30000]
+  },
+  "tools": [
+    {
+      "name": "channel.send",
+      "description": "Send a message to a platform address (e.g. discord://guild_id/channel_id, telegram://bot/chat_id).",
+      "params": {
+        "type": "object",
+        "properties": {
+          "address": { "type": "string", "description": "ChannelAddress URI" },
+          "content": { "type": "string", "description": "Message text" }
+        },
+        "required": ["address", "content"]
+      }
+    },
+    {
+      "name": "channel.update_draft",
+      "description": "Update an in-progress streaming draft message.",
+      "params": {
+        "type": "object",
+        "properties": {
+          "address":    { "type": "string" },
+          "message_id": { "type": "string" },
+          "content":    { "type": "string" }
+        },
+        "required": ["address", "message_id", "content"]
+      }
+    },
+    {
+      "name": "channel.finalize_draft",
+      "description": "Finalize a draft with the complete response (applies Markdown formatting).",
+      "params": {
+        "type": "object",
+        "properties": {
+          "address":    { "type": "string" },
+          "message_id": { "type": "string" },
+          "content":    { "type": "string" }
+        },
+        "required": ["address", "message_id", "content"]
+      }
+    },
+    {
+      "name": "channel.cancel_draft",
+      "description": "Cancel and remove a draft message.",
+      "params": {
+        "type": "object",
+        "properties": {
+          "address":    { "type": "string" },
+          "message_id": { "type": "string" }
+        },
+        "required": ["address", "message_id"]
+      }
+    },
+    {
+      "name": "channel.react",
+      "description": "Add an emoji reaction to a message.",
+      "params": {
+        "type": "object",
+        "properties": {
+          "address":    { "type": "string" },
+          "message_id": { "type": "string" },
+          "emoji":      { "type": "string", "description": "Unicode emoji, e.g. \"👀\"" }
+        },
+        "required": ["address", "message_id", "emoji"]
+      }
+    },
+    {
+      "name": "channel.typing_start",
+      "description": "Send a typing indicator on the given channel address.",
+      "params": {
+        "type": "object",
+        "properties": {
+          "address": { "type": "string" }
+        },
+        "required": ["address"]
+      }
+    },
+    {
+      "name": "channel.typing_stop",
+      "description": "Stop the typing indicator on the given channel address.",
+      "params": {
+        "type": "object",
+        "properties": {
+          "address": { "type": "string" }
+        },
+        "required": ["address"]
+      }
+    },
+    {
+      "name": "channel.list",
+      "description": "List the names of all enabled platform channels.",
+      "params": {
+        "type": "object",
+        "properties": {},
+        "required": []
+      }
+    }
+  ],
+  "events": ["message.received", "channel.status"],
+  "runtime": "rust",
+  "config": "config/channels.toml"
+}

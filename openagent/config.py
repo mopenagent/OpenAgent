@@ -272,6 +272,28 @@ def build_service_env_extras(cfg: OpenAgentConfig, root: Path) -> dict[str, dict
     if discord and discord.token:
         extras["discord"] = {"DISCORD_BOT_TOKEN": discord.token}
 
+    # channels omnibus — inject all platform credentials so channels.toml
+    # ${VAR} interpolation works without the user setting shell env vars manually
+    channels: dict[str, str] = {}
+    if discord and discord.token:
+        channels["DISCORD_BOT_TOKEN"] = discord.token
+    telegram = cfg.platforms.telegram
+    if telegram:
+        if telegram.bot_token:
+            channels["TELEGRAM_BOT_TOKEN"] = telegram.bot_token
+        if telegram.app_id:
+            channels["TELEGRAM_APP_ID"] = str(telegram.app_id)
+        if telegram.app_hash:
+            channels["TELEGRAM_APP_HASH"] = telegram.app_hash
+    slack = cfg.platforms.slack
+    if slack:
+        if slack.bot_token:
+            channels["SLACK_BOT_TOKEN"] = slack.bot_token
+        if slack.app_token:
+            channels["SLACK_APP_TOKEN"] = slack.app_token
+    if channels:
+        extras["channels"] = channels
+
     telegram = cfg.platforms.telegram
     if telegram:
         tg: dict[str, str] = {}

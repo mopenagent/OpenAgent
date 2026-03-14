@@ -21,7 +21,7 @@ mention_only = false
 # Discord
 # ---------------------------------------------------------------------------
 [discord]
-enabled = false
+enabled = true
 token = "${DISCORD_BOT_TOKEN}"
 # guild_id: restrict listening to a specific guild (server). Leave empty for all.
 guild_id = ""
@@ -33,7 +33,7 @@ mention_only = true
 # Slack
 # ---------------------------------------------------------------------------
 [slack]
-enabled = false
+enabled = true
 bot_token = "${SLACK_BOT_TOKEN}"
 # app_token: required for Socket Mode (recommended). Leave empty for webhook mode.
 app_token = "${SLACK_APP_TOKEN}"
