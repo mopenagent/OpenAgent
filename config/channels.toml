@@ -1,0 +1,77 @@
+# channels.toml — Omnibus Channels Service Configuration
+#
+# Credentials use ${VAR} syntax and are resolved from environment variables.
+# Variables can be set in a .env file in the project root, or in the shell.
+#
+# Each platform section has an `enabled` flag. Disabled platforms are skipped
+# at boot — their credentials are not required.
+
+# ---------------------------------------------------------------------------
+# Telegram
+# ---------------------------------------------------------------------------
+[telegram]
+enabled = false
+token = "${TELEGRAM_BOT_TOKEN}"
+# allowed_users: list of Telegram usernames (without @) that can interact.
+# Leave empty to use pairing mode (one-time code on first run).
+allowed_users = []
+mention_only = false
+
+# ---------------------------------------------------------------------------
+# Discord
+# ---------------------------------------------------------------------------
+[discord]
+enabled = false
+token = "${DISCORD_BOT_TOKEN}"
+# guild_id: restrict listening to a specific guild (server). Leave empty for all.
+guild_id = ""
+allowed_users = []
+listen_to_bots = false
+mention_only = true
+
+# ---------------------------------------------------------------------------
+# Slack
+# ---------------------------------------------------------------------------
+[slack]
+enabled = false
+bot_token = "${SLACK_BOT_TOKEN}"
+# app_token: required for Socket Mode (recommended). Leave empty for webhook mode.
+app_token = "${SLACK_APP_TOKEN}"
+# channel_id: restrict to one channel. Leave empty to listen on all channels.
+channel_id = ""
+allowed_users = []
+
+# ---------------------------------------------------------------------------
+# IRC
+# ---------------------------------------------------------------------------
+[irc]
+enabled = false
+server = "${IRC_SERVER}"
+port = 6667
+nickname = "${IRC_NICKNAME}"
+channel = "${IRC_CHANNEL}"
+password = ""
+
+# ---------------------------------------------------------------------------
+# Mattermost
+# ---------------------------------------------------------------------------
+[mattermost]
+enabled = false
+url = "${MATTERMOST_URL}"
+token = "${MATTERMOST_TOKEN}"
+
+# ---------------------------------------------------------------------------
+# Signal
+# ---------------------------------------------------------------------------
+[signal]
+enabled = false
+cli_url = "${SIGNAL_CLI_URL}"
+number = "${SIGNAL_NUMBER}"
+
+# ---------------------------------------------------------------------------
+# iMessage (macOS only)
+# No credentials required — uses local Messages database + AppleScript.
+# Requires Full Disk Access for the terminal running the daemon.
+# ---------------------------------------------------------------------------
+[imessage]
+enabled = false
