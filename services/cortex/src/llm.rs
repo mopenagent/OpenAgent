@@ -9,6 +9,7 @@ use autoagents_llm::chat::{
 use futures::StreamExt;
 use serde_json::{json, Value};
 use std::sync::Arc;
+use std::time::Instant;
 use tracing::info;
 
 #[derive(Debug, Clone)]
@@ -62,14 +63,6 @@ pub fn build_llm_provider(config: &ProviderConfig) -> Result<Arc<dyn autoagents_
 pub async fn complete(provider: &ProviderConfig, prompt: &StepPrompt) -> Result<StepOutput> {
     let model_label = requested_model(provider)?;
     let messages = build_messages(prompt);
-    if provider.debug_llm {
-        info!(
-            provider_kind = %provider.kind,
-            model = %model_label,
-            llm_http_request = %build_debug_request(provider, prompt),
-            "cortex.llm.http.request"
-        );
-    }
     let content = dispatch_llm(provider, &messages, &model_label).await?;
     Ok(StepOutput {
         content,
@@ -97,14 +90,45 @@ pub async fn complete_messages(
 
 /// Shared LLM dispatch — called by both `complete` and `complete_messages`.
 ///
-/// Dispatches on provider kind at compile time. All OpenAI-compatible endpoints
-/// (LM Studio, Ollama /v1, local servers) use the OpenAI builder.
+/// Always logs: provider, model, url, n_messages, duration_ms, response_len.
+/// Full request body and response text are only logged when `debug_llm: true`.
 async fn dispatch_llm(
     provider: &ProviderConfig,
     messages: &[ChatMessage],
     model_label: &str,
 ) -> Result<String> {
-    match provider.kind.trim() {
+    let url = format!("{}chat/completions", normalize_base_url(&provider.base_url));
+    let n_messages = messages.len();
+
+    info!(
+        provider = %provider.kind,
+        model = %model_label,
+        url = %url,
+        n_messages,
+        "cortex.llm.request"
+    );
+
+    if provider.debug_llm {
+        let body = json!({
+            "model": model_label,
+            "messages": messages.iter().map(|m| json!({
+                "role": format!("{:?}", m.role).to_lowercase(),
+                "content": m.content,
+            })).collect::<Vec<_>>(),
+            "stream": true,
+            "max_tokens": provider.max_tokens,
+        });
+        info!(
+            provider = %provider.kind,
+            model = %model_label,
+            request_body = %body,
+            "cortex.llm.request.body"
+        );
+    }
+
+    let t = Instant::now();
+
+    let text = match provider.kind.trim() {
         "anthropic" => {
             let p = LLMBuilder::<Anthropic>::new()
                 .api_key(&provider.api_key)
@@ -114,31 +138,14 @@ async fn dispatch_llm(
                 .max_tokens(provider.max_tokens)
                 .build()
                 .map_err(|e| anyhow!("anthropic provider build failed: {e}"))?;
-            if provider.debug_llm {
-                info!(provider_kind = "anthropic", model = %model_label, "cortex.llm.call");
-            }
             let mut stream = p
                 .chat_stream(messages, None::<StructuredOutputFormat>)
                 .await
                 .map_err(|e| anyhow!("anthropic stream open failed: {e}"))?;
-            let text = accumulate_stream(&mut stream).await?;
-            if provider.debug_llm {
-                info!(
-                    provider_kind = "anthropic",
-                    model = %model_label,
-                    response_len = text.len(),
-                    llm_response_text = %text,
-                    "cortex.llm.http.response"
-                );
-            }
-            Ok(text)
+            accumulate_stream(&mut stream).await?
         }
         _ => {
-            let api_key = if provider.api_key.is_empty() {
-                "none"
-            } else {
-                &provider.api_key
-            };
+            let api_key = if provider.api_key.is_empty() { "none" } else { &provider.api_key };
             let p = LLMBuilder::<OpenAI>::new()
                 .api_key(api_key)
                 .base_url(&provider.base_url)
@@ -147,26 +154,34 @@ async fn dispatch_llm(
                 .max_tokens(provider.max_tokens)
                 .build()
                 .map_err(|e| anyhow!("openai provider build failed: {e}"))?;
-            if provider.debug_llm {
-                info!(provider_kind = %provider.kind, model = %model_label, "cortex.llm.call");
-            }
             let mut stream = p
                 .chat_stream(messages, None::<StructuredOutputFormat>)
                 .await
                 .map_err(|e| anyhow!("openai stream open failed: {e}"))?;
-            let text = accumulate_stream(&mut stream).await?;
-            if provider.debug_llm {
-                info!(
-                    provider_kind = %provider.kind,
-                    model = %model_label,
-                    response_len = text.len(),
-                    llm_response_text = %text,
-                    "cortex.llm.http.response"
-                );
-            }
-            Ok(text)
+            accumulate_stream(&mut stream).await?
         }
+    };
+
+    let duration_ms = t.elapsed().as_millis();
+
+    info!(
+        provider = %provider.kind,
+        model = %model_label,
+        duration_ms,
+        response_len = text.len(),
+        "cortex.llm.response"
+    );
+
+    if provider.debug_llm {
+        info!(
+            provider = %provider.kind,
+            model = %model_label,
+            response_text = %text,
+            "cortex.llm.response.body"
+        );
     }
+
+    Ok(text)
 }
 
 fn build_messages(prompt: &StepPrompt) -> Vec<ChatMessage> {
@@ -213,31 +228,6 @@ fn kind_display_label(kind: &str) -> &str {
     }
 }
 
-fn build_debug_request(provider: &ProviderConfig, prompt: &StepPrompt) -> Value {
-    let base_url = normalize_base_url(&provider.base_url);
-    let path = match provider.kind.trim() {
-        "anthropic" => "messages",
-        _ => "chat/completions",
-    };
-    let url = if base_url.is_empty() {
-        path.to_string()
-    } else {
-        format!("{base_url}{path}")
-    };
-    json!({
-        "method": "POST",
-        "url": url,
-        "payload": {
-            "model": provider.model.trim(),
-            "messages": [
-                {"role": "system", "content": prompt.system_prompt},
-                {"role": "user", "content": prompt.user_input}
-            ],
-            "stream": false,
-            "max_tokens": provider.max_tokens,
-        }
-    })
-}
 
 fn normalize_base_url(base_url: &str) -> String {
     let trimmed = base_url.trim();
