@@ -19,8 +19,17 @@ serde_yaml = "0.9"
 # Error handling
 anyhow = "1.0"
 
-# LLM provider abstraction (replaces genai)
+# LLM provider abstraction
 autoagents-llm = { version = "0.3.6", features = ["openai", "anthropic"] }
+
+# Agent framework — CortexAgent implements AgentDeriveT + AgentExecutor + AgentHooks
+autoagents-core = "0.3.6"
+
+# Async trait support for autoagents-core trait impls
+async-trait = "0.1"
+
+# Stream accumulation for LLM streaming
+futures = "0.3"
 
 # Observability
 tracing = "0.1"

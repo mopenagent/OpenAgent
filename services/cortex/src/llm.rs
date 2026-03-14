@@ -4,8 +4,9 @@ use autoagents_llm::backends::anthropic::Anthropic;
 use autoagents_llm::backends::openai::OpenAI;
 use autoagents_llm::builder::LLMBuilder;
 use autoagents_llm::chat::{
-    ChatMessage, ChatMessageBuilder, ChatProvider, ChatResponse, ChatRole, StructuredOutputFormat,
+    ChatMessage, ChatMessageBuilder, ChatProvider, ChatRole, StructuredOutputFormat,
 };
+use futures::StreamExt;
 use serde_json::{json, Value};
 use tracing::info;
 
@@ -23,10 +24,10 @@ pub struct StepOutput {
     pub model: String,
 }
 
+/// Single-prompt entry point used by `CortexAgent::step()`.
 pub async fn complete(provider: &ProviderConfig, prompt: &StepPrompt) -> Result<StepOutput> {
     let model_label = requested_model(provider)?;
     let messages = build_messages(prompt);
-
     if provider.debug_llm {
         info!(
             provider_kind = %provider.kind,
@@ -35,10 +36,41 @@ pub async fn complete(provider: &ProviderConfig, prompt: &StepPrompt) -> Result<
             "cortex.llm.http.request"
         );
     }
+    let content = dispatch_llm(provider, &messages, &model_label).await?;
+    Ok(StepOutput {
+        content,
+        provider_kind: provider.kind.clone(),
+        model: model_label,
+    })
+}
 
-    // Dispatch on provider kind at compile time — autoagents-llm uses generic builders.
-    // All OpenAI-compatible endpoints (LM Studio, Ollama /v1, local servers) use OpenAI builder.
-    let content = match provider.kind.trim() {
+/// Multi-turn entry point used by the ReAct loop in `CortexAgent::run()`.
+///
+/// Accepts a pre-built message list so the loop can accumulate tool results between
+/// iterations without rebuilding from a `StepPrompt` each time.
+pub async fn complete_messages(
+    provider: &ProviderConfig,
+    messages: &[ChatMessage],
+) -> Result<StepOutput> {
+    let model_label = requested_model(provider)?;
+    let content = dispatch_llm(provider, messages, &model_label).await?;
+    Ok(StepOutput {
+        content,
+        provider_kind: provider.kind.clone(),
+        model: model_label,
+    })
+}
+
+/// Shared LLM dispatch — called by both `complete` and `complete_messages`.
+///
+/// Dispatches on provider kind at compile time. All OpenAI-compatible endpoints
+/// (LM Studio, Ollama /v1, local servers) use the OpenAI builder.
+async fn dispatch_llm(
+    provider: &ProviderConfig,
+    messages: &[ChatMessage],
+    model_label: &str,
+) -> Result<String> {
+    match provider.kind.trim() {
         "anthropic" => {
             let p = LLMBuilder::<Anthropic>::new()
                 .api_key(&provider.api_key)
@@ -51,11 +83,11 @@ pub async fn complete(provider: &ProviderConfig, prompt: &StepPrompt) -> Result<
             if provider.debug_llm {
                 info!(provider_kind = "anthropic", model = %model_label, "cortex.llm.call");
             }
-            let resp: Box<dyn ChatResponse> = p
-                .chat(&messages, None::<StructuredOutputFormat>)
+            let mut stream = p
+                .chat_stream(messages, None::<StructuredOutputFormat>)
                 .await
-                .map_err(|e| anyhow!("anthropic llm call failed: {e}"))?;
-            let text = extract_text(resp)?;
+                .map_err(|e| anyhow!("anthropic stream open failed: {e}"))?;
+            let text = accumulate_stream(&mut stream).await?;
             if provider.debug_llm {
                 info!(
                     provider_kind = "anthropic",
@@ -65,9 +97,8 @@ pub async fn complete(provider: &ProviderConfig, prompt: &StepPrompt) -> Result<
                     "cortex.llm.http.response"
                 );
             }
-            text
+            Ok(text)
         }
-        // openai, openai_compat, ollama, or any unrecognised kind — all speak OpenAI /v1
         _ => {
             let api_key = if provider.api_key.is_empty() {
                 "none"
@@ -85,11 +116,11 @@ pub async fn complete(provider: &ProviderConfig, prompt: &StepPrompt) -> Result<
             if provider.debug_llm {
                 info!(provider_kind = %provider.kind, model = %model_label, "cortex.llm.call");
             }
-            let resp: Box<dyn ChatResponse> = p
-                .chat(&messages, None::<StructuredOutputFormat>)
+            let mut stream = p
+                .chat_stream(messages, None::<StructuredOutputFormat>)
                 .await
-                .map_err(|e| anyhow!("openai llm call failed: {e}"))?;
-            let text = extract_text(resp)?;
+                .map_err(|e| anyhow!("openai stream open failed: {e}"))?;
+            let text = accumulate_stream(&mut stream).await?;
             if provider.debug_llm {
                 info!(
                     provider_kind = %provider.kind,
@@ -99,15 +130,9 @@ pub async fn complete(provider: &ProviderConfig, prompt: &StepPrompt) -> Result<
                     "cortex.llm.http.response"
                 );
             }
-            text
+            Ok(text)
         }
-    };
-
-    Ok(StepOutput {
-        content,
-        provider_kind: provider.kind.clone(),
-        model: model_label,
-    })
+    }
 }
 
 fn build_messages(prompt: &StepPrompt) -> Vec<ChatMessage> {
@@ -120,14 +145,18 @@ fn build_messages(prompt: &StepPrompt) -> Vec<ChatMessage> {
     ]
 }
 
-fn extract_text(resp: Box<dyn ChatResponse>) -> Result<String> {
-    // ChatResponse is a trait; .text() is the canonical text accessor.
-    let text = resp
-        .text()
-        .ok_or_else(|| anyhow!("provider returned no readable text"))?;
-    let trimmed = text.trim();
+async fn accumulate_stream<S>(stream: &mut S) -> Result<String>
+where
+    S: futures::Stream<Item = Result<String, autoagents_llm::error::LLMError>> + Unpin,
+{
+    let mut buf = String::new();
+    while let Some(chunk) = stream.next().await {
+        let delta = chunk.map_err(|e| anyhow!("stream chunk error: {e}"))?;
+        buf.push_str(&delta);
+    }
+    let trimmed = buf.trim();
     if trimmed.is_empty() {
-        return Err(anyhow!("provider returned empty text"));
+        return Err(anyhow!("provider returned empty response"));
     }
     Ok(trimmed.to_string())
 }

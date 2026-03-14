@@ -1,8 +1,12 @@
 mod action;
+mod agent;
+mod agent_tools;
 mod config;
 mod handlers;
 mod llm;
 mod metrics;
+mod response;
+mod tool_router;
 mod tools;
 mod validator;
 
@@ -13,6 +17,7 @@ use sdk_rust::{setup_otel, McpLiteServer};
 use std::env;
 use std::path::PathBuf;
 use std::sync::Arc;
+use tool_router::ToolRouter;
 use tracing::info;
 
 const DEFAULT_LOGS_DIR: &str = "logs";
@@ -32,7 +37,11 @@ async fn main() -> Result<()> {
     let tel = Arc::new(CortexTelemetry::new(&logs_dir)?);
     let root = env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
     let action_catalog = Arc::new(action::catalog::ActionCatalog::discover_from_root(&root)?);
-    let ctx = Arc::new(AppContext::new(Arc::clone(&tel), action_catalog));
+    let socket_dir = env::var("OPENAGENT_SOCKET_DIR")
+        .map(PathBuf::from)
+        .unwrap_or_else(|_| root.join("data/sockets"));
+    let tool_router = Arc::new(ToolRouter::new(socket_dir));
+    let ctx = Arc::new(AppContext::new(Arc::clone(&tel), action_catalog, tool_router));
 
     let mut server = McpLiteServer::new(tools::make_tools(), "phase1");
     tools::register_handlers(&mut server, ctx);
