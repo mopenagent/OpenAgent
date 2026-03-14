@@ -23,10 +23,12 @@ pub const DEFAULT_SOCKET_PATH: &str = "data/sockets/memory.sock";
 pub const DEFAULT_EMBED_CACHE: &str = "data/models";
 /// Default logs directory — relative to project root.
 pub const DEFAULT_LOGS_DIR: &str = "logs";
-/// Long-term memory store table name.
-pub const LTS_TABLE: &str = "ltm";
-/// Short-term memory store table name.
-pub const STS_TABLE: &str = "stm";
+/// Long-term memory table (semantic recall across sessions).
+pub const MEMORY_TABLE: &str = "memory";
+/// Diary table — one stub row per completed ReAct turn; vectors back-filled at compaction.
+pub const DIARY_TABLE: &str = "diary";
+/// Knowledge table — curated facts and reference material.
+pub const KNOWLEDGE_TABLE: &str = "knowledge";
 
 /// Build the canonical Arrow schema for both memory tables.
 pub fn table_schema() -> Arc<Schema> {

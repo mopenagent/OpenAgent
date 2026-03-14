@@ -24,6 +24,7 @@ use crate::agent::{CortexAgent, ReActOutput};
 use anyhow::{anyhow, Result};
 use autoagents_core::agent::task::Task;
 use autoagents_core::agent::{AgentDeriveT, BaseAgent, DirectAgent};
+use std::fmt;
 use std::future::Future;
 use std::pin::Pin;
 use std::task::{Context, Poll};
@@ -44,6 +45,17 @@ pub struct StepRequest {
     pub base_agent: BaseAgent<CortexAgent, DirectAgent>,
     /// Trimmed user message for this turn.
     pub user_input: String,
+}
+
+/// `BaseAgent` does not implement `Debug`, so we provide a manual impl that
+/// shows the user input without trying to format the agent internals.
+impl fmt::Debug for StepRequest {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("StepRequest")
+            .field("user_input", &self.user_input)
+            .field("base_agent", &"<BaseAgent>")
+            .finish()
+    }
 }
 
 // ── Inner service — ReActService ──────────────────────────────────────────────

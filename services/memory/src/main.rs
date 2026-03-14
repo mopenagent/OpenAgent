@@ -30,7 +30,7 @@ mod tools;
 use anyhow::Result;
 use db::{
     ensure_table, DEFAULT_EMBED_CACHE, DEFAULT_LOGS_DIR, DEFAULT_MEMORY_PATH,
-    DEFAULT_SOCKET_PATH, LTS_TABLE, STS_TABLE,
+    DEFAULT_SOCKET_PATH, DIARY_TABLE, KNOWLEDGE_TABLE, MEMORY_TABLE,
 };
 use fastembed::{EmbeddingModel, InitOptions, TextEmbedding};
 use metrics::MemoryTelemetry;
@@ -78,8 +78,9 @@ async fn main() -> Result<()> {
 
     let db = lancedb::connect(&memory_path).execute().await?;
     let db = Arc::new(db);
-    ensure_table(db.as_ref(), LTS_TABLE).await?;
-    ensure_table(db.as_ref(), STS_TABLE).await?;
+    ensure_table(db.as_ref(), MEMORY_TABLE).await?;
+    ensure_table(db.as_ref(), DIARY_TABLE).await?;
+    ensure_table(db.as_ref(), KNOWLEDGE_TABLE).await?;
 
     // Load embedding model — uses local cache; errors if absent + EMBED_OFFLINE=1
     let t_model = Instant::now();

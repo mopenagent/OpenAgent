@@ -29,10 +29,12 @@
 //! `MemoryProvider`, `AgentHooks` — is used as designed.
 
 use crate::config::ProviderConfig;
+use crate::diary::write_diary_entry;
 use crate::llm::build_prompt_with_action_context;
 use crate::response::parse_step_model_output;
 use crate::tool_router::ToolRouter;
 use crate::validator::maybe_validate_response;
+use std::path::PathBuf;
 use async_trait::async_trait;
 use autoagents_core::agent::task::Task;
 use autoagents_core::agent::{
@@ -48,16 +50,100 @@ use std::fmt;
 use std::sync::Arc;
 use tracing::{info, warn};
 
-/// Error type for AgentExecutor — wraps anyhow::Error as a std::error::Error.
+/// Discriminant for `CortexAgentError` — enables typed recovery at call sites.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CortexAgentErrorKind {
+    /// LLM provider failed to open a stream, returned an error chunk, or yielded empty output.
+    LlmStream,
+    /// Memory recall or persist failed (`MemoryProvider::remember` / `recall`).
+    Memory,
+    /// Validator or JSON parser returned an error while processing model output.
+    Validation,
+    /// ReAct loop reached `MAX_REACT_ITERATIONS` without producing a final answer.
+    IterationLimit,
+    /// Model returned a response type other than `"final"` or `"tool_call"`.
+    UnsupportedResponse,
+    /// Catch-all for errors converted from `anyhow` context chains.
+    Other,
+}
+
+/// Typed error returned by `AgentExecutor::execute()`.
 ///
-/// `anyhow::Error` intentionally does not implement `std::error::Error` to avoid
-/// coherence issues; this newtype bridges the gap for the AgentExecutor trait bound.
+/// Carries a `kind` discriminant for recovery logic, a human-readable `message`,
+/// and an optional `cause` string preserving the underlying error chain.
+///
+/// `anyhow::Error` does not implement `std::error::Error`, so the cause is stored
+/// as a formatted string rather than a `Box<dyn Error>` source chain.
 #[derive(Debug)]
-pub struct CortexAgentError(pub String);
+pub struct CortexAgentError {
+    pub kind: CortexAgentErrorKind,
+    message: String,
+    cause: Option<String>,
+}
+
+impl CortexAgentError {
+    pub fn new(kind: CortexAgentErrorKind, message: impl Into<String>) -> Self {
+        Self { kind, message: message.into(), cause: None }
+    }
+
+    pub fn with_cause(
+        kind: CortexAgentErrorKind,
+        message: impl Into<String>,
+        cause: impl fmt::Display,
+    ) -> Self {
+        Self { kind, message: message.into(), cause: Some(cause.to_string()) }
+    }
+
+    // ── Constructors ──────────────────────────────────────────────────────────
+
+    pub fn llm_stream(cause: impl fmt::Display) -> Self {
+        Self::with_cause(CortexAgentErrorKind::LlmStream, "LLM stream error", cause)
+    }
+
+    pub fn memory(cause: impl fmt::Display) -> Self {
+        Self::with_cause(CortexAgentErrorKind::Memory, "memory operation failed", cause)
+    }
+
+    pub fn iteration_limit(max: usize) -> Self {
+        Self::new(
+            CortexAgentErrorKind::IterationLimit,
+            format!("react loop reached {max} iterations without a final response"),
+        )
+    }
+
+    pub fn unsupported_response(kind: &str) -> Self {
+        Self::new(
+            CortexAgentErrorKind::UnsupportedResponse,
+            format!("unsupported response type in react loop: {kind}"),
+        )
+    }
+
+    // ── Predicate helpers ─────────────────────────────────────────────────────
+
+    pub fn is_llm_error(&self) -> bool {
+        self.kind == CortexAgentErrorKind::LlmStream
+    }
+
+    pub fn is_memory_error(&self) -> bool {
+        self.kind == CortexAgentErrorKind::Memory
+    }
+
+    pub fn is_iteration_limit(&self) -> bool {
+        self.kind == CortexAgentErrorKind::IterationLimit
+    }
+
+    pub fn is_unsupported_response(&self) -> bool {
+        self.kind == CortexAgentErrorKind::UnsupportedResponse
+    }
+}
 
 impl fmt::Display for CortexAgentError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.0)
+        write!(f, "{}", self.message)?;
+        if let Some(ref cause) = self.cause {
+            write!(f, ": {cause}")?;
+        }
+        Ok(())
     }
 }
 
@@ -65,14 +151,14 @@ impl std::error::Error for CortexAgentError {}
 
 impl From<anyhow::Error> for CortexAgentError {
     fn from(e: anyhow::Error) -> Self {
-        Self(format!("{e:#}"))
+        Self::with_cause(CortexAgentErrorKind::Other, "internal error", format!("{e:#}"))
     }
 }
 
 /// `CortexAgentError` → `RunnableAgentError` via the `ExecutorError` variant.
 impl From<CortexAgentError> for autoagents_core::agent::error::RunnableAgentError {
     fn from(e: CortexAgentError) -> Self {
-        autoagents_core::agent::error::RunnableAgentError::ExecutorError(e.0)
+        autoagents_core::agent::error::RunnableAgentError::ExecutorError(e.to_string())
     }
 }
 
@@ -147,6 +233,10 @@ pub struct CortexAgent {
     tools: Vec<Box<dyn autoagents_core::tool::ToolT>>,
     /// Tool router — routes tool names from LLM output to UDS service sockets.
     router: Arc<ToolRouter>,
+    /// Session identifier — written into diary entries for traceability.
+    session_id: String,
+    /// Directory for per-session diary markdown files (e.g. `data/diary/<session_id>/`).
+    diary_dir: PathBuf,
 }
 
 impl CortexAgent {
@@ -157,6 +247,8 @@ impl CortexAgent {
         provider_config: ProviderConfig,
         tools: Vec<Box<dyn autoagents_core::tool::ToolT>>,
         router: Arc<ToolRouter>,
+        session_id: String,
+        diary_dir: PathBuf,
     ) -> Self {
         Self {
             description: format!("Cortex reasoning agent: {agent_name}"),
@@ -166,6 +258,8 @@ impl CortexAgent {
             provider_config,
             tools,
             router,
+            session_id,
+            diary_dir,
         }
     }
 }
@@ -268,7 +362,7 @@ impl AgentExecutor for CortexAgent {
                 .await
                 .remember(&user_msg)
                 .await
-                .map_err(|e| CortexAgentError(format!("memory remember (user) failed: {e}")))?;
+                .map_err(|e| CortexAgentError::memory(e))?;
         }
 
         let mut tool_calls_made: Vec<String> = Vec::new();
@@ -283,18 +377,15 @@ impl AgentExecutor for CortexAgent {
                     .llm()
                     .chat_stream(&messages, None::<StructuredOutputFormat>)
                     .await
-                    .map_err(|e| CortexAgentError(format!("llm stream failed: {e}")))?;
+                    .map_err(|e| CortexAgentError::llm_stream(e))?;
                 let mut buf = String::new();
                 while let Some(chunk) = stream.next().await {
-                    let delta =
-                        chunk.map_err(|e| CortexAgentError(format!("stream chunk error: {e}")))?;
+                    let delta = chunk.map_err(|e| CortexAgentError::llm_stream(e))?;
                     buf.push_str(&delta);
                 }
                 let trimmed = buf.trim().to_string();
                 if trimmed.is_empty() {
-                    return Err(CortexAgentError(
-                        "provider returned empty response".to_string(),
-                    ));
+                    return Err(CortexAgentError::llm_stream("provider returned empty response"));
                 }
                 if self.provider_config.debug_llm {
                     info!(
@@ -355,6 +446,16 @@ impl AgentExecutor for CortexAgent {
                     if let Some(ref mem) = memory {
                         let _ = mem.lock().await.remember(&final_msg).await;
                     }
+
+                    // Fire-and-forget diary write — does not block the step response.
+                    tokio::spawn(write_diary_entry(
+                        self.session_id.clone(),
+                        self.diary_dir.clone(),
+                        user_input.to_string(),
+                        parsed.response_text.clone(),
+                        tool_calls_made.clone(),
+                        Arc::clone(&self.router),
+                    ));
 
                     self.on_turn_complete(iteration, &context).await;
 
@@ -456,19 +557,14 @@ impl AgentExecutor for CortexAgent {
                 }
 
                 other => {
-                    return Err(CortexAgentError(format!(
-                        "unsupported response type in react loop: {other}"
-                    )));
+                    return Err(CortexAgentError::unsupported_response(other));
                 }
             }
 
             self.on_turn_complete(iteration, &context).await;
         }
 
-        Err(CortexAgentError(format!(
-            "react loop reached {} iterations without a final response",
-            MAX_REACT_ITERATIONS
-        )))
+        Err(CortexAgentError::iteration_limit(MAX_REACT_ITERATIONS))
     }
 }
 
@@ -506,7 +602,6 @@ fn telemetry_labels(config: &ProviderConfig) -> (String, String) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::path::PathBuf;
 
     fn dummy_provider() -> ProviderConfig {
         ProviderConfig {
@@ -532,6 +627,8 @@ mod tests {
             dummy_provider(),
             vec![],
             make_router(),
+            "test-session".to_string(),
+            PathBuf::from("data/diary/test-session"),
         )
     }
 

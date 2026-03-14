@@ -13,6 +13,24 @@ pub struct CortexConfig {
     pub provider: ProviderConfig,
     #[serde(default)]
     pub agents: Vec<AgentConfig>,
+    #[serde(default)]
+    pub memory: MemoryConfig,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct MemoryConfig {
+    /// Root directory for per-session diary markdown files.
+    #[serde(default = "default_diary_path")]
+    pub diary_path: String,
+    /// Root directory for STM overflow markdown files.
+    #[serde(default = "default_stm_path")]
+    pub stm_path: String,
+}
+
+impl Default for MemoryConfig {
+    fn default() -> Self {
+        Self { diary_path: default_diary_path(), stm_path: default_stm_path() }
+    }
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -54,6 +72,7 @@ impl Default for CortexConfig {
         Self {
             provider: ProviderConfig::default(),
             agents: vec![AgentConfig::default()],
+            memory: MemoryConfig::default(),
         }
     }
 }
@@ -182,6 +201,14 @@ fn default_provider_max_tokens() -> u32 {
     2048
 }
 
+fn default_diary_path() -> String {
+    "data/diary".to_string()
+}
+
+fn default_stm_path() -> String {
+    "data/stm".to_string()
+}
+
 fn default_agent_name() -> String {
     "default".to_string()
 }
@@ -208,6 +235,7 @@ mod tests {
                     system_prompt: "Secondary prompt".to_string(),
                 },
             ],
+            memory: MemoryConfig::default(),
         };
 
         let resolved =

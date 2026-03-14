@@ -102,7 +102,7 @@ Exit criteria:
 ### Outstanding from Phase 2 plan
 
 - **Tower Phase 1** — `TraceLayer` + `TimeoutLayer` wired in `step_service.rs`. ✅ DONE
-- **`memory.search` in default tool set** — `ToolRouter` resolves `memory.*` by prefix convention but `DEFAULT_TOOL_NAMES` does not include a memory tool yet. Add once memory service socket is live (Phase 3).
+- **`memory.search` in default tool set** — added in Phase 3. `ToolRouter` resolves `memory.*` by prefix convention; `DEFAULT_TOOL_NAMES` now includes `memory.search`. ✅
 
 ---
 
@@ -159,7 +159,7 @@ Intentional pragmatic decisions. The AutoAgents framework is used as both **trai
 
 ---
 
-## Phase 3: Memory System ⬅ NEXT
+## Phase 3: Memory System ✅ DONE
 
 Goal: make Cortex memory-aware and extend the memory service to serve three searchable stores.
 
@@ -226,36 +226,39 @@ memory:
 - [x] `src/memory_adapter.rs` — `HybridMemoryAdapter` implementing `MemoryProvider` (STM via `SlidingWindowMemory` + LTM via `memory.sock`). Eviction/clear hooks dump to `data/stm/{session_id}/` markdown files. ✅
 - [x] Wire memory retrieval at loop start — `recall(user_input)` merges LTM + STM; history injected before current turn ✅
 - [x] Wire STM eviction → markdown file writes (`{unix_ms}_eviction.md`, `{unix_ms}_clear.md`) ✅
-- [ ] Wire diary write at end of `execute()` — markdown + stub LanceDB row via `memory.diary_write` (fire-and-forget from `on_run_complete`)
-- [ ] Add `memory.search` to `DEFAULT_TOOL_NAMES`
-- [ ] YAML: parse `memory` block into `CortexConfig`
+- [x] Wire diary write at end of `execute()` — markdown + stub LanceDB row via `memory.diary_write` (fire-and-forget via `tokio::spawn`) ✅
+- [x] Add `memory.search` to `DEFAULT_TOOL_NAMES` ✅
+- [x] YAML: parse `memory` block (`diary_path`, `stm_path`) into `CortexConfig` ✅
 
 ### Step 2 — Memory service (build after Cortex)
 
-- [ ] `db.rs`: rename `LTS_TABLE` from `"ltm"` to `"memory"`
-- [ ] `db.rs`: remove `STS_TABLE` (`"stm"`) — STM is now markdown
-- [ ] `db.rs`: add `diary` table schema (stub index: id, session_id, turn_index, timestamp_unix, agent_name, file_path, tool_calls, validator_status, summary, keywords + embedding vector)
-- [ ] `db.rs`: add `knowledge` table schema (same shape as diary)
-- [ ] `handlers.rs`: add `handle_diary_write` — write stub diary LanceDB row + validate markdown path exists
-- [ ] `handlers.rs`: extend `handle_search` — `store=diary` (search index → read snippet from markdown), `store=knowledge` (same), `store=all` (fan out all three, RRF merge)
-- [ ] `handlers.rs`: update `handle_index` — `store=memory` only (remove `stm` option)
-- [ ] `handlers.rs`: update `handle_prune` — prune old STM markdown files by age instead of LanceDB rows
-- [ ] `tools.rs`: add `memory.diary_write` tool definition
-- [ ] `tools.rs`: update `memory.search` params — `store` enum: `memory | diary | knowledge | all`
-- [ ] `tools.rs`: update `memory.index` params — `store` enum: `memory` only
+- [x] `db.rs`: rename `LTS_TABLE` from `"ltm"` to `MEMORY_TABLE = "memory"` ✅
+- [x] `db.rs`: remove `STS_TABLE` (`"stm"`) — STM is now markdown ✅
+- [x] `db.rs`: add `DIARY_TABLE = "diary"` (same Arrow schema as memory) ✅
+- [x] `db.rs`: add `KNOWLEDGE_TABLE = "knowledge"` (same Arrow schema) ✅
+- [x] `handlers.rs`: add `handle_diary_write` — write stub diary LanceDB row (zero vector placeholder) ✅
+- [x] `handlers.rs`: extend `handle_search` — `store=memory|diary|knowledge|all` (fan out, RRF merge) ✅
+- [x] `handlers.rs`: update `handle_index` — `store=memory` only (removed `stm` option) ✅
+- [x] `handlers.rs`: update `handle_prune` — prune old diary entries by age (replaced STS prune) ✅
+- [x] `handlers.rs`: update `handle_delete` — `store=memory|diary|knowledge` ✅
+- [x] `tools.rs`: add `memory.diary_write` tool definition ✅
+- [x] `tools.rs`: update `memory.search` params — `store` enum: `memory | diary | knowledge | all` ✅
+- [x] `tools.rs`: update `memory.index` params — `store` enum: `memory` only ✅
+- [x] `tools.rs`: update `memory.delete` params — `store` enum: `memory | diary | knowledge` ✅
+- [x] `main.rs`: ensure `memory`, `diary`, `knowledge` tables at startup ✅
 
 ### Exit criteria
 
-- Cortex retrieves from `memory` store at loop start via `HybridMemoryAdapter` LTM recall
-- STM overflow written to markdown files at `data/stm/{session_id}/{unix_ms}_{reason}.md` ✅ (already done)
-- Every completed loop produces diary markdown + stub LanceDB diary row (via `on_run_complete` hook)
-- `memory.search` covers `memory | diary | knowledge | all`
-- `memory.search` wired into `DEFAULT_TOOL_NAMES` — model can call it during reasoning
-- 43 existing tests pass + new tests for diary write and memory_client
+- Cortex retrieves from `memory` store at loop start via `HybridMemoryAdapter` LTM recall ✅
+- STM overflow written to markdown files at `data/stm/{session_id}/{unix_ms}_{reason}.md` ✅
+- Every completed loop produces diary markdown + stub LanceDB diary row (fire-and-forget) ✅
+- `memory.search` covers `memory | diary | knowledge | all` ✅
+- `memory.search` wired into `DEFAULT_TOOL_NAMES` — model can call it during reasoning ✅
+- 46/46 tests pass ✅
 
 ---
 
-## Phase 4: Prompt System
+## Phase 4: Prompt System ⬅ NEXT
 
 Goal: externalize prompts and stop hardcoding cognitive instructions.
 

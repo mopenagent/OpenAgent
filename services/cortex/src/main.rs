@@ -2,6 +2,7 @@ mod action;
 mod agent;
 mod agent_tools;
 mod config;
+mod diary;
 mod handlers;
 mod llm;
 mod memory_adapter;

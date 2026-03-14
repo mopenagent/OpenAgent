@@ -24,9 +24,10 @@ const DEFAULT_TOOL_NAMES: &[&str] = &[
     "browser.snapshot",
     "sandbox.execute",
     "sandbox.shell",
+    "memory.search",
 ];
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct AppContext {
     tel: Arc<CortexTelemetry>,
     action_catalog: Arc<ActionCatalog>,
@@ -92,14 +93,16 @@ pub fn handle_step(params: Value, ctx: Arc<AppContext>) -> Result<String> {
     let session_id = p
         .get("session_id")
         .and_then(|v| v.as_str())
-        .unwrap_or("")
-        .trim()
+        .map(str::trim)
+        .filter(|v| !v.is_empty())
+        .ok_or_else(|| anyhow!("session_id is required"))?
         .to_string();
     let user_input = p
         .get("user_input")
         .and_then(|v| v.as_str())
-        .unwrap_or("")
-        .trim()
+        .map(str::trim)
+        .filter(|v| !v.is_empty())
+        .ok_or_else(|| anyhow!("user_input is required"))?
         .to_string();
     let requested_agent = p.get("agent_name").and_then(|v| v.as_str()).map(str::trim);
     let turn_kind = p
@@ -108,13 +111,6 @@ pub fn handle_step(params: Value, ctx: Arc<AppContext>) -> Result<String> {
         .map(str::trim)
         .unwrap_or("generation")
         .to_string();
-
-    if session_id.is_empty() {
-        return Err(anyhow!("session_id is required"));
-    }
-    if user_input.is_empty() {
-        return Err(anyhow!("user_input is required"));
-    }
 
     let _cx_guard = CortexTelemetry::attach_context(
         &params,
@@ -151,6 +147,12 @@ pub fn handle_step(params: Value, ctx: Arc<AppContext>) -> Result<String> {
     };
     let structured_system_prompt = build_structured_system_prompt(&resolved.system_prompt);
 
+    let data_root = std::env::current_dir()
+        .unwrap_or_else(|_| std::path::PathBuf::from("."));
+    let diary_dir = data_root
+        .join(&cfg_file.cfg.memory.diary_path)
+        .join(&session_id);
+
     let cortex_agent = CortexAgent::new(
         resolved.agent_name.clone(),
         structured_system_prompt,
@@ -158,6 +160,8 @@ pub fn handle_step(params: Value, ctx: Arc<AppContext>) -> Result<String> {
         resolved.provider.clone(),
         crate::agent_tools::default_tools(),
         Arc::clone(&router),
+        session_id.clone(),
+        diary_dir,
     );
 
     span.record("agent_name", resolved.agent_name.as_str());
@@ -177,11 +181,7 @@ pub fn handle_step(params: Value, ctx: Arc<AppContext>) -> Result<String> {
     //   STM: AutoAgents SlidingWindowMemory (Drop strategy, DEFAULT_STM_WINDOW messages).
     //   LTM: memory.sock via ToolRouter (semantic recall at loop start).
     //   Eviction + clear hooks dump overflow messages to data/stm/{session_id}/.
-    let stm_dir = std::env::current_dir()
-        .unwrap_or_else(|_| std::path::PathBuf::from("."))
-        .join("data")
-        .join("stm")
-        .join(&session_id);
+    let stm_dir = data_root.join("data").join("stm").join(&session_id);
     let memory_adapter = HybridMemoryAdapter::new(
         &session_id,
         DEFAULT_STM_WINDOW,
@@ -427,12 +427,10 @@ pub fn handle_search_actions(params: Value, catalog: Arc<ActionCatalog>) -> Resu
     let query = p
         .get("query")
         .and_then(Value::as_str)
-        .unwrap_or("")
-        .trim()
+        .map(str::trim)
+        .filter(|v| !v.is_empty())
+        .ok_or_else(|| anyhow!("query is required"))?
         .to_string();
-    if query.is_empty() {
-        return Err(anyhow!("query is required"));
-    }
 
     let kind = p
         .get("kind")

@@ -6,7 +6,7 @@
 //!   Logs    — structured tracing::{info!, warn!, error!} events on every path
 //!   Baggage — attach_context() propagates remote parent + tool/store tags
 
-use crate::db::{batch_stream, err_json, make_batch, LTS_TABLE, STS_TABLE, TOP_K};
+use crate::db::{batch_stream, err_json, make_batch, DIARY_TABLE, EMBED_DIM, KNOWLEDGE_TABLE, MEMORY_TABLE, TOP_K};
 use crate::metrics::{round1, round3, ts_ms, MemoryTelemetry};
 use anyhow::Result;
 use arrow_array::{ArrayRef, Float32Array, StringArray};
@@ -40,9 +40,8 @@ pub fn handle_index(
         return Err(anyhow::anyhow!("{}", err_json("content is required")));
     }
     let table_name: &str = match store.as_str() {
-        "ltm" => LTS_TABLE,
-        "stm" => STS_TABLE,
-        _ => return Err(anyhow::anyhow!("{}", err_json("store must be 'ltm' or 'stm'"))),
+        "memory" => MEMORY_TABLE,
+        _ => return Err(anyhow::anyhow!("{}", err_json("store must be 'memory'"))),
     };
 
     let content_len = content.len();
@@ -149,13 +148,14 @@ pub fn handle_search(
         return Err(anyhow::anyhow!("{}", err_json("query is required")));
     }
     let tables: Vec<&str> = match store.as_str() {
-        "ltm" => vec![LTS_TABLE],
-        "stm" => vec![STS_TABLE],
-        "all" => vec![LTS_TABLE, STS_TABLE],
+        "memory" => vec![MEMORY_TABLE],
+        "diary" => vec![DIARY_TABLE],
+        "knowledge" => vec![KNOWLEDGE_TABLE],
+        "all" => vec![MEMORY_TABLE, DIARY_TABLE, KNOWLEDGE_TABLE],
         _ => {
             return Err(anyhow::anyhow!(
                 "{}",
-                err_json("store must be 'ltm', 'stm', or 'all'")
+                err_json("store must be 'memory', 'diary', 'knowledge', or 'all'")
             ))
         }
     };
@@ -432,9 +432,10 @@ pub fn handle_delete(
     let id_opt: Option<String> = p.get("id").and_then(|v| v.as_str()).map(|s| s.to_string());
 
     let table_name: &str = match store.as_str() {
-        "ltm" => LTS_TABLE,
-        "stm" => STS_TABLE,
-        _ => return Err(anyhow::anyhow!("{}", err_json("store must be 'ltm' or 'stm'"))),
+        "memory" => MEMORY_TABLE,
+        "diary" => DIARY_TABLE,
+        "knowledge" => KNOWLEDGE_TABLE,
+        _ => return Err(anyhow::anyhow!("{}", err_json("store must be 'memory', 'diary', or 'knowledge'"))),
     };
 
     let store_owned = store.clone();
@@ -492,7 +493,7 @@ pub fn handle_delete(
     result
 }
 
-/// Prune stale documents from STS (short-term store).
+/// Prune stale entries from the diary table.
 ///
 /// Deletes every row whose `created_at` Unix-second timestamp is older than
 /// `max_age_secs` (default: 86400 s = 24 h).  Returns the number of rows removed.
@@ -511,13 +512,13 @@ pub fn handle_prune(
 
     let op_span = tracing::info_span!(
         "memory.prune",
-        index = STS_TABLE,
+        index = DIARY_TABLE,
         max_age_secs = max_age_secs,
         pruned = tracing::field::Empty,
         status = tracing::field::Empty,
     );
     let _enter = op_span.enter();
-    info!(index = STS_TABLE, max_age_secs, "memory.prune start");
+    info!(index = DIARY_TABLE, max_age_secs, "memory.prune start");
 
     let result = tokio::task::block_in_place(|| {
         tokio::runtime::Handle::current().block_on(async {
@@ -528,7 +529,7 @@ pub fn handle_prune(
                 .saturating_sub(max_age_secs);
 
             // Count rows before deletion so we can report pruned count
-            let tbl = db.open_table(STS_TABLE).execute().await?;
+            let tbl = db.open_table(DIARY_TABLE).execute().await?;
             let stale_predicate = format!("CAST(created_at AS BIGINT) < {cutoff}");
             let pruned: usize = tbl.count_rows(Some(stale_predicate.clone())).await?;
 
@@ -537,11 +538,11 @@ pub fn handle_prune(
 
             op_span.record("pruned", pruned as i64);
             op_span.record("status", "ok");
-            info!(index = STS_TABLE, pruned, cutoff, "prune complete");
+            info!(index = DIARY_TABLE, pruned, cutoff, "prune complete");
 
             tel.record(&json!({
                 "ts_ms": ts_ms(), "service": "memory", "op": "prune", "status": "ok",
-                "index": STS_TABLE, "max_age_secs": max_age_secs,
+                "index": DIARY_TABLE, "max_age_secs": max_age_secs,
                 "pruned": pruned, "cutoff": cutoff,
             }));
 
@@ -553,10 +554,95 @@ pub fn handle_prune(
 
     if let Err(ref e) = result {
         op_span.record("status", "error");
-        error!(index = STS_TABLE, error = %e, "prune failed");
+        error!(index = DIARY_TABLE, error = %e, "prune failed");
         tel.record(&json!({
             "ts_ms": ts_ms(), "service": "memory", "op": "prune", "status": "error",
-            "index": STS_TABLE, "max_age_secs": max_age_secs,
+            "index": DIARY_TABLE, "max_age_secs": max_age_secs,
+        }));
+    }
+    result
+}
+
+/// Write a stub diary row with a zero vector — no embedding is computed.
+///
+/// Called fire-and-forget from Cortex after each final answer.  The zero vector
+/// is a placeholder; compaction will back-fill real embeddings in a future pass.
+///
+/// Params:
+/// - `session_id`  — session identifier (stored in metadata JSON)
+/// - `content`     — truncated response text (up to 500 chars from Cortex)
+/// - `file_path`   — absolute path to the diary markdown file (stored in metadata)
+pub fn handle_diary_write(
+    params: Value,
+    db: Arc<Connection>,
+    tel: Arc<MemoryTelemetry>,
+) -> Result<String> {
+    let p = params
+        .as_object()
+        .ok_or_else(|| anyhow::anyhow!("{}", err_json("params must be an object")))?;
+    let session_id = p.get("session_id").and_then(|v| v.as_str()).unwrap_or("").trim();
+    let content = p.get("content").and_then(|v| v.as_str()).unwrap_or("").trim();
+    let file_path = p.get("file_path").and_then(|v| v.as_str()).unwrap_or("").trim();
+
+    if content.is_empty() {
+        return Err(anyhow::anyhow!("{}", err_json("content is required")));
+    }
+
+    let content_owned = content.to_owned();
+    let session_owned = session_id.to_owned();
+    let file_path_owned = file_path.to_owned();
+    let content_len = content.len();
+
+    let op_span = tracing::info_span!(
+        "memory.diary_write",
+        session_id = %session_owned,
+        content_len = content_len,
+        doc_id = tracing::field::Empty,
+        status = tracing::field::Empty,
+    );
+    let _enter = op_span.enter();
+    info!(session_id = %session_owned, content_len, "memory.diary_write start");
+
+    let result = tokio::task::block_in_place(|| {
+        tokio::runtime::Handle::current().block_on(async {
+            let id = uuid::Uuid::new_v4().to_string();
+            let created_at = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .map(|d| d.as_secs().to_string())
+                .unwrap_or_else(|_| "0".to_string());
+
+            let metadata = serde_json::json!({
+                "session_id": session_owned,
+                "file_path": file_path_owned,
+                "stub": true,
+            })
+            .to_string();
+
+            // Zero vector placeholder — compaction will back-fill real embeddings.
+            let zero_vec: Vec<f32> = vec![0.0; EMBED_DIM];
+            let batch = make_batch(&id, &content_owned, &metadata, &zero_vec, &created_at)?;
+            let tbl = db.open_table(DIARY_TABLE).execute().await?;
+            tbl.add(Box::new(batch_stream(batch))).execute().await?;
+
+            op_span.record("doc_id", id.as_str());
+            op_span.record("status", "ok");
+            info!(session_id = %session_owned, doc_id = %id, "diary row written");
+
+            tel.record(&json!({
+                "ts_ms": ts_ms(), "service": "memory", "op": "diary_write", "status": "ok",
+                "session_id": session_owned, "content_len": content_len, "doc_id": id,
+            }));
+
+            Ok::<_, anyhow::Error>(json!({ "id": id, "store": DIARY_TABLE }).to_string())
+        })
+    });
+
+    if let Err(ref e) = result {
+        op_span.record("status", "error");
+        error!(session_id = %session_id, error = %e, "diary_write failed");
+        tel.record(&json!({
+            "ts_ms": ts_ms(), "service": "memory", "op": "diary_write", "status": "error",
+            "session_id": session_id, "content_len": content_len,
         }));
     }
     result

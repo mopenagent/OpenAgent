@@ -76,7 +76,7 @@ const LTM_RECALL_LIMIT: usize = 5;
 /// STM is AutoAgents `SlidingWindowMemory` with `TrimStrategy::Drop`.
 /// LTM recall hits `memory.search` on `memory.sock`; writes are handled
 /// by the offline compaction pipeline (not on every `remember()`).
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct HybridMemoryAdapter {
     stm: SlidingWindowMemory,
     /// Cached window_size so we can detect the eviction boundary ourselves.
