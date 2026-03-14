@@ -100,14 +100,6 @@ async fn dispatch_llm(
     let url = format!("{}chat/completions", normalize_base_url(&provider.base_url));
     let n_messages = messages.len();
 
-    info!(
-        provider = %provider.kind,
-        model = %model_label,
-        url = %url,
-        n_messages,
-        "cortex.llm.request"
-    );
-
     if provider.debug_llm {
         let body = json!({
             "model": model_label,
@@ -121,8 +113,10 @@ async fn dispatch_llm(
         info!(
             provider = %provider.kind,
             model = %model_label,
+            url = %url,
+            n_messages,
             request_body = %body,
-            "cortex.llm.request.body"
+            "cortex.llm.request"
         );
     }
 
@@ -164,20 +158,14 @@ async fn dispatch_llm(
 
     let duration_ms = t.elapsed().as_millis();
 
-    info!(
-        provider = %provider.kind,
-        model = %model_label,
-        duration_ms,
-        response_len = text.len(),
-        "cortex.llm.response"
-    );
-
     if provider.debug_llm {
         info!(
             provider = %provider.kind,
             model = %model_label,
+            duration_ms,
+            response_len = text.len(),
             response_text = %text,
-            "cortex.llm.response.body"
+            "cortex.llm.response"
         );
     }
 
