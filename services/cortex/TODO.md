@@ -395,45 +395,34 @@ Exit criteria:
 
 ---
 
-## Tower Middleware Migration
+## Tower Middleware Migration — ARCHITECTURE REVISED
 
-Tower layers replace Python middleware progressively. Cortex is the only service that uses `tower`. Other services remain plain `tokio` daemons.
+**Cortex is a pure MCP-lite service. It does not own Tower middleware.**
 
-### Tower Phase 1 — introduce the stack ✅ DONE
+Tower was removed from Cortex entirely (2026-03):
+- `step_service.rs` deleted
+- `tower` dep removed from `Cargo.toml`
+- `handlers.rs` calls `base_agent.run()` directly — no Tower wrapping
 
-- `tower` in `Cargo.toml` ✅
-- `step_service.rs` — `ReActService` wrapped in `ServiceBuilder::new().layer(CortexTraceLayer).layer(map_err).layer(TimeoutLayer)` ✅
-- `CortexTraceLayer` — one span per step request with `session_id`, correlates with OTEL traces ✅
-- `TimeoutLayer` — `DEFAULT_STEP_TIMEOUT_SECS` deadline, configurable ✅
+**The Tower middleware stack lives in the `openagent` Rust binary (the control plane):**
 
-### Tower Phase 2 — port Python middleware (alongside Cortex Phase 3)
-
-- Implement `WhitelistLayer` — checks sender against whitelist before passing to inner service
-- Implement `SttLayer` — transcribes audio payload if `content_type == audio/*`; passes text downstream
-- Implement `TtsLayer` (post-processing) — converts text response to audio if session config requires it
-- Wire all three into `ServiceBuilder` in correct order: Whitelist → STT → inner → TTS
-- Remove corresponding Python middleware once each layer is tested end-to-end
-- Add Rust integration tests for each layer in isolation
-
-Layer composition pattern:
-```rust
-let svc = ServiceBuilder::new()
-    .layer(TraceLayer::new_for_grpc())   // or custom UDS trace layer
-    .layer(TimeoutLayer::new(Duration::from_secs(90)))
-    .layer(WhitelistLayer::new(whitelist.clone()))
-    .layer(SttLayer::new(stt_client.clone()))
-    .service(react_service);
+```
+openagent (Axum TCP :8000)
+  TimeoutLayer(130s)
+  HandleErrorLayer(→ HTTP 408)
+  TraceLayer
+  GuardLayer (calls guard.check MCP-lite service)
+  Router → cortex.step / tool calls / health
 ```
 
-### Tower Phase 3 — Axum control plane (Phase 4 endgame)
+Guard, STT, TTS middleware all go in openagent as Axum/Tower layers — not in Cortex.
 
-- Add `axum` to `Cargo.toml`
-- Replace raw UDS accept loop with `axum::serve` on `UnixListener`
-- Map `POST /tool/:name` routes to existing Tower service stack
-- Keep Tower middleware stack unchanged — Axum is the transport layer in front
-- Update `McpLiteClient` in Python/sdk-go to use HTTP over UDS (one-line transport swap)
-- Platform connectors (Discord, Telegram, Slack) wire directly to Cortex Axum endpoint
-- Python process retired
+### Remaining openagent middleware (Tower Phase 2)
+
+- `SttLayer` — transcribes audio payload before `/step`; calls `stt.transcribe` MCP-lite tool
+- `TtsLayer` — converts text response to audio after `/step`; calls `tts.synthesise` MCP-lite tool
+- Remove corresponding Python middleware once each layer ships and is tested
+- Add integration tests per layer in isolation
 
 ---
 

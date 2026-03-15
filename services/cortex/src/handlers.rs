@@ -5,17 +5,16 @@ use crate::config::CortexConfig;
 use crate::llm::build_llm_provider;
 use crate::memory_adapter::{HybridMemoryAdapter, DEFAULT_STM_WINDOW};
 use crate::metrics::{elapsed_ms, step_err, step_ok, CortexTelemetry};
-use crate::step_service::{build_step_service, StepRequest, DEFAULT_STEP_TIMEOUT_SECS};
 use crate::tool_router::ToolRouter;
 use anyhow::{anyhow, Result};
+use autoagents_core::agent::task::Task;
 use autoagents_core::agent::{BaseAgent, DirectAgent};
 use autoagents_protocol::Event;
 use opentelemetry::KeyValue;
 use serde_json::{json, Value};
 use std::sync::Arc;
-use std::time::{Duration, Instant};
+use std::time::Instant;
 use tokio::sync::mpsc;
-use tower::Service;
 use tracing::{error, info};
 
 const DEFAULT_TOOL_NAMES: &[&str] = &[
@@ -193,7 +192,6 @@ pub fn handle_step(params: Value, ctx: Arc<AppContext>) -> Result<String> {
         .map_err(|e| anyhow!("llm provider build failed: {e}"))?;
     let (tx, _rx) = mpsc::channel::<Event>(32);
 
-    let step_timeout = Duration::from_secs(DEFAULT_STEP_TIMEOUT_SECS);
     let result = tokio::task::block_in_place(|| {
         tokio::runtime::Handle::current().block_on(async {
             let base_agent =
@@ -207,12 +205,10 @@ pub fn handle_step(params: Value, ctx: Arc<AppContext>) -> Result<String> {
                 .await
                 .map_err(|e| anyhow!("base agent construction failed: {e}"))?;
 
-            let mut svc = build_step_service(step_timeout);
-            svc.call(StepRequest {
-                base_agent,
-                user_input: user_input.clone(),
-            })
-            .await
+            base_agent
+                .run(Task::new(&user_input))
+                .await
+                .map_err(|e| anyhow!("{e}"))
         })
     });
 

@@ -9,7 +9,6 @@ mod llm;
 mod memory_adapter;
 mod metrics;
 mod response;
-mod step_service;
 mod tool_router;
 mod tools;
 mod validator;
