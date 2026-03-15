@@ -1,75 +1,106 @@
 {
-  "name": "guard",
-  "description": "Security guard service — Phase 1: user whitelist (allow/deny by platform + channel). Phase 2+: credential scrubbing, prompt injection detection, rate limiting.",
-  "version": "0.1.0",
-  "binary": {
-    "linux/arm64":  "bin/guard-linux-arm64",
-    "linux/amd64":  "bin/guard-linux-amd64",
-    "darwin/arm64": "bin/guard-darwin-arm64",
-    "darwin/amd64": "bin/guard-darwin-amd64"
-  },
-  "socket": "data/sockets/guard.sock",
-  "env": {
-    "GUARD_DB_PATH": "data/guard.db"
-  },
-  "health": {
-    "interval_ms": 5000,
-    "timeout_ms": 1000,
-    "restart_backoff_ms": [1000, 2000, 5000, 10000, 30000]
-  },
-  "tools": [
-    {
-      "name": "guard.check",
-      "description": "Check whether a sender is allowed to interact with the agent. Returns allowed=true if whitelisted or on the web platform (web always bypasses). Call this before routing any inbound message to Cortex.",
-      "params": {
-        "type": "object",
-        "properties": {
-          "platform": {
-            "type": "string",
-            "description": "Platform identifier (e.g. telegram, discord, slack, whatsapp)."
-          },
-          "channel_id": {
-            "type": "string",
-            "description": "Platform-specific sender/channel identifier."
-          }
-        },
-        "required": ["platform", "channel_id"]
-      }
+    "name": "guard",
+    "description": "Security guard service \u2014 Phase 1: user whitelist (allow/deny by platform + channel). Phase 2+: credential scrubbing, prompt injection detection, rate limiting.",
+    "version": "0.1.0",
+    "binary": {
+        "linux/arm64": "bin/guard-linux-arm64",
+        "linux/amd64": "bin/guard-linux-amd64",
+        "darwin/arm64": "bin/guard-darwin-arm64",
+        "darwin/amd64": "bin/guard-darwin-amd64"
     },
-    {
-      "name": "guard.add",
-      "description": "Add a sender to the whitelist, granting them access. Idempotent — updates note if the entry already exists.",
-      "params": {
-        "type": "object",
-        "properties": {
-          "platform": { "type": "string", "description": "Platform identifier." },
-          "channel_id": { "type": "string", "description": "Platform-specific sender/channel identifier." },
-          "note": { "type": "string", "description": "Optional label (e.g. a name or reason)." }
-        },
-        "required": ["platform", "channel_id"]
-      }
+    "socket": "data/sockets/guard.sock",
+    "env": {
+        "GUARD_DB_PATH": "data/guard.db"
     },
-    {
-      "name": "guard.remove",
-      "description": "Remove a sender from the whitelist, revoking access. Returns ok=false if the entry did not exist.",
-      "params": {
-        "type": "object",
-        "properties": {
-          "platform": { "type": "string", "description": "Platform identifier." },
-          "channel_id": { "type": "string", "description": "Platform-specific sender/channel identifier." }
-        },
-        "required": ["platform", "channel_id"]
-      }
+    "health": {
+        "interval_ms": 5000,
+        "timeout_ms": 1000,
+        "restart_backoff_ms": [
+            1000,
+            2000,
+            5000,
+            10000,
+            30000
+        ]
     },
-    {
-      "name": "guard.list",
-      "description": "List all whitelisted senders, ordered newest first.",
-      "params": {
-        "type": "object",
-        "properties": {},
-        "required": []
-      }
-    }
-  ],
-  "events": []
+    "tools": [
+        {
+            "name": "guard.check",
+            "description": "Check whether a sender is allowed to interact with the agent. Returns allowed=true if whitelisted or on the web platform (web always bypasses). Call this before routing any inbound message to Cortex.",
+            "params": {
+                "type": "object",
+                "properties": {
+                    "platform": {
+                        "type": "string",
+                        "description": "Platform identifier (e.g. telegram, discord, slack, whatsapp)."
+                    },
+                    "channel_id": {
+                        "type": "string",
+                        "description": "Platform-specific sender/channel identifier."
+                    }
+                },
+                "required": [
+                    "platform",
+                    "channel_id"
+                ]
+            }
+        },
+        {
+            "name": "guard.add",
+            "description": "Add a sender to the whitelist, granting them access. Idempotent \u2014 updates note if the entry already exists.",
+            "params": {
+                "type": "object",
+                "properties": {
+                    "platform": {
+                        "type": "string",
+                        "description": "Platform identifier."
+                    },
+                    "channel_id": {
+                        "type": "string",
+                        "description": "Platform-specific sender/channel identifier."
+                    },
+                    "note": {
+                        "type": "string",
+                        "description": "Optional label (e.g. a name or reason)."
+                    }
+                },
+                "required": [
+                    "platform",
+                    "channel_id"
+                ]
+            }
+        },
+        {
+            "name": "guard.remove",
+            "description": "Remove a sender from the whitelist, revoking access. Returns ok=false if the entry did not exist.",
+            "params": {
+                "type": "object",
+                "properties": {
+                    "platform": {
+                        "type": "string",
+                        "description": "Platform identifier."
+                    },
+                    "channel_id": {
+                        "type": "string",
+                        "description": "Platform-specific sender/channel identifier."
+                    }
+                },
+                "required": [
+                    "platform",
+                    "channel_id"
+                ]
+            }
+        },
+        {
+            "name": "guard.list",
+            "description": "List all whitelisted senders, ordered newest first.",
+            "params": {
+                "type": "object",
+                "properties": {},
+                "required": []
+            }
+        }
+    ],
+    "events": [],
+    "runtime": "rust"
 }

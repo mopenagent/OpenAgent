@@ -123,18 +123,67 @@ def _get_latest_log_content(root: Path, max_lines: int = 1000) -> str:
         return ""
 
 
-async def _rust_services_from_api(request: Request) -> list[dict]:
-    """Fetch service list from the Rust API.
+def _read_manifests(root: Path) -> dict[str, dict]:
+    """Read all service.json manifests. Returns {name: manifest_dict}."""
+    manifests: dict[str, dict] = {}
+    services_dir = root / "services"
+    if not services_dir.exists():
+        return manifests
+    import json
+    for svc_dir in services_dir.iterdir():
+        manifest_path = svc_dir / "service.json"
+        if not manifest_path.exists():
+            continue
+        try:
+            m = json.loads(manifest_path.read_text())
+            manifests[m["name"]] = m
+        except Exception:
+            pass
+    return manifests
 
-    Prepends the openagent runtime itself (from /health), then lists each
-    child service that has registered at least one tool (from /tools).
+
+def _process_memory_map() -> dict[str, float]:
+    """Return {process_name: rss_mb} for all running processes."""
+    mem: dict[str, float] = {}
+    try:
+        for proc in psutil.process_iter(["name", "memory_info"]):
+            try:
+                name = proc.info["name"] or ""
+                rss = proc.info["memory_info"].rss if proc.info["memory_info"] else 0
+                # Strip platform suffixes like -darwin-arm64, -linux-arm64
+                base = name.split("-")[0]
+                mb = round(rss / (1024 * 1024), 1)
+                # Keep highest RSS if multiple procs match same base name
+                if base not in mem or mb > mem[base]:
+                    mem[base] = mb
+            except (psutil.NoSuchProcess, psutil.AccessDenied):
+                pass
+    except Exception:
+        pass
+    return mem
+
+
+async def _all_services(request: Request) -> tuple[list[dict], list[dict]]:
+    """Return (go_services, rust_services) for the dashboard.
+
+    Sources:
+      - service.json manifests  → full list + runtime classification
+      - Rust /health            → openagent runtime status + tool_count
+      - Rust /tools             → which child services are registered (running)
+      - psutil process scan     → per-process RSS memory
     """
     import asyncio
+
+    root: Path = getattr(request.app.state, "root", Path.cwd())
     api_client = getattr(request.app.state, "api_client", None)
-    if api_client is None:
-        return []
+
+    # Run blocking I/O in threads alongside async API calls
+    manifests_fut = asyncio.to_thread(_read_manifests, root)
+    mem_fut = asyncio.to_thread(_process_memory_map)
 
     async def _health():
+        if api_client is None:
+            return {}
         try:
             r = await api_client.get("/health", timeout=3.0)
             return r.json() if r.is_success else {}
@@ -142,36 +191,55 @@ async def _rust_services_from_api(request: Request) -> list[dict]:
             return {}
 
     async def _tools():
+        if api_client is None:
+            return {}
         try:
             r = await api_client.get("/tools", timeout=3.0)
             return r.json() if r.is_success else {}
         except Exception:
             return {}
 
-    health_data, tools_data = await asyncio.gather(_health(), _tools())
+    manifests, mem_map, health_data, tools_data = await asyncio.gather(
+        manifests_fut, mem_fut, _health(), _tools()
+    )
 
-    result: list[dict] = []
+    # Services registered with openagent (connected + tools returned)
+    registered: set[str] = set()
+    for t in tools_data.get("tools", []):
+        registered.add(t.get("service", ""))
 
-    # openagent runtime — first entry, status from /health
-    runtime_status = "online" if health_data.get("status") == "ok" else "offline"
-    tool_count = health_data.get("tool_count", 0)
-    result.append({
+    def _entry(name: str, version: str = "?") -> dict:
+        running = name in registered
+        return {
+            "name": name,
+            "version": version,
+            "status": "online" if running else "stopped",
+            "memory_mb": mem_map.get(name),
+            "memory_display": f"{mem_map[name]} MB" if name in mem_map else "—",
+        }
+
+    # openagent runtime — always first in Rust list
+    runtime_ok = health_data.get("status") == "ok"
+    runtime_entry = {
         "name": "openagent",
         "version": "?",
-        "status": runtime_status,
-        "memory_mb": None,
-        "tool_count": tool_count,
-    })
+        "status": "online" if runtime_ok else "offline",
+        "memory_mb": mem_map.get("openagent"),
+        "memory_display": f"{mem_map['openagent']} MB" if "openagent" in mem_map else "—",
+        "tool_count": health_data.get("tool_count", 0),
+    }
 
-    # Child services — one entry per unique service name in the tool list
-    seen: dict[str, dict] = {}
-    for t in tools_data.get("tools", []):
-        svc = t.get("service", "unknown")
-        if svc not in seen:
-            seen[svc] = {"name": svc, "version": "?", "status": "online", "memory_mb": None}
-    result.extend(seen.values())
+    go_services: list[dict] = []
+    rust_services: list[dict] = [runtime_entry]
 
-    return result
+    for name, manifest in sorted(manifests.items()):
+        entry = _entry(name, manifest.get("version", "?"))
+        if manifest.get("runtime", "go") == "rust":
+            rust_services.append(entry)
+        else:
+            go_services.append(entry)
+
+    return go_services, rust_services
 
 
 @router.get("/")
@@ -179,10 +247,12 @@ async def dashboard(request: Request):
     import asyncio
     root = getattr(request.app.state, "root", Path.cwd())
 
-    stats, packages, rust_services = await asyncio.gather(
-        asyncio.to_thread(_system_stats),
-        asyncio.to_thread(_python_packages, root),
-        _rust_services_from_api(request),
+    (stats, packages), (go_services, rust_services) = await asyncio.gather(
+        asyncio.gather(
+            asyncio.to_thread(_system_stats),
+            asyncio.to_thread(_python_packages, root),
+        ),
+        _all_services(request),
     )
 
     return templates.TemplateResponse("dashboard.html", {
@@ -190,7 +260,7 @@ async def dashboard(request: Request):
         "active": "dashboard",
         "stats": stats,
         "python_packages": packages,
-        "services": [],          # Go services managed by Rust binary
+        "services": go_services,
         "rust_services": rust_services,
     })
 
@@ -201,16 +271,18 @@ async def stats_partial(request: Request):
     import asyncio
     root = getattr(request.app.state, "root", Path.cwd())
 
-    stats, packages, rust_services = await asyncio.gather(
-        asyncio.to_thread(_system_stats),
-        asyncio.to_thread(_python_packages, root),
-        _rust_services_from_api(request),
+    (stats, packages), (go_services, rust_services) = await asyncio.gather(
+        asyncio.gather(
+            asyncio.to_thread(_system_stats),
+            asyncio.to_thread(_python_packages, root),
+        ),
+        _all_services(request),
     )
 
     return templates.TemplateResponse("_stats_cards.html", {
         "request": request,
         "stats": stats,
         "python_packages": packages,
-        "services": [],
+        "services": go_services,
         "rust_services": rust_services,
     })
