@@ -27,7 +27,7 @@ http = "1"
 # OpenTelemetry — three-pillar observability (traces, logs, metrics)
 opentelemetry        = { version = "0.27", features = ["trace", "logs", "metrics"] }
 opentelemetry_sdk    = { version = "0.27", features = ["trace", "logs", "metrics", "rt-tokio"] }
-opentelemetry-otlp   = { version = "0.27", default-features = false, features = ["trace", "logs", "http-proto", "reqwest-rustls"] }
+opentelemetry-otlp   = { version = "0.27", default-features = false, features = ["trace", "logs", "http-proto", "reqwest-client", "reqwest-rustls"] }
 opentelemetry-appender-tracing = { version = "0.27", default-features = false }
 tracing-opentelemetry = "0.28"
 tracing-appender      = "0.2"

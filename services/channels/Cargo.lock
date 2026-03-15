@@ -398,6 +398,7 @@ dependencies = [
  "anyhow",
  "async-trait",
  "dotenvy",
+ "rustls",
  "sdk-rust",
  "serde",
  "serde_json",

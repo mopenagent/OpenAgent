@@ -71,12 +71,13 @@ async fn main() -> Result<()> {
         config::OpenAgentConfig::default()
     });
     info!(
-        provider_kind  = %cfg.provider.kind,
-        provider_model = %cfg.provider.model,
-        guard_enabled  = cfg.guard.enabled,
-        stt_enabled    = cfg.middleware.stt.enabled,
-        tts_enabled    = cfg.middleware.tts.enabled,
-        agent_count    = cfg.agents.len(),
+        provider_kind     = %cfg.provider.kind,
+        provider_model    = %cfg.provider.model,
+        guard_enabled     = cfg.guard.enabled,
+        stt_enabled       = cfg.middleware.stt.enabled,
+        tts_enabled       = cfg.middleware.tts.enabled,
+        agent_count       = cfg.agents.len(),
+        services_disabled = ?cfg.services.disabled,
         "openagent.config.loaded"
     );
 
@@ -100,7 +101,7 @@ async fn main() -> Result<()> {
     }
 
     let manager = Arc::new(ServiceManager::new(project_root, service_env));
-    manager.start_all(manifests).await;
+    manager.start_all(manifests, &cfg.services.disabled).await;
 
     // ---- Dispatch loop — events → cortex → channel.send --------------------
     {
@@ -122,7 +123,19 @@ async fn main() -> Result<()> {
     });
 
     // ---- SIGTERM / Ctrl-C shutdown ------------------------------------------
+    // Wait for either Ctrl-C (SIGINT) or SIGTERM (sent by run.sh / systemd / Docker).
+    #[cfg(unix)]
+    {
+        use tokio::signal::unix::{signal, SignalKind};
+        let mut sigterm = signal(SignalKind::terminate())?;
+        tokio::select! {
+            _ = tokio::signal::ctrl_c() => {}
+            _ = sigterm.recv() => {}
+        }
+    }
+    #[cfg(not(unix))]
     tokio::signal::ctrl_c().await?;
+
     info!("openagent.shutdown");
     manager.stop_all().await;
 

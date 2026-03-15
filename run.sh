@@ -55,7 +55,23 @@ if [ -f "$ROOT/.env" ]; then
   echo "  Loaded .env"
 fi
 
-mkdir -p "$ROOT/logs" "$ROOT/data/sockets" "$ROOT/data/artifacts"
+mkdir -p "$ROOT/logs" "$ROOT/data/sockets" "$ROOT/data/artifacts" "$ROOT/data/run"
+
+PIDFILE="$ROOT/data/run/openagent.pid"
+
+# ---------------------------------------------------------------------------
+# Kill any previous instance recorded in the PID file
+# ---------------------------------------------------------------------------
+if [ -f "$PIDFILE" ]; then
+  OLD_PID=$(cat "$PIDFILE" 2>/dev/null || true)
+  if [ -n "$OLD_PID" ] && kill -0 "$OLD_PID" 2>/dev/null; then
+    echo "  Stopping previous instance (PID $OLD_PID)…"
+    kill -TERM "$OLD_PID" 2>/dev/null || true
+    sleep 1
+    kill -KILL "$OLD_PID" 2>/dev/null || true
+  fi
+  rm -f "$PIDFILE"
+fi
 
 # ---------------------------------------------------------------------------
 # Shutdown handler
@@ -64,8 +80,18 @@ mkdir -p "$ROOT/logs" "$ROOT/data/sockets" "$ROOT/data/artifacts"
 _shutdown() {
   echo ""
   echo "Shutting down…"
+  rm -f "$PIDFILE"
   if [ -n "${OPENAGENT_PID:-}" ] && kill -0 "$OPENAGENT_PID" 2>/dev/null; then
+    # SIGTERM — openagent handles this and kills its children via stop_all().
     kill -TERM "$OPENAGENT_PID" 2>/dev/null || true
+    # Wait up to 5 s for clean exit, then SIGKILL the whole process group.
+    for _ in 1 2 3 4 5; do
+      sleep 1
+      kill -0 "$OPENAGENT_PID" 2>/dev/null || break
+    done
+    kill -KILL "$OPENAGENT_PID" 2>/dev/null || true
+    # Belt-and-suspenders: kill any surviving service children by process group.
+    kill -KILL -"$OPENAGENT_PID" 2>/dev/null || true
     wait "$OPENAGENT_PID" 2>/dev/null || true
   fi
   exit 0
@@ -88,4 +114,6 @@ echo ""
 
 "$OPENAGENT_BIN" &
 OPENAGENT_PID=$!
+echo "$OPENAGENT_PID" > "$PIDFILE"
 wait "$OPENAGENT_PID"
+rm -f "$PIDFILE"

@@ -29,3 +29,7 @@ url = "2.5"
 
 # Logging
 tracing = "0.1"
+
+# rustls crypto provider — must be installed before any TLS connection is made.
+# zeroclaw uses rustls 0.23 which requires an explicit provider; ring is the default.
+rustls = { version = "0.23", features = ["ring"] }

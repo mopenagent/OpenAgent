@@ -36,6 +36,12 @@ use registry::ChannelRegistry;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
+    // 0. Install rustls crypto provider (ring) before any TLS connection is made.
+    // rustls 0.23 requires an explicit provider; without this, Discord/Telegram TLS panics.
+    rustls::crypto::ring::default_provider()
+        .install_default()
+        .ok(); // ok() — safe to ignore if already installed by another crate
+
     // 1. Load .env (best-effort — missing file is not an error)
     dotenvy::dotenv().ok();
 

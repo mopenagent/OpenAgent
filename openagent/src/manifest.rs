@@ -12,6 +12,14 @@ pub struct HealthConfig {
     pub interval_ms: u64,
     pub timeout_ms: u64,
     pub restart_backoff_ms: Vec<u64>,
+    /// How long to wait for the socket file to appear after spawning (ms).
+    /// Defaults to 30 000 ms — memory service needs ~10 s on first run to load ONNX model.
+    #[serde(default = "default_startup_timeout_ms")]
+    pub startup_timeout_ms: u64,
+}
+
+fn default_startup_timeout_ms() -> u64 {
+    30_000
 }
 
 impl Default for HealthConfig {
@@ -20,6 +28,7 @@ impl Default for HealthConfig {
             interval_ms: 5000,
             timeout_ms: 1000,
             restart_backoff_ms: vec![1000, 2000, 5000, 10000, 30000],
+            startup_timeout_ms: default_startup_timeout_ms(),
         }
     }
 }
@@ -32,6 +41,10 @@ pub struct ServiceManifest {
     pub version: Option<String>,
     pub binary: BinaryMap,
     pub socket: String,
+    /// Set to false to prevent the service from being started at all.
+    /// Useful for optional services whose binary is not yet built (e.g. tts).
+    #[serde(default = "default_true")]
+    pub enabled: bool,
     /// Optional env vars to set on the child process (from `service.json` `env` block).
     #[serde(default)]
     pub env: HashMap<String, String>,
@@ -40,6 +53,10 @@ pub struct ServiceManifest {
     /// Absolute path to the directory containing `service.json`. Filled in by `discover()`.
     #[serde(skip)]
     pub root: PathBuf,
+}
+
+fn default_true() -> bool {
+    true
 }
 
 impl ServiceManifest {

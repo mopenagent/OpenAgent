@@ -1,6 +1,6 @@
 {
     "name": "tts",
-    "description": "Kokoro TTS via Kokoros — local, fast, no API key. Supports streaming-style playback via synthesize_bytes. Model: Kokoro-82M (~400 MB RSS warmed). Models stored in data/models/.",
+    "description": "Kokoro TTS via Kokoros \u2014 local, fast, no API key. Supports streaming-style playback via synthesize_bytes. Model: Kokoro-82M (~400 MB RSS warmed). Models stored in data/models/.",
     "version": "0.1.0",
     "binary": {
         "linux/arm64": "bin/tts-linux-arm64",
@@ -12,7 +12,13 @@
     "health": {
         "interval_ms": 5000,
         "timeout_ms": 3000,
-        "restart_backoff_ms": [1000, 2000, 5000, 10000, 30000]
+        "restart_backoff_ms": [
+            1000,
+            2000,
+            5000,
+            10000,
+            30000
+        ]
     },
     "tools": [
         {
@@ -21,12 +27,26 @@
             "params": {
                 "type": "object",
                 "properties": {
-                    "text": { "type": "string", "description": "Text to speak" },
-                    "voice": { "type": "string", "description": "Voice style (af_sarah, af_nicole, af_sky, or blend af_sarah.4+af_nicole.6)" },
-                    "speed": { "type": "number", "description": "Speech rate (default 1.0)" },
-                    "language": { "type": "string", "description": "Language code (default en-us)" }
+                    "text": {
+                        "type": "string",
+                        "description": "Text to speak"
+                    },
+                    "voice": {
+                        "type": "string",
+                        "description": "Voice style (af_sarah, af_nicole, af_sky, or blend af_sarah.4+af_nicole.6)"
+                    },
+                    "speed": {
+                        "type": "number",
+                        "description": "Speech rate (default 1.0)"
+                    },
+                    "language": {
+                        "type": "string",
+                        "description": "Language code (default en-us)"
+                    }
                 },
-                "required": ["text"]
+                "required": [
+                    "text"
+                ]
             }
         },
         {
@@ -35,15 +55,30 @@
             "params": {
                 "type": "object",
                 "properties": {
-                    "text": { "type": "string", "description": "Text to speak" },
-                    "voice": { "type": "string", "description": "Voice style" },
-                    "speed": { "type": "number", "description": "Speech rate" },
-                    "language": { "type": "string", "description": "Language code" }
+                    "text": {
+                        "type": "string",
+                        "description": "Text to speak"
+                    },
+                    "voice": {
+                        "type": "string",
+                        "description": "Voice style"
+                    },
+                    "speed": {
+                        "type": "number",
+                        "description": "Speech rate"
+                    },
+                    "language": {
+                        "type": "string",
+                        "description": "Language code"
+                    }
                 },
-                "required": ["text"]
+                "required": [
+                    "text"
+                ]
             }
         }
     ],
     "events": [],
-    "runtime": "rust"
+    "runtime": "rust",
+    "enabled": false
 }

@@ -1,6 +1,6 @@
 {
     "name": "memory",
-    "description": "Agentic Memory — LanceDB + FastEmbed. LTS stores summaries, STS stores full conversation chains. Local embeddings (BAAI/bge-small-en-v1.5), no external API calls.",
+    "description": "Agentic Memory \u2014 LanceDB + FastEmbed. LTS stores summaries, STS stores full conversation chains. Local embeddings (BAAI/bge-small-en-v1.5), no external API calls.",
     "version": "0.1.0",
     "binary": {
         "linux/arm64": "bin/memory-linux-arm64",
@@ -12,7 +12,14 @@
     "health": {
         "interval_ms": 5000,
         "timeout_ms": 2000,
-        "restart_backoff_ms": [1000, 2000, 5000, 10000, 30000]
+        "restart_backoff_ms": [
+            1000,
+            2000,
+            5000,
+            10000,
+            30000
+        ],
+        "startup_timeout_ms": 60000
     },
     "tools": [
         {
@@ -31,11 +38,17 @@
                     },
                     "store": {
                         "type": "string",
-                        "enum": ["ltm", "stm"],
+                        "enum": [
+                            "ltm",
+                            "stm"
+                        ],
                         "description": "Store: ltm (long-term memory) or stm (short-term memory)"
                     }
                 },
-                "required": ["content", "store"]
+                "required": [
+                    "content",
+                    "store"
+                ]
             }
         },
         {
@@ -50,11 +63,17 @@
                     },
                     "store": {
                         "type": "string",
-                        "enum": ["ltm", "stm", "all"],
+                        "enum": [
+                            "ltm",
+                            "stm",
+                            "all"
+                        ],
                         "description": "Store to search (default: all)"
                     }
                 },
-                "required": ["query"]
+                "required": [
+                    "query"
+                ]
             }
         },
         {
@@ -65,7 +84,10 @@
                 "properties": {
                     "store": {
                         "type": "string",
-                        "enum": ["ltm", "stm"],
+                        "enum": [
+                            "ltm",
+                            "stm"
+                        ],
                         "description": "Store to delete from"
                     },
                     "id": {
@@ -73,7 +95,9 @@
                         "description": "Document id to delete. Omit to purge the entire store."
                     }
                 },
-                "required": ["store"]
+                "required": [
+                    "store"
+                ]
             }
         },
         {

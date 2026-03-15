@@ -7,9 +7,10 @@ use anyhow::{anyhow, Result};
 use serde_json::Value;
 use std::collections::HashMap;
 use std::path::PathBuf;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use tokio::process::Command;
 use tokio::sync::{broadcast, RwLock};
+use tokio::task::JoinHandle;
 use tokio::time::{sleep, Duration};
 use tracing::{debug, error, info, warn};
 
@@ -44,6 +45,8 @@ pub struct ServiceManager {
     tools: Arc<RwLock<Vec<RegisteredTool>>>,
     /// Broadcast channel for events arriving from any service.
     event_tx: broadcast::Sender<Value>,
+    /// JoinHandles for all spawned service loop tasks — used by stop_all() to abort them.
+    task_handles: Arc<Mutex<Vec<JoinHandle<()>>>>,
 }
 
 impl ServiceManager {
@@ -58,6 +61,7 @@ impl ServiceManager {
             services: Arc::new(RwLock::new(HashMap::new())),
             tools: Arc::new(RwLock::new(Vec::new())),
             event_tx,
+            task_handles: Arc::new(Mutex::new(Vec::new())),
         }
     }
 
@@ -89,9 +93,21 @@ impl ServiceManager {
         state.call_tool(tool, params, timeout_ms).await
     }
 
-    /// Start all services described by `manifests`.
-    pub async fn start_all(&self, manifests: Vec<ServiceManifest>) {
+    /// Start all services described by `manifests`, skipping any that are disabled.
+    ///
+    /// A service is skipped if:
+    /// - `manifest.enabled == false` (set in `service.json`)
+    /// - its name appears in `config_disabled` (set in `openagent.toml [services] disabled`)
+    pub async fn start_all(&self, manifests: Vec<ServiceManifest>, config_disabled: &[String]) {
         for manifest in manifests {
+            if !manifest.enabled {
+                info!(service = %manifest.name, "service.disabled — skipping (service.json enabled=false)");
+                continue;
+            }
+            if config_disabled.iter().any(|d| d == &manifest.name) {
+                info!(service = %manifest.name, "service.disabled — skipping (openagent.toml services.disabled)");
+                continue;
+            }
             let root = self.project_root.clone();
             let services = Arc::clone(&self.services);
             let tools = Arc::clone(&self.tools);
@@ -101,17 +117,36 @@ impl ServiceManager {
                 .get(&manifest.name)
                 .cloned()
                 .unwrap_or_default();
-            tokio::spawn(async move {
+            let handle = tokio::spawn(async move {
                 run_service_loop(manifest, root, extra_env, services, tools, event_tx).await;
             });
+            self.task_handles
+                .lock()
+                .expect("task_handles mutex poisoned")
+                .push(handle);
         }
     }
 
-    /// Gracefully stop all services.
+    /// Stop all services: abort service loop tasks (which triggers kill_on_drop on each
+    /// child process), then clear live state.
     pub async fn stop_all(&self) {
-        // Dropping clients closes their write channels, signalling the write tasks to exit.
-        // Child processes receive no explicit SIGTERM here — the OS cleans them up when
-        // openagent exits, or the individual loop tasks handle it via `Child::kill()`.
+        let handles: Vec<JoinHandle<()>> = self
+            .task_handles
+            .lock()
+            .expect("task_handles mutex poisoned")
+            .drain(..)
+            .collect();
+
+        // Abort every service loop task. Aborting drops the task's Future, which drops
+        // `child` (kill_on_drop = true), sending SIGKILL to each child process.
+        for h in &handles {
+            h.abort();
+        }
+        // Wait for all tasks to finish dropping so kills are delivered before we return.
+        for h in handles {
+            let _ = h.await; // Returns JoinError::Cancelled — expected, ignore it.
+        }
+
         self.services.write().await.clear();
         info!("service_manager.stopped_all");
     }
@@ -205,7 +240,7 @@ async fn run_service_loop(
         info!(service = %name, pid = ?child.id(), binary = %binary.display(), "service.spawned");
 
         // ---- wait for socket ------------------------------------------------
-        if let Err(e) = wait_for_socket(&socket_path, 5000).await {
+        if let Err(e) = wait_for_socket(&socket_path, manifest.health.startup_timeout_ms).await {
             error!(service = %name, error = %e, "service.socket.timeout");
             let _ = child.kill().await;
             backoff_sleep(backoff, &mut attempt).await;

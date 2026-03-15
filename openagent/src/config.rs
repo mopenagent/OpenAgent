@@ -448,6 +448,23 @@ pub struct MiddlewareConfig {
 }
 
 // ---------------------------------------------------------------------------
+// Services
+// ---------------------------------------------------------------------------
+
+/// `[services]` block — operator-level service enable/disable list.
+///
+/// ```toml
+/// [services]
+/// disabled = ["tts", "stt"]   # services to skip entirely on startup
+/// ```
+#[derive(Debug, Clone, Deserialize, Default)]
+pub struct ServicesConfig {
+    /// Service names that should not be started even if their binary exists.
+    #[serde(default)]
+    pub disabled: Vec<String>,
+}
+
+// ---------------------------------------------------------------------------
 // Top-level config
 // ---------------------------------------------------------------------------
 
@@ -467,6 +484,8 @@ pub struct OpenAgentConfig {
     pub browser: BrowserConfig,
     #[serde(default)]
     pub middleware: MiddlewareConfig,
+    #[serde(default)]
+    pub services: ServicesConfig,
 }
 
 /// Load `config/openagent.toml` relative to `project_root`, apply env var
