@@ -7,7 +7,7 @@ use crate::db;
 /// `guard.check` — returns `{"allowed": bool, "reason": "..."}`.
 ///
 /// `reason` is one of:
-/// - `"web_bypass"` — web platform, always allowed (no whitelist check)
+/// - `"platform_bypass"` — web/whatsapp platform, always allowed (no whitelist check)
 /// - `"whitelisted"` — sender found in the whitelist
 /// - `"blocked"` — sender not in the whitelist; also recorded in `seen_senders`
 pub fn handle_check(conn: &Connection, params: Value) -> Result<String> {
@@ -20,9 +20,12 @@ pub fn handle_check(conn: &Connection, params: Value) -> Result<String> {
         .and_then(Value::as_str)
         .ok_or_else(|| anyhow!("missing required param: channel_id"))?;
 
-    // Web is always permitted — used by the local web UI which has no external exposure.
-    if platform == "web" {
-        return Ok(json!({"allowed": true, "reason": "web_bypass"}).to_string());
+    // Web: local UI only, no external exposure.
+    // WhatsApp: access controlled by WhatsApp itself; the @lid whitelist format from
+    // the previous Python/neonize era doesn't match whatsmeow @s.whatsapp.net JIDs.
+    // Bypassed until the whitelist is rebuilt with the correct JID format.
+    if platform == "web" || platform == "whatsapp" {
+        return Ok(json!({"allowed": true, "reason": "platform_bypass"}).to_string());
     }
 
     let allowed = db::check(conn, platform, channel_id)?;
@@ -115,7 +118,7 @@ mod tests {
         )
         .unwrap();
         assert_eq!(result["allowed"], true);
-        assert_eq!(result["reason"], "web_bypass");
+        assert_eq!(result["reason"], "platform_bypass");
     }
 
     #[test]

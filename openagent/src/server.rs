@@ -28,7 +28,6 @@ use crate::config::MiddlewareConfig;
 use crate::manager::ServiceManager;
 use crate::middleware::guard_middleware;
 use crate::routes;
-use crate::session::SessionStore;
 use crate::state::AppState;
 use crate::stt::stt_middleware;
 use crate::telemetry::MetricsWriter;
@@ -52,9 +51,8 @@ pub fn build_router(
     manager: Arc<ServiceManager>,
     metrics: MetricsWriter,
     config: MiddlewareConfig,
-    sessions: SessionStore,
 ) -> Router {
-    let state = AppState::new(manager, metrics, config, sessions);
+    let state = AppState::new(manager, metrics, config);
 
     Router::new()
         .route("/health", get(routes::health))
@@ -109,10 +107,9 @@ pub async fn start(
     manager: Arc<ServiceManager>,
     metrics: MetricsWriter,
     config: MiddlewareConfig,
-    sessions: SessionStore,
     port: u16,
 ) -> Result<()> {
-    let app = build_router(manager, metrics, config, sessions);
+    let app = build_router(manager, metrics, config);
     let addr = SocketAddr::from(([0, 0, 0, 0], port));
     info!(addr = %addr, "openagent.server.start");
     let listener = tokio::net::TcpListener::bind(addr).await?;
@@ -125,11 +122,10 @@ pub async fn start_default(
     manager: Arc<ServiceManager>,
     metrics: MetricsWriter,
     config: MiddlewareConfig,
-    sessions: SessionStore,
 ) -> Result<()> {
     let port = std::env::var("OPENAGENT_PORT")
         .ok()
         .and_then(|v| v.parse().ok())
         .unwrap_or(DEFAULT_PORT);
-    start(manager, metrics, config, sessions, port).await
+    start(manager, metrics, config, port).await
 }

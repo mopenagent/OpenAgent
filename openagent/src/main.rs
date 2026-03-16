@@ -11,7 +11,6 @@ mod mcplite;
 mod metrics;
 mod middleware;
 mod otel;
-mod session;
 mod stt;
 mod tts;
 mod platform;
@@ -101,26 +100,14 @@ async fn main() -> Result<()> {
         service_env.insert("whatsapp".into(), cfg.platforms.whatsapp_env());
     }
 
-    // ---- Session store (openagent.db) ---------------------------------------
-    let db_path = project_root
-        .join(&cfg.session.db_path)
-        .to_string_lossy()
-        .into_owned();
-    let sessions = session::SessionStore::open(&db_path).unwrap_or_else(|e| {
-        tracing::warn!(error = %e, "session.store.open.error — turns will not be persisted");
-        // Fall back to an in-memory DB so the binary doesn't crash.
-        session::SessionStore::open(":memory:").expect("in-memory session db")
-    });
-
     let manager = Arc::new(ServiceManager::new(project_root, service_env));
     manager.start_all(manifests, &cfg.services.disabled).await;
 
     // ---- Dispatch loop — events → cortex → channel.send --------------------
     {
         let dispatch_manager = Arc::clone(&manager);
-        let dispatch_sessions = sessions.clone();
         tokio::spawn(async move {
-            dispatch::run(dispatch_manager, dispatch_sessions).await;
+            dispatch::run(dispatch_manager).await;
         });
     }
 
@@ -129,9 +116,8 @@ async fn main() -> Result<()> {
     let server_manager = Arc::clone(&manager);
     let server_metrics = metrics.clone();
     let server_cfg = cfg.middleware.clone();
-    let server_sessions = sessions.clone();
     tokio::spawn(async move {
-        if let Err(e) = server::start_default(server_manager, server_metrics, server_cfg, server_sessions).await {
+        if let Err(e) = server::start_default(server_manager, server_metrics, server_cfg).await {
             tracing::error!(error = %e, "openagent.server.error");
         }
     });

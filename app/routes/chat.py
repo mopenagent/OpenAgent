@@ -8,17 +8,17 @@ import uuid
 import httpx
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from fastapi.requests import Request
-from fastapi.responses import StreamingResponse
+from fastapi.responses import JSONResponse
 from fastapi.templating import Jinja2Templates
+
+from app.diary_store import DiaryStore
 
 router = APIRouter()
 templates: Jinja2Templates  # injected by main.py
 
 
-def _get_sessions(request: Request):
-    """Return the SessionManager from app state."""
-    app = request.app
-    return getattr(app.state, "session_manager", None) or getattr(app.state, "sessions", None)
+def _diary(request: Request) -> DiaryStore | None:
+    return getattr(request.app.state, "diary_store", None)
 
 
 @router.get("/chat")
@@ -31,63 +31,61 @@ async def chat_page(request: Request):
 
 @router.get("/api/chat/sessions")
 async def list_sessions(request: Request):
-    """Return sessions with platform metadata for the operator sidebar."""
-    sessions = _get_sessions(request)
-    if not sessions:
+    """Return sessions from diary directories for the sidebar."""
+    diary = _diary(request)
+    if not diary:
         return {"sessions": []}
-
-    keys = await sessions.list_sessions()
-    result = []
-    for key in keys:
-        if key.startswith("user:"):
-            links = await sessions.get_identity_links(key)
-            if links:
-                primary = links[0]
-                result.append({
-                    "key": key,
-                    "platform": primary["platform"],
-                    "channel_id": primary["channel_id"],
-                    "platforms": links,
-                })
-                continue
-        if ":" in key:
-            platform, channel_id = key.split(":", 1)
-        else:
-            platform, channel_id = "unknown", key
-        result.append({
-            "key": key,
-            "platform": platform,
-            "channel_id": channel_id,
-            "platforms": [{"platform": platform, "channel_id": channel_id, "last_active": None}],
-        })
-
-    return {"sessions": result}
+    sessions = await diary.list_sessions()
+    return {"sessions": [
+        {
+            "key": s.key,
+            "display_name": s.display_name,
+            "platform": s.platform,
+            "channel_id": s.channel_id,
+            "platforms": [{"platform": s.platform, "channel_id": s.channel_id, "last_active": s.last_active}],
+        }
+        for s in sessions
+    ]}
 
 
-@router.get("/api/chat/sessions/{session_id}/history")
+@router.get("/api/chat/sessions/{session_id:path}/history")
 async def get_history(request: Request, session_id: str):
-    sessions = _get_sessions(request)
-    if not sessions:
+    """Return conversation history from diary markdown files."""
+    diary = _diary(request)
+    if not diary:
         return {"history": []}
-    history = await sessions.get_history(session_id)
-    out = [
-        {"role": t.role, "content": t.content, "timestamp": t.timestamp.isoformat()}
-        for t in history
-    ]
-    return {"history": out}
+    messages = diary.get_history(session_id)
+    return {"history": [
+        {"role": m.role, "content": m.content, "timestamp": m.timestamp}
+        for m in messages
+    ]}
 
 
-@router.delete("/api/chat/sessions/{session_id}")
+@router.patch("/api/chat/sessions/{session_id:path}/name")
+async def rename_session(request: Request, session_id: str):
+    """Set a human-readable name for a session."""
+    diary = _diary(request)
+    if not diary:
+        return JSONResponse({"error": "diary store unavailable"}, status_code=503)
+    body = await request.json()
+    name = str(body.get("name", "")).strip()
+    if not name:
+        return JSONResponse({"error": "name required"}, status_code=400)
+    diary.set_contact_name(session_id, name)
+    return {"ok": True, "session_id": session_id, "name": name}
+
+
+@router.delete("/api/chat/sessions/{session_id:path}")
 async def delete_session(request: Request, session_id: str):
-    """Soft-delete: hide session from sidebar while keeping turns for logs."""
-    sessions = _get_sessions(request)
-    if not sessions:
-        return {"error": "session manager unavailable"}
-    await sessions.hide_session(session_id)
+    """Soft-delete: hide session from sidebar."""
+    diary = _diary(request)
+    if not diary:
+        return {"error": "diary store unavailable"}
+    await diary.hide_session(session_id)
     return {"ok": True}
 
 
-@router.post("/api/chat/sessions/{session_id}/send")
+@router.post("/api/chat/sessions/{session_id:path}/send")
 async def direct_send(request: Request, session_id: str):
     """Operator direct reply — calls Rust POST /tool/channel.send."""
     body = await request.json()
@@ -95,20 +93,18 @@ async def direct_send(request: Request, session_id: str):
     if not content:
         return {"error": "content required"}
 
-    if session_id.startswith("user:"):
-        sessions = _get_sessions(request)
-        if sessions:
-            links = await sessions.get_identity_links(session_id)
-            if links:
-                primary = links[0]
-                platform = primary["platform"]
-                channel_id = primary["channel_id"]
-            else:
-                return {"error": "no platform links found for this session"}
-        else:
-            return {"error": "session manager unavailable"}
+    # Resolve platform + channel from session_id
+    if "://" in session_id:
+        platform = session_id.split("://")[0]
+        # channel is the full platform://chatID part (before the :senderID suffix)
+        # For sending we need the chatID, not senderID
+        rest = session_id.split("://", 1)[1]
+        parts = rest.split(":")
+        chat_id = parts[0] if "@" in parts[0] else rest
+        channel_uri = f"{platform}://{chat_id}"
     elif ":" in session_id:
         platform, channel_id = session_id.split(":", 1)
+        channel_uri = f"{platform}://{channel_id}"
     else:
         return {"error": "cannot determine platform from session id"}
 
@@ -116,13 +112,19 @@ async def direct_send(request: Request, session_id: str):
         return {"error": "use WebSocket for web sessions"}
 
     api_client: httpx.AsyncClient = request.app.state.api_client
-    channel_uri = f"{platform}://{channel_id}"
     try:
-        resp = await api_client.post(f"/tool/channel.send", content=json.dumps({
-            "address": channel_uri,
-            "content": content,
-        }), headers={"Content-Type": "application/json"})
-        return {"ok": resp.is_success, "platform": platform, "channel_id": channel_id}
+        if platform == "whatsapp":
+            chat_id = channel_uri.removeprefix("whatsapp://")
+            resp = await api_client.post("/tool/whatsapp.send_text", content=json.dumps({
+                "chat_id": chat_id,
+                "text": content,
+            }), headers={"Content-Type": "application/json"})
+        else:
+            resp = await api_client.post("/tool/channel.send", content=json.dumps({
+                "address": channel_uri,
+                "content": content,
+            }), headers={"Content-Type": "application/json"})
+        return {"ok": resp.is_success, "platform": platform, "channel_uri": channel_uri}
     except Exception as e:
         return {"error": str(e)}
 
@@ -141,7 +143,7 @@ async def chat_ws(ws: WebSocket):
     else:
         session_id = f"web:{uuid.uuid4().hex[:12]}"
 
-    # Tell the browser its session ID so it can display it.
+    # Tell the browser its session ID.
     await ws.send_json({"session_id": session_id})
 
     try:

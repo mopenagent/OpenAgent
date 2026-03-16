@@ -17,7 +17,6 @@ use tokio::sync::Semaphore;
 use tracing::{debug, error, info, warn};
 
 use crate::manager::ServiceManager;
-use crate::session::SessionStore;
 use crate::scrub;
 
 /// Max concurrent cortex.step calls — keeps the Pi from thrashing.
@@ -30,7 +29,7 @@ const STEP_TIMEOUT_MS: u64 = 330_000;
 /// channel.send / typing_start timeouts (ms).
 const SEND_TIMEOUT_MS: u64 = 10_000;
 
-pub async fn run(manager: Arc<ServiceManager>, sessions: SessionStore) {
+pub async fn run(manager: Arc<ServiceManager>) {
     let semaphore = Arc::new(Semaphore::new(MAX_CONCURRENT));
     let mut event_rx = manager.subscribe_events();
 
@@ -100,10 +99,9 @@ pub async fn run(manager: Arc<ServiceManager>, sessions: SessionStore) {
 
         let mgr = Arc::clone(&manager);
         let sem = Arc::clone(&semaphore);
-        let sess = sessions.clone();
 
         tokio::spawn(async move {
-            handle_message(mgr, sem, sess, session_id, channel, sender, content).await;
+            handle_message(mgr, sem, session_id, channel, sender, content).await;
         });
     }
 }
@@ -118,7 +116,6 @@ fn platform_from_channel(channel: &str) -> &str {
 async fn handle_message(
     manager: Arc<ServiceManager>,
     semaphore: Arc<Semaphore>,
-    sessions: SessionStore,
     session_id: String,
     channel: String,
     sender: String,
@@ -207,26 +204,6 @@ async fn handle_message(
     if response_text.trim().is_empty() {
         debug!(session_id, "dispatch.cortex.empty_response — not sending");
         return;
-    }
-
-    // ---- Persist turns to SQLite --------------------------------------------
-    // Run in a blocking task so the Mutex lock doesn't hold up the async runtime.
-    {
-        let sess = sessions.clone();
-        let sid = session_id.clone();
-        let user_content = content.clone();
-        let asst_content = response_text.clone();
-        tokio::task::spawn_blocking(move || {
-            if let Err(e) = sess.upsert_session(&sid) {
-                warn!(session_id = %sid, error = %e, "dispatch.session.upsert.error");
-            }
-            if let Err(e) = sess.append_turn(&sid, "user", &user_content) {
-                warn!(session_id = %sid, error = %e, "dispatch.session.turn.user.error");
-            }
-            if let Err(e) = sess.append_turn(&sid, "assistant", &asst_content) {
-                warn!(session_id = %sid, error = %e, "dispatch.session.turn.assistant.error");
-            }
-        });
     }
 
     info!(

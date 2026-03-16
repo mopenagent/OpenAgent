@@ -3,7 +3,7 @@
 Thin UI shell — all agent/service logic runs in the Rust openagent binary.
 This process owns only:
   - Web chat WebSocket (calls Rust POST /step)
-  - Session history reads (SQLite via SessionManager)
+  - Session history reads (diary markdown files written by Rust cortex)
   - Settings persistence (SettingsStore in SQLite)
   - Cron scheduling (fires POST /step on the Rust API)
   - Observability (OTEL logs to logs/)
@@ -25,8 +25,8 @@ from openagent.config import load_config
 from openagent.cron import CronService, CronJob
 from openagent.observability import configure_logging, setup_otel, shutdown_otel
 from openagent.observability.metrics import render_metrics
-from openagent.session import SessionManager, SqliteSessionBackend
 from openagent.session.settings import SettingsStore
+from app.diary_store import DiaryStore
 
 # ---------------------------------------------------------------------------
 # Paths
@@ -66,14 +66,11 @@ async def lifespan(app: FastAPI):
     await settings_store.start()
     app.state.settings_store = settings_store
 
-    # Session manager — web chat history + session sidebar reads from SQLite.
-    session_backend = SqliteSessionBackend(ROOT / cfg.session.db_path)
-    session_manager = SessionManager(
-        backend=session_backend,
-        summarise_after=cfg.session.summarise_after,
-    )
-    app.state.session_manager = session_manager
-    await session_manager.start()
+    # Diary store — chat history from cortex diary markdown files.
+    # No SQLite turns table needed; cortex writes diary on every turn.
+    diary_root = ROOT / "data" / "diary"
+    db_path = ROOT / cfg.session.db_path
+    app.state.diary_store = DiaryStore(diary_root=diary_root, db_path=db_path)
 
     # Rust API client — web chat and cron use this to reach the Rust binary.
     api_client = httpx.AsyncClient(
@@ -107,7 +104,6 @@ async def lifespan(app: FastAPI):
 
     await cron.stop()
     await api_client.aclose()
-    await session_manager.stop()
     await settings_store.stop()
     shutdown_otel()
 

@@ -36,7 +36,7 @@
             <span class="text-[10px] font-bold px-1.5 py-0.5 rounded flex-shrink-0 uppercase tracking-wide"
               :class="platformBadgeClass(s.platform)"
               x-text="platformLabel(s.platform)"></span>
-            <span x-text="s.key" class="font-medium truncate flex-1 text-xs"></span>
+            <span x-text="s.display_name || s.key" class="font-medium truncate flex-1 text-xs"></span>
           </button>
 
           <!-- Delete (×) button — shown on hover -->
@@ -63,7 +63,7 @@
       <div class="flex items-center gap-2">
         <div class="w-2 h-2 rounded-full transition-colors" :class="connected ? 'bg-green-500' : 'bg-red-500'"></div>
         <span class="text-xs font-semibold text-stone-600 dark:text-stone-300"
-          x-text="sessionId ? sessionId : 'Starting...'"></span>
+          x-text="sessionDisplayName || (sessionId ? sessionId : 'Starting...')"></span>
       </div>
       <span x-show="sessionPlatform && sessionPlatform !== 'web'"
         class="text-[10px] font-bold px-2 py-1 rounded bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 uppercase tracking-wide">
@@ -161,12 +161,13 @@
 
   function chatApp() {
     return {
-      sessions: [],          // array of {key, platform, channel_id, platforms}
+      sessions: [],          // array of {key, display_name, platform, channel_id, platforms}
       messages: [],
       draft: "",
       typing: false,
       connected: false,
       sessionId: "",
+      sessionDisplayName: "",
       sessionPlatform: "web",
       sessionChannelId: "",
       ws: null,
@@ -249,6 +250,7 @@
 
         this._disconnect();
         this.sessionId = id;
+        this.sessionDisplayName = typeof s === 'string' ? '' : (s.display_name || '');
         this.sessionPlatform = platform;
         this.sessionChannelId = channelId;
         this.messages = [];

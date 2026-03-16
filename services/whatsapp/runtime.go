@@ -220,8 +220,11 @@ func (r *waRuntime) handleMessage(evt *events.Message) {
 	if evt.Info.IsFromMe || evt.Message == nil {
 		return
 	}
-	chatID := evt.Info.Chat.String()
-	sender := evt.Info.Sender.String()
+	chatID := evt.Info.Chat.ToNonAD().String()
+	// ToNonAD strips the device number from multi-device JIDs:
+	// "916356737267:11@s.whatsapp.net" → "916356737267@s.whatsapp.net"
+	// This gives a stable sender ID for whitelist/session lookups.
+	sender := evt.Info.Sender.ToNonAD().String()
 	if sender == "" {
 		sender = chatID
 	}
