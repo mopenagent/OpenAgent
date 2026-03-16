@@ -240,6 +240,10 @@ async fn run_service_loop(
         let socket_str = socket_path.to_string_lossy().to_string();
 
         let child = Command::new(&binary)
+            // Services don't need stdin. Redirecting to /dev/null prevents
+            // child processes from racing on the parent's stdin fd, which would
+            // cause the interactive console's read_line to get spurious EOF.
+            .stdin(std::process::Stdio::null())
             .env("OPENAGENT_SOCKET_PATH", &socket_str)
             .env("OPENAGENT_LOGS_DIR", project_root.join("logs").to_string_lossy().as_ref())
             .envs(env_extras)

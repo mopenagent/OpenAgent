@@ -15,7 +15,11 @@
 ///   logs [<service>]                  Stream logs; press Enter to stop
 ///   quit / shutdown                   Graceful shutdown
 ///
-/// Ctrl-C (SIGINT) always triggers shutdown (normal signal behaviour).
+/// Shutdown behaviour:
+/// - Ctrl-C (SIGINT) always triggers shutdown (OS signal).
+/// - Typing `quit` / `shutdown` triggers shutdown via Notify.
+/// - stdin EOF (daemon / no TTY) exits the console loop silently — the
+///   process keeps running and waits for OS signals only.
 use std::{
     io::{self, BufRead, Write},
     path::PathBuf,
@@ -27,7 +31,7 @@ use std::{
 };
 
 use serde_json::{json, Value};
-use tokio::sync::oneshot;
+use tokio::sync::Notify;
 use tracing::info;
 
 use crate::manager::ServiceManager;
@@ -52,35 +56,46 @@ OpenAgent console commands:
 // Entry point
 // ---------------------------------------------------------------------------
 
-/// Spawn the interactive console as a background task.
-/// Returns a oneshot receiver that fires when the user types `quit`/`shutdown`.
-pub async fn run(
-    manager: Arc<ServiceManager>,
-    logs_dir: PathBuf,
-) -> oneshot::Receiver<()> {
-    let (tx, rx) = oneshot::channel();
+/// Spawn the interactive console.  Returns a `Notify` that fires only when
+/// the user explicitly types `quit`/`shutdown`.  stdin EOF (daemon mode)
+/// does NOT fire the notify — the process keeps running, waiting for signals.
+pub async fn run(manager: Arc<ServiceManager>, logs_dir: PathBuf) -> Arc<Notify> {
+    let quit = Arc::new(Notify::new());
+    let quit2 = Arc::clone(&quit);
+
     tokio::task::spawn_blocking(move || {
         let rt = tokio::runtime::Handle::current();
-        console_loop(&rt, &manager, &logs_dir, tx);
+        let wants_quit = console_loop(&rt, &manager, &logs_dir);
+        if wants_quit {
+            quit2.notify_one();
+        }
     });
-    rx
+
+    quit
 }
 
 // ---------------------------------------------------------------------------
-// Blocking console loop (runs inside spawn_blocking)
+// Blocking console loop — returns true iff the user typed quit/shutdown
 // ---------------------------------------------------------------------------
 
 fn console_loop(
     rt: &tokio::runtime::Handle,
     manager: &Arc<ServiceManager>,
     logs_dir: &PathBuf,
-    shutdown_tx: oneshot::Sender<()>,
-) {
+) -> bool {
     let stdin = io::stdin();
     let mut lock = stdin.lock();
 
-    // Brief startup pause so the initial service log output settles.
-    std::thread::sleep(Duration::from_millis(500));
+    // Let initial service log output settle before showing the banner.
+    std::thread::sleep(Duration::from_millis(600));
+
+    // If stdin is not a TTY (running as a daemon, pipe, or Docker without -it),
+    // skip the interactive console entirely.  The process will keep running and
+    // can be stopped via SIGTERM / SIGINT only.
+    #[cfg(unix)]
+    if !is_tty() {
+        return false;
+    }
 
     println!();
     println!("  ┌──────────────────────────────────────────┐");
@@ -93,7 +108,11 @@ fn console_loop(
     loop {
         line.clear();
         match lock.read_line(&mut line) {
-            Ok(0) | Err(_) => break, // EOF or stdin closed (daemon mode)
+            Ok(0) | Err(_) => {
+                // stdin closed (not a TTY at runtime, or piped input ended).
+                // Exit console but do NOT signal shutdown.
+                break;
+            }
             Ok(_) => {}
         }
 
@@ -110,8 +129,7 @@ fn console_loop(
             "quit" | "exit" | "shutdown" => {
                 println!("Shutting down…");
                 info!("console.shutdown_requested");
-                let _ = shutdown_tx.send(());
-                return;
+                return true; // signal shutdown
             }
 
             "help" => println!("{HELP}"),
@@ -174,11 +192,20 @@ fn console_loop(
 
         prompt();
     }
+
+    false // stdin closed, not an explicit quit
 }
 
 fn prompt() {
     print!("openagent❯ ");
     let _ = io::stdout().flush();
+}
+
+/// Returns true if file descriptor 0 (stdin) is an interactive terminal.
+#[cfg(unix)]
+fn is_tty() -> bool {
+    // SAFETY: isatty is a pure query — no side effects, no memory unsafety.
+    unsafe { libc::isatty(libc::STDIN_FILENO) != 0 }
 }
 
 // ---------------------------------------------------------------------------
@@ -190,7 +217,8 @@ async fn cmd_health(manager: &ServiceManager) -> String {
     let tool_count = manager.tools().await.len();
 
     let self_pid = std::process::id();
-    let self_rss = rss_kb(self_pid).map(|kb| format!("{:.1}MB", kb as f64 / 1024.0))
+    let self_rss = rss_kb(self_pid)
+        .map(|kb| format!("{:.1}MB", kb as f64 / 1024.0))
         .unwrap_or_else(|| "—".into());
 
     let mut lines = vec![
@@ -252,10 +280,13 @@ async fn cmd_service_restart(manager: &ServiceManager, name: &str) -> String {
 
 async fn cmd_tools(manager: &ServiceManager, filter: &str) -> String {
     let tools = manager.tools().await;
-    let matching: Vec<_> = tools.iter().filter(|t| {
-        let name = t.definition.get("name").and_then(Value::as_str).unwrap_or("");
-        filter.is_empty() || name.contains(filter)
-    }).collect();
+    let matching: Vec<_> = tools
+        .iter()
+        .filter(|t| {
+            let name = t.definition.get("name").and_then(Value::as_str).unwrap_or("");
+            filter.is_empty() || name.contains(filter)
+        })
+        .collect();
 
     if matching.is_empty() {
         return if filter.is_empty() {
@@ -330,12 +361,9 @@ async fn cmd_raw_tool(manager: &ServiceManager, name: &str, raw: &str) -> String
 
 async fn tool_call(manager: &ServiceManager, name: &str, params: Value) -> String {
     match manager.call_tool(name, params, 15_000).await {
-        Ok(raw) => {
-            // Pretty-print if it's valid JSON
-            serde_json::from_str::<Value>(&raw)
-                .map(|v| serde_json::to_string_pretty(&v).unwrap_or(raw.clone()))
-                .unwrap_or(raw)
-        }
+        Ok(raw) => serde_json::from_str::<Value>(&raw)
+            .map(|v| serde_json::to_string_pretty(&v).unwrap_or(raw.clone()))
+            .unwrap_or(raw),
         Err(e) => format!("Error: {e}"),
     }
 }
@@ -344,7 +372,7 @@ async fn tool_call(manager: &ServiceManager, name: &str, params: Value) -> Strin
 // Logs streaming
 // ---------------------------------------------------------------------------
 
-/// Tail a log file for `service`, printing new lines until the user presses Enter.
+/// Tail the log file for `service` until the user presses Enter.
 fn stream_logs(service: &str, logs_dir: &PathBuf, lock: &mut io::StdinLock, line: &mut String) {
     let log_path = match find_latest_log(logs_dir, service) {
         Some(p) => p,
@@ -357,13 +385,12 @@ fn stream_logs(service: &str, logs_dir: &PathBuf, lock: &mut io::StdinLock, line
     let stop = Arc::new(AtomicBool::new(false));
     let stop2 = Arc::clone(&stop);
 
-    // Log streaming runs in its own thread so we can wait for Enter on the main thread.
     let path_clone = log_path.clone();
     let log_thread = std::thread::spawn(move || {
         use std::io::{BufReader, Seek, SeekFrom};
         let Ok(f) = std::fs::File::open(&path_clone) else { return };
         let mut reader = BufReader::new(f);
-        let _ = reader.seek(SeekFrom::End(0)); // tail from current end
+        let _ = reader.seek(SeekFrom::End(0)); // tail from now
 
         let mut buf = String::new();
         while !stop2.load(Ordering::Relaxed) {
@@ -371,8 +398,8 @@ fn stream_logs(service: &str, logs_dir: &PathBuf, lock: &mut io::StdinLock, line
             match reader.read_line(&mut buf) {
                 Ok(0) => std::thread::sleep(Duration::from_millis(100)),
                 Ok(_) => {
-                    let formatted = format_log_line(buf.trim());
-                    println!("{formatted}");
+                    print!("{}", format_log_line(buf.trim()));
+                    println!();
                     let _ = io::stdout().flush();
                 }
                 Err(_) => break,
@@ -386,7 +413,6 @@ fn stream_logs(service: &str, logs_dir: &PathBuf, lock: &mut io::StdinLock, line
     );
     let _ = io::stdout().flush();
 
-    // Block until user presses Enter (any input).
     line.clear();
     let _ = lock.read_line(line);
 
@@ -396,19 +422,16 @@ fn stream_logs(service: &str, logs_dir: &PathBuf, lock: &mut io::StdinLock, line
 }
 
 /// Find the most recently modified log file for a service.
-/// Looks for both `{service}-logs.YYYY-MM-DD` (tracing_appender) and
-/// `{service}-logs-YYYY-MM-DD.jsonl` (sdk-rust FileLogExporter).
+/// Covers both `{svc}-logs.YYYY-MM-DD` (tracing_appender) and
+/// `{svc}-logs-YYYY-MM-DD.jsonl` (sdk-rust FileLogExporter).
 fn find_latest_log(logs_dir: &PathBuf, service: &str) -> Option<PathBuf> {
-    let Ok(entries) = std::fs::read_dir(logs_dir) else {
-        return None;
-    };
     let prefix = format!("{service}-logs");
-    let mut candidates: Vec<(std::time::SystemTime, PathBuf)> = entries
+    let mut candidates: Vec<(std::time::SystemTime, PathBuf)> = std::fs::read_dir(logs_dir)
+        .ok()?
         .flatten()
         .filter(|e| {
             let name = e.file_name();
-            let name = name.to_string_lossy();
-            name.starts_with(&prefix)
+            name.to_string_lossy().starts_with(&prefix)
         })
         .filter_map(|e| {
             let modified = e.metadata().ok()?.modified().ok()?;
@@ -420,33 +443,28 @@ fn find_latest_log(logs_dir: &PathBuf, service: &str) -> Option<PathBuf> {
     candidates.into_iter().last().map(|(_, p)| p)
 }
 
-/// Format a single log line from the tracing-subscriber JSON format:
-/// `{"timestamp":"...","level":"INFO","fields":{"message":"..."},"target":"..."}`
+/// Format one JSON log line from `tracing_subscriber::fmt::Layer().json()`:
+/// `{"timestamp":"…","level":"INFO","fields":{"message":"…",…},"target":"…"}`
 ///
-/// Falls back to printing the raw line if parsing fails.
+/// Falls back to the raw line if parsing fails.
 fn format_log_line(raw: &str) -> String {
     let Ok(v) = serde_json::from_str::<Value>(raw) else {
         return raw.to_string();
     };
 
-    // tracing_subscriber::fmt::Layer().json() format
     let ts = v.get("timestamp")
         .and_then(Value::as_str)
-        .map(|s| &s[11..19]) // "HH:MM:SS" from ISO-8601
+        .and_then(|s| s.get(11..19)) // HH:MM:SS
         .unwrap_or("??:??:??");
 
-    let level = v.get("level")
-        .and_then(Value::as_str)
-        .unwrap_or("?");
+    let level = v.get("level").and_then(Value::as_str).unwrap_or("?");
 
-    // Fields object contains "message" plus any structured fields
     let fields = v.get("fields");
     let msg = fields
         .and_then(|f| f.get("message"))
         .and_then(Value::as_str)
         .unwrap_or("");
 
-    // Collect extra structured fields (skip "message")
     let extras: Vec<String> = fields
         .and_then(Value::as_object)
         .map(|obj| {
@@ -475,7 +493,10 @@ fn format_log_line(raw: &str) -> String {
     if extras.is_empty() {
         format!("\x1b[90m{ts}\x1b[0m {level_colored} {msg}")
     } else {
-        format!("\x1b[90m{ts}\x1b[0m {level_colored} {msg}  \x1b[90m{}\x1b[0m", extras.join(" "))
+        format!(
+            "\x1b[90m{ts}\x1b[0m {level_colored} {msg}  \x1b[90m{}\x1b[0m",
+            extras.join(" ")
+        )
     }
 }
 
