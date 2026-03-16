@@ -3,6 +3,7 @@ use mimalloc::MiMalloc;
 static GLOBAL: MiMalloc = MiMalloc;
 
 mod config;
+mod console;
 mod dispatch;
 mod scrub;
 mod manifest;
@@ -122,19 +123,29 @@ async fn main() -> Result<()> {
         }
     });
 
+    // ---- Interactive console -------------------------------------------------
+    // Spawns a blocking thread that reads stdin. The oneshot fires when the
+    // user types `quit` / `shutdown`. EOF on stdin (daemon / no TTY) exits
+    // immediately and the process waits for OS signals instead.
+    let logs_path = PathBuf::from(&logs_dir);
+    let console_rx = console::run(Arc::clone(&manager), logs_path).await;
+
     // ---- SIGTERM / Ctrl-C shutdown ------------------------------------------
-    // Wait for either Ctrl-C (SIGINT) or SIGTERM (sent by run.sh / systemd / Docker).
     #[cfg(unix)]
     {
         use tokio::signal::unix::{signal, SignalKind};
         let mut sigterm = signal(SignalKind::terminate())?;
         tokio::select! {
-            _ = tokio::signal::ctrl_c() => {}
-            _ = sigterm.recv() => {}
+            _ = tokio::signal::ctrl_c() => { info!("openagent.sigint"); }
+            _ = sigterm.recv()          => { info!("openagent.sigterm"); }
+            _ = console_rx              => { info!("openagent.console.quit"); }
         }
     }
     #[cfg(not(unix))]
-    tokio::signal::ctrl_c().await?;
+    tokio::select! {
+        _ = tokio::signal::ctrl_c() => { info!("openagent.sigint"); }
+        _ = console_rx              => { info!("openagent.console.quit"); }
+    }
 
     info!("openagent.shutdown");
     manager.stop_all().await;
