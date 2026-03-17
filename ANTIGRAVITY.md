@@ -12,7 +12,9 @@ Whenever the user sends an input where their intention needs clarification or th
 OpenAgent is distinct from typical agentic loops because the LLM is **not** the center of the universe.
 - Python acts as a deterministic **Workflow Orchestrator**.
 - The LLM is just one non-deterministic node in the graph.
-- A deterministic chain (e.g. `WhatsApp IN -> STT -> LLM -> TTS -> WhatsApp OUT`) is preferred over giving the LLM raw tools and asking it to figure out what to do. This saves massive amounts of tokens, latency, and context window logic on the 14B model.
+- A deterministic chain (e.g. `WhatsApp IN -> STT -> LLM -> TTS -> WhatsApp OUT`) is preferred over giving the LLM raw tools and asking it to figure out what to do. This saves latency and context window logic on local models.
+
+**LLM context:** The primary LLM is an **external model with a 36K token context window**. Tool injection overhead is ~900 tokens/prompt (8 semantic candidates + 2 pinned tools + cortex.discover), leaving ~35K for conversation, STM, and system prompt. Token pressure is not a concern at this scale — do not add token-reduction complexity unless profiling proves otherwise.
 
 ## 3. Zero-Copy Artifact Routing
 IPC (Inter-Process Communication) JSON serialization is a massive tax on low-power hardware. 

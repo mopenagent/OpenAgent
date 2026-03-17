@@ -34,6 +34,8 @@ Whenever the user sends an input where their intention needs clarification or th
 
 OpenAgent uses a **custom ReAct loop** and thin httpx-based provider layer — no framework dependency. This gives full control over tool schema format, retry logic, and iteration limits for sub-30B models. Session/memory uses a `SessionBackend` protocol (SQLite now; Go/Rust service later). See `roadmap.md` for rationale and build order.
 
+**LLM deployment note:** The primary LLM is an **external model with a 36K token context window** (served via OpenAI-compatible API). Tool injection overhead is ~900 tokens per prompt (8 candidate tools + 2 pinned + cortex.discover), leaving ~35K tokens for conversation history, STM, and system prompt. Token pressure is not a constraint at current scale — do not add token-reduction complexity unless profiling proves otherwise.
+
 ## Reference Implementations
 
 Read these before implementing anything non-trivial. Prefer patterns from these codebases.
@@ -337,9 +339,9 @@ Python extensions handle platforms and media. They do **not** do heavy CPU/IO wo
 
 Multiple configurable providers per agent. Follow Nanobot's `ProviderSpec` registry. Each agent in the registry can use a different model.
 
+- **Primary:** External model with **36K context window** via OpenAI-compatible `/v1/chat/completions`
 - Fast/cheap model (e.g. Qwen2.5:7B) → routing and simple tasks
 - Capable model (e.g. Qwen2.5:14B) → complex reasoning
-- All providers: OpenAI-compatible `/v1/chat/completions`
 - All HTTP via `httpx` — no sync HTTP, no OpenAI SDK
 
 ### Configuration
@@ -483,9 +485,10 @@ Cortex is the only service that uses [AutoAgents](https://github.com/liquidos-ai
 
 Key patterns:
 - **`CortexAgent`**: single generic struct implementing `AgentDeriveT` manually; fully driven by `config/openagent.yaml`. No `#[agent]` macro — adding an agent is a YAML edit, not a Rust recompile.
-- **`CortexMemoryAdapter`**: implements AutoAgents' `MemoryProvider` trait with a segmented STM backend (8 segments, per-segment budgets). Diary and LTM writes fire in `AgentHooks::on_turn_complete()`, not in `add_message()`.
-- **Tools**: small static set of `ToolT` wrappers (memory search, sandbox, browser) + one `ActionDispatcherTool` meta-tool (`action.call`). Candidate action summaries injected into system prompt via `get_messages()` — no two-step search/call pattern.
-- **Multi-agent**: named agents from YAML run as `ractor` actors via AutoAgents' `ActorAgent`. Supervisor dispatches by `agent_name`.
+- **`HybridMemoryAdapter`**: implements AutoAgents' `MemoryProvider` trait with sliding-window STM (40 messages, permanent) + LTM via `memory.search` over UDS.
+- **Tool dispatch**: `ToolRouter` prefix-routes to owning service sockets; `cortex.*` self-routes back to `cortex.sock` (worker dispatch). `memory.search`, `research.status`, and `cortex.step` are always pinned in the action context.
+- **Research context injection**: each generation turn calls `research.status` proactively, formats runnable tasks into the system prompt (`## Active Research` block) so the supervisor selects the next task without a round-trip tool call.
+- **Worker dispatch**: supervisor calls `cortex.step` with `agent_name` to spawn a worker; same handler, same process, fresh `CortexAgent` with worker config. Workers are stateless — full context in the request. Actor dispatch (`ractor`) deferred to Phase 9+.
 
 **Tower conventions (`openagent` binary):**
 - Tower/Axum lives in `openagent/` (the control plane binary), NOT in Cortex or any other service
@@ -539,8 +542,8 @@ Key patterns:
 8. ~~**Rate limiting middleware**~~ ✅ — `ConcurrencyLimitLayer` (max 50) as outermost Tower layer in `openagent`
 9. ~~**Web UI diary + chat refactor**~~ ✅ — `/diary` read-only past session browser; `/chat` simplified to live web session only
 10. ~~**Cortex Phase 7: Segmented STM**~~ ❌ CANCELLED — sliding window (40 messages) is permanent
-11. **Cortex Phase 6: Plan DAG** — SQLite-backed plan store; persistent multi-step task tracking across turns
-12. **Cortex Phase 8: Reflection** — background synthesis, hypothesis generation, contradiction detection
+11. ~~**Cortex Phase 6: Research DAG + Supervisor task selection + Worker dispatch**~~ ✅ — `services/research/` Rust service (SQLite + markdown snapshots, 8 tools); research context injected into system prompt each generation turn (`fetch_research_context` via ToolRouter); `cortex.step` self-call worker dispatch (ToolRouter routes `cortex.*` → `cortex.sock`); `cortex.step` always pinned alongside `memory.search` and `research.status`; `user_key` param for cross-channel research ownership
+12. **Cortex Phase 8: Reflection** — background synthesis, hypothesis generation, contradiction detection after research tasks complete
 13. **Cortex Phase 9: Curiosity queue** — research leads surfaced as non-intrusive suggestions
 
 See `roadmap.md` for consolidated Nanobot/Picoclaw comparison and detailed gaps.

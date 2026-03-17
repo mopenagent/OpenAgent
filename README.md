@@ -21,12 +21,13 @@ All services communicate via **MCP-lite wire protocol** (tagged JSON frames over
 - **MCP-lite** — Python client + Rust SDK (`openagent/platforms/mcplite.py`, `services/sdk-rust/`)
 - **Heartbeat** — periodic health/summary polling (`openagent/heartbeat/`)
 - **Platform adapters** — Discord, Telegram, WhatsApp, Slack (Python MCP-lite clients)
-- **Rust services** — `cortex`, `channels` (omnibus), `sandbox`, `stt`, `tts`, `browser`, `memory`
+- **Rust services** — `cortex` (supervisor brain, worker dispatch), `research` (Research DAG, task tracking), `channels` (omnibus), `sandbox`, `stt`, `tts`, `browser`, `memory`
 - **Go service** — `whatsapp` (only remaining Go service)
-- **Web UI** — FastAPI + HTMX (dashboard, chat, services, settings)
+- **Web UI** — FastAPI + HTMX (dashboard, chat, diary, research, services, settings)
+- **Multi-agent supervisor/worker** — Cortex injects active research tasks into every prompt; supervisor dispatches workers via `cortex.step` with `agent_name`; ToolRouter self-routes `cortex.*` for zero-overhead worker invocation
 
 **In progress:**
-- `services/research/` — Research DAG service (cross-session research tracking, multi-agent supervisor/worker)
+- Cortex Phase 8: Reflection — background synthesis after research tasks complete
 
 ## Architecture
 
