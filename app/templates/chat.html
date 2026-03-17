@@ -3,72 +3,26 @@
 {% block page_title %}Chat{% endblock %}
 
 {% block content %}
-<div class="h-full flex gap-4 w-full" x-data="chatApp()" x-init="initApp()">
-
-  <!-- ── Sessions Sidebar ── -->
-  <div class="w-48 lg:w-56 flex flex-col border-r border-[#DEE2E6] dark:border-[#21262D] pr-4 flex-shrink-0">
-    <div class="flex items-center justify-between mb-4">
-      <h2 class="text-xs font-bold text-mutedCharcoal dark:text-steelMist uppercase tracking-widest">Sessions</h2>
-      <button @click="newSession()" class="text-saffron hover:bg-[#FF9933]/10 p-1.5 rounded-lg transition-colors"
-        title="New Session" :disabled="typing">
-        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path>
-        </svg>
-      </button>
-    </div>
-
-    <div class="flex-1 overflow-y-auto space-y-1 pr-1">
-      <template x-if="sessions.length === 0">
-        <p class="text-xs text-mutedCharcoal dark:text-steelMist italic px-2">
-          No sessions yet. Send a message from WhatsApp (ensure your number is in Settings → Whitelist) or start a chat below.
-        </p>
-      </template>
-
-      <template x-for="s in sessions" :key="s.key">
-        <div class="group relative">
-          <button @click="switchSession(s)"
-            :class="s.key === sessionId
-                      ? 'bg-[#FF9933]/15 text-saffron border border-[#FF9933]/30'
-                      : 'text-stone-700 dark:text-stone-300 border border-transparent hover:border-[#DEE2E6] dark:hover:border-[#21262D] hover:bg-pastelFog dark:hover:bg-charcoalLayer'"
-            class="w-full text-left pl-3 pr-8 py-2.5 rounded-xl text-sm truncate transition-all flex items-center gap-2">
-
-            <!-- Platform badge -->
-            <span class="text-[10px] font-bold px-1.5 py-0.5 rounded flex-shrink-0 uppercase tracking-wide"
-              :class="platformBadgeClass(s.platform)"
-              x-text="platformLabel(s.platform)"></span>
-            <span x-text="s.display_name || s.key" class="font-medium truncate flex-1 text-xs"></span>
-          </button>
-
-          <!-- Delete (×) button — shown on hover -->
-          <button @click.stop="deleteSession(s.key)"
-            class="absolute right-1.5 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-opacity
-                   w-5 h-5 flex items-center justify-center rounded text-stone-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20"
-            title="Hide session">
-            <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M6 18L18 6M6 6l12 12"/>
-            </svg>
-          </button>
-        </div>
-      </template>
-    </div>
-  </div>
+<div class="h-full flex flex-col w-full" x-data="chatApp()" x-init="init()">
 
   <!-- ── Chat Area ── -->
-  <div
-    class="flex-1 flex flex-col h-full min-w-0 bg-white dark:bg-deepSpaceBlue rounded-2xl border border-[#DEE2E6] dark:border-[#21262D] shadow-sm relative overflow-hidden">
+  <div class="flex-1 flex flex-col min-w-0 bg-white dark:bg-deepSpaceBlue rounded-2xl border border-[#DEE2E6] dark:border-[#21262D] shadow-sm relative overflow-hidden">
 
     <!-- Top Bar -->
-    <div
-      class="h-12 border-b border-[#DEE2E6] dark:border-[#21262D] bg-pastelFog/50 dark:bg-charcoalLayer/50 flex items-center px-4 justify-between">
+    <div class="h-12 border-b border-[#DEE2E6] dark:border-[#21262D] bg-pastelFog/50 dark:bg-charcoalLayer/50 flex items-center px-4 justify-between">
       <div class="flex items-center gap-2">
-        <div class="w-2 h-2 rounded-full transition-colors" :class="connected ? 'bg-green-500' : 'bg-red-500'"></div>
+        <div class="w-2 h-2 rounded-full transition-colors" :class="connected ? 'bg-green-500' : 'bg-red-500 animate-pulse'"></div>
         <span class="text-xs font-semibold text-stone-600 dark:text-stone-300"
-          x-text="sessionDisplayName || (sessionId ? sessionId : 'Starting...')"></span>
+          x-text="sessionId ? 'Session ' + sessionId : 'Connecting…'"></span>
       </div>
-      <span x-show="sessionPlatform && sessionPlatform !== 'web'"
-        class="text-[10px] font-bold px-2 py-1 rounded bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 uppercase tracking-wide">
-        Monitor Mode
-      </span>
+      <button @click="newSession()" :disabled="typing"
+        title="New session"
+        class="text-xs text-mutedCharcoal dark:text-steelMist hover:text-saffron transition-colors flex items-center gap-1 disabled:opacity-40">
+        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
+        </svg>
+        New
+      </button>
     </div>
 
     <!-- Message thread -->
@@ -80,7 +34,8 @@
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"
               d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
           </svg>
-          <span class="text-sm" x-text="sessionPlatform !== 'web' ? 'Monitoring — messages appear live' : 'Start a conversation'"></span>
+          <span class="text-sm">Start a conversation</span>
+          <span class="text-xs text-mutedCharcoal dark:text-steelMist mt-1">Past conversations are in <a href="/diary" class="text-saffron hover:underline">Diary</a></span>
         </div>
       </template>
 
@@ -96,9 +51,9 @@
         </div>
       </template>
 
-      <div x-show="typing && sessionPlatform === 'web'" class="flex justify-start">
-        <div
-          class="bg-pastelFog dark:bg-charcoalLayer border border-[#DEE2E6] dark:border-[#21262D] rounded-2xl rounded-tl-sm px-2.5 py-[1px] shadow-sm flex items-center h-[26px]">
+      <!-- Typing indicator -->
+      <div x-show="typing" class="flex justify-start">
+        <div class="bg-pastelFog dark:bg-charcoalLayer border border-[#DEE2E6] dark:border-[#21262D] rounded-2xl rounded-tl-sm px-2.5 py-[1px] shadow-sm flex items-center h-[26px]">
           <span class="inline-flex gap-1.5 items-center">
             <span class="w-1.5 h-1.5 bg-mutedCharcoal dark:bg-steelMist rounded-full animate-bounce [animation-delay:0ms]"></span>
             <span class="w-1.5 h-1.5 bg-mutedCharcoal dark:bg-steelMist rounded-full animate-bounce [animation-delay:150ms]"></span>
@@ -108,11 +63,10 @@
       </div>
     </div>
 
-    <!-- Input — web sessions only -->
-    <div x-show="sessionPlatform === 'web'"
-      class="p-4 border-t border-[#DEE2E6] dark:border-[#21262D] bg-pastelFog/30 dark:bg-charcoalLayer/30">
+    <!-- Input -->
+    <div class="p-4 border-t border-[#DEE2E6] dark:border-[#21262D] bg-pastelFog/30 dark:bg-charcoalLayer/30">
       <form @submit.prevent="send()" class="flex gap-2">
-        <input x-model="draft" :disabled="!connected" type="text" placeholder="Message..."
+        <input x-model="draft" :disabled="!connected" type="text" placeholder="Message…"
           class="flex-1 bg-white dark:bg-richObsidian border border-[#DEE2E6] dark:border-[#21262D] rounded-xl px-4 py-3 text-sm
                  text-stone-950 dark:text-stone-100 placeholder-mutedCharcoal dark:placeholder-steelMist
                  focus:outline-none focus:border-saffron focus:ring-1 focus:ring-saffron
@@ -130,204 +84,45 @@
       </form>
     </div>
 
-    <!-- Read-only notice — non-web sessions -->
-    <div x-show="sessionPlatform !== 'web'"
-      class="px-4 py-3 border-t border-[#DEE2E6] dark:border-[#21262D] bg-pastelFog/30 dark:bg-charcoalLayer/30 flex items-center gap-2">
-      <svg class="w-4 h-4 text-mutedCharcoal dark:text-steelMist flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
-        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/>
-      </svg>
-      <span class="text-xs text-mutedCharcoal dark:text-steelMist">Monitor only — use the Web tab to send messages to the agent</span>
-    </div>
-
   </div>
 
 </div>
 
 <script>
-  const PLATFORM_LABELS = {
-    web: 'WEB', discord: 'DC', telegram: 'TG',
-    slack: 'SL', whatsapp: 'WA', unknown: '??',
-  };
-  const PLATFORM_CLASSES = {
-    web:      'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300',
-    discord:  'bg-indigo-100 dark:bg-indigo-900/40 text-indigo-700 dark:text-indigo-300',
-    telegram: 'bg-sky-100 dark:bg-sky-900/40 text-sky-700 dark:text-sky-300',
-    slack:    'bg-green-100 dark:bg-green-900/40 text-green-700 dark:text-green-300',
-    whatsapp: 'bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300',
-    unknown:  'bg-gray-100 dark:bg-gray-700 text-gray-500',
-  };
   const LS_SESSION_KEY = 'openagent_session_id';
 
   function chatApp() {
     return {
-      sessions: [],          // array of {key, display_name, platform, channel_id, platforms}
       messages: [],
       draft: "",
       typing: false,
       connected: false,
       sessionId: "",
-      sessionDisplayName: "",
-      sessionPlatform: "web",
-      sessionChannelId: "",
       ws: null,
-      sse: null,
-      _refreshInterval: null,
       intentionalDisconnect: false,
 
-      platformLabel(p) { return PLATFORM_LABELS[p] || p.slice(0, 2).toUpperCase(); },
-      platformBadgeClass(p) { return PLATFORM_CLASSES[p] || PLATFORM_CLASSES.unknown; },
-
-
-      async initApp() {
-        await this.loadSessions();
-        // Periodic refresh so new platform sessions (Discord, etc.) appear in sidebar
-        this._refreshInterval = setInterval(() => this.loadSessions(), 15000);
-
-        // Restore last session from localStorage
+      init() {
         const saved = localStorage.getItem(LS_SESSION_KEY);
-        if (saved) {
-          const existing = this.sessions.find(s => s.key === saved);
-          if (existing) {
-            // Session is in the DB — switch to it normally
-            this.switchSession(existing);
-            return;
-          }
-          // Session not in DB sidebar (soft-deleted or no turns yet) — reconnect and try history
-          if (saved.startsWith('web:')) {
-            this.sessionId = saved;
-            this.sessionPlatform = 'web';
-            try {
-              const res = await fetch(`/api/chat/sessions/${encodeURIComponent(saved)}/history`);
-              if (res.ok) {
-                const data = await res.json();
-                this.messages = (data.history || [])
-                  .filter(m => m.role === 'user' || m.role === 'assistant')
-                  .map(m => ({ role: m.role === 'assistant' ? 'agent' : m.role, content: m.content }));
-                this.$nextTick(() => this.scrollToBottom());
-              }
-            } catch (e) { console.error("Failed to load history", e); }
-            this.connect(saved);
-            return;
-          }
-        }
-
-        // No saved session — pick last from list or create new web session
-        if (this.sessions.length > 0) {
-          this.switchSession(this.sessions[this.sessions.length - 1]);
-        } else {
-          this.newSession();
-        }
-      },
-
-      async loadSessions() {
-        try {
-          const res = await fetch('/api/chat/sessions');
-          if (res.ok) {
-            const data = await res.json();
-            const server = data.sessions || [];
-            // Keep current session in sidebar if not yet in server (e.g. new web tab)
-            if (this.sessionId && !server.find(s => s.key === this.sessionId)) {
-              const platform = this.sessionId.includes(':') ? this.sessionId.split(':')[0] : 'unknown';
-              this.sessions = [...server, { key: this.sessionId, platform, channel_id: this.sessionId, platforms: [] }];
-            } else {
-              this.sessions = server;
-            }
-          }
-        } catch (e) {
-          console.error("Failed to load sessions", e);
-        }
-      },
-
-      async switchSession(s) {
-        const id       = typeof s === 'string' ? s : s.key;
-        const platform = typeof s === 'string'
-          ? (id.includes(':') ? id.split(':')[0] : 'unknown')
-          : s.platform;
-        const channelId = typeof s === 'string' ? '' : (s.channel_id || '');
-
-        if (this.sessionId === id && this.connected) return;
-
-        this._disconnect();
-        this.sessionId = id;
-        this.sessionDisplayName = typeof s === 'string' ? '' : (s.display_name || '');
-        this.sessionPlatform = platform;
-        this.sessionChannelId = channelId;
-        this.messages = [];
-        this.typing = false;
-        this.draft = "";
-        localStorage.setItem(LS_SESSION_KEY, id);
-
-        // Load history
-        try {
-          const res = await fetch(`/api/chat/sessions/${encodeURIComponent(id)}/history`);
-          if (res.ok) {
-            const data = await res.json();
-            this.messages = (data.history || [])
-              .filter(m => m.role === 'user' || m.role === 'assistant')
-              .map(m => ({ role: m.role === 'assistant' ? 'agent' : m.role, content: m.content }));
-            this.$nextTick(() => this.scrollToBottom());
-          }
-        } catch (e) {
-          console.error("Failed to load history", e);
-        }
-
-        if (platform === 'web') {
-          this.connect(id);
-        } else {
-          this.connected = true;
-          this.monitor(id);
-        }
+        this.connect(saved && saved.startsWith('web:') ? saved : null);
       },
 
       newSession() {
         this._disconnect();
         localStorage.removeItem(LS_SESSION_KEY);
-        this.sessionId = "Connecting...";
-        this.sessionPlatform = "web";
-        this.sessionChannelId = "";
+        this.sessionId = "";
         this.messages = [];
         this.connected = false;
         this.typing = false;
         this.draft = "";
-        this.connect();
-      },
-
-      async deleteSession(key) {
-        // Optimistically remove from sidebar
-        this.sessions = this.sessions.filter(s => s.key !== key);
-
-        // If we're currently viewing this session, create a new one
-        if (this.sessionId === key) {
-          if (this.sessions.length > 0) {
-            this.switchSession(this.sessions[this.sessions.length - 1]);
-          } else {
-            this.newSession();
-          }
-        }
-
-        // Clear localStorage if it was the saved session
-        if (localStorage.getItem(LS_SESSION_KEY) === key) {
-          localStorage.removeItem(LS_SESSION_KEY);
-        }
-
-        // Soft-delete on the server (turns stay in DB for logs)
-        try {
-          await fetch(`/api/chat/sessions/${encodeURIComponent(key)}`, { method: 'DELETE' });
-        } catch (e) {
-          console.error("Failed to delete session", e);
-        }
+        this.connect(null);
       },
 
       _disconnect() {
         this.intentionalDisconnect = true;
-        if (this.ws) { this.ws.close(1000, "Switching session"); this.ws = null; }
-        if (this.sse) { this.sse.close(); this.sse = null; }
+        if (this.ws) { this.ws.close(1000, "switching"); this.ws = null; }
         this.connected = false;
         this.intentionalDisconnect = false;
       },
-
-      // ── WebSocket (web sessions — chat with agent) ─────────────────────
 
       connect(explicitId = null) {
         const proto = location.protocol === "https:" ? "wss" : "ws";
@@ -342,8 +137,8 @@
           if (this.intentionalDisconnect) return;
           this.typing = false;
           setTimeout(() => {
-            if (!this.connected && !this.intentionalDisconnect && this.sessionPlatform === 'web') {
-              this.connect(this.sessionId === "Connecting..." ? null : this.sessionId);
+            if (!this.connected && !this.intentionalDisconnect) {
+              this.connect(this.sessionId || null);
             }
           }, 3000);
         };
@@ -353,13 +148,11 @@
           if (msg.session_id) {
             this.sessionId = msg.session_id;
             localStorage.setItem(LS_SESSION_KEY, this.sessionId);
-            if (!this.sessions.find(s => s.key === this.sessionId)) {
-              this.sessions.push({ key: this.sessionId, platform: 'web', channel_id: this.sessionId, platforms: [] });
-            }
             return;
           }
           this.typing = false;
-          if (msg.stream_chunk && this.messages.length > 0 && this.messages[this.messages.length - 1].role === "agent") {
+          if (msg.stream_chunk && this.messages.length > 0
+              && this.messages[this.messages.length - 1].role === "agent") {
             this.messages[this.messages.length - 1] = { role: "agent", content: msg.content };
           } else {
             this.messages.push(msg);
@@ -367,27 +160,6 @@
           this.$nextTick(() => this.scrollToBottom());
         };
       },
-
-      // ── SSE (non-web sessions — monitor in real time) ──────────────────
-
-      monitor(sessionKey) {
-        this.sse = new EventSource(`/stream/session/${encodeURIComponent(sessionKey)}`);
-        this.sse.onmessage = (e) => {
-          const event = JSON.parse(e.data);
-          const role = event.direction === 'inbound' ? 'user' : 'agent';
-          const last = this.messages.length > 0 ? this.messages[this.messages.length - 1] : null;
-          if (event.stream_chunk && last && last.role === 'agent') {
-            // Edit the last agent bubble in place (streaming update)
-            this.messages[this.messages.length - 1] = { role: 'agent', content: event.content };
-          } else {
-            this.messages.push({ role, content: event.content });
-          }
-          this.$nextTick(() => this.scrollToBottom());
-        };
-        this.sse.onerror = () => {};
-      },
-
-      // ── Send (web sessions only) ──────────────────────────────────────
 
       async send() {
         if (!this.draft.trim() || !this.connected || this.typing) return;
@@ -404,15 +176,12 @@
         el.scrollTop = el.scrollHeight;
       },
 
-      // ── Message rendering — parse <think> blocks into collapsible details ──
       renderMessage(content) {
         const esc = s => s
           .replace(/&/g, '&amp;')
           .replace(/</g, '&lt;')
           .replace(/>/g, '&gt;');
 
-        // Some models (Qwen, etc.) omit the opening <think> tag and only emit </think>.
-        // Universally: if </think> is present without <think>, the opener was implicit — prepend it.
         let normalized = content;
         if (content.includes('</think>') && !content.includes('<think>')) {
           normalized = '<think>' + content;
@@ -431,7 +200,6 @@
             html += `</div></details>`;
           } else {
             if (part.trim() === '') continue;
-            // Support marked.js if available, otherwise fallback to plain text
             if (typeof marked !== 'undefined') {
               html += `<div class="markdown-body">${marked.parse(part, { breaks: true })}</div>`;
             } else {
@@ -440,9 +208,7 @@
           }
         }
 
-        // Streaming: <think> opened but </think> not yet received
         if (inThink) html += `</div></details>`;
-
         return html;
       },
     }

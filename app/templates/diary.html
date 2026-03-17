@@ -1,0 +1,244 @@
+{% extends "base.html" %}
+{% block title %}Diary — OpenAgent{% endblock %}
+{% block page_title %}Diary{% endblock %}
+
+{% block content %}
+<div class="h-full flex gap-4 w-full" x-data="diaryApp()" x-init="init()">
+
+  <!-- ── Session list ── -->
+  <div class="w-56 flex-shrink-0 flex flex-col border-r border-[#DEE2E6] dark:border-[#21262D] pr-4">
+
+    <!-- Filter row -->
+    <div class="mb-3 flex gap-2">
+      <input x-model="filter" type="text" placeholder="Filter sessions…"
+        class="flex-1 text-xs bg-white dark:bg-richObsidian border border-[#DEE2E6] dark:border-[#21262D]
+               rounded-lg px-3 py-2 text-stone-900 dark:text-stone-100 placeholder-mutedCharcoal
+               dark:placeholder-steelMist focus:outline-none focus:border-saffron focus:ring-1 focus:ring-saffron" />
+    </div>
+
+    <!-- Platform tabs -->
+    <div class="flex flex-wrap gap-1 mb-3">
+      <button @click="activePlatform = ''"
+        :class="activePlatform === '' ? 'bg-saffron/20 text-saffron' : 'text-mutedCharcoal dark:text-steelMist hover:bg-[#DEE2E6] dark:hover:bg-[#21262D]'"
+        class="text-[10px] font-bold px-2 py-1 rounded-md uppercase tracking-wide transition-colors">All</button>
+      <template x-for="p in platforms" :key="p">
+        <button @click="activePlatform = p"
+          :class="activePlatform === p ? 'bg-saffron/20 text-saffron' : 'text-mutedCharcoal dark:text-steelMist hover:bg-[#DEE2E6] dark:hover:bg-[#21262D]'"
+          class="text-[10px] font-bold px-2 py-1 rounded-md uppercase tracking-wide transition-colors"
+          x-text="p"></button>
+      </template>
+    </div>
+
+    <!-- Session list -->
+    <div class="flex-1 overflow-y-auto space-y-0.5 pr-1">
+      <template x-if="filteredSessions.length === 0">
+        <p class="text-xs text-mutedCharcoal dark:text-steelMist italic px-2 py-4">
+          No sessions found.
+        </p>
+      </template>
+      <template x-for="s in filteredSessions" :key="s.key">
+        <button @click="selectSession(s)"
+          :class="selected && selected.key === s.key
+            ? 'bg-[#FF9933]/15 text-saffron border border-[#FF9933]/30'
+            : 'text-stone-700 dark:text-stone-300 border border-transparent hover:border-[#DEE2E6] dark:hover:border-[#21262D] hover:bg-pastelFog dark:hover:bg-charcoalLayer'"
+          class="w-full text-left px-3 py-2.5 rounded-xl text-sm transition-all flex items-center gap-2">
+          <span class="text-[10px] font-bold px-1.5 py-0.5 rounded flex-shrink-0 uppercase tracking-wide"
+            :class="platformClass(s.platform)"
+            x-text="platformLabel(s.platform)"></span>
+          <span x-text="s.display_name || s.key" class="font-medium truncate flex-1 text-xs"></span>
+        </button>
+      </template>
+    </div>
+  </div>
+
+  <!-- ── Conversation view ── -->
+  <div class="flex-1 flex flex-col min-w-0 bg-white dark:bg-deepSpaceBlue rounded-2xl border border-[#DEE2E6] dark:border-[#21262D] shadow-sm overflow-hidden">
+
+    <!-- Header -->
+    <div class="h-12 border-b border-[#DEE2E6] dark:border-[#21262D] bg-pastelFog/50 dark:bg-charcoalLayer/50 flex items-center px-4 gap-3">
+      <template x-if="selected">
+        <span class="text-xs font-semibold text-stone-600 dark:text-stone-300 truncate"
+          x-text="selected.display_name || selected.key"></span>
+      </template>
+      <template x-if="!selected">
+        <span class="text-xs text-mutedCharcoal dark:text-steelMist">Select a session to read its history</span>
+      </template>
+      <template x-if="selected">
+        <span class="text-[10px] font-bold px-1.5 py-0.5 rounded uppercase tracking-wide flex-shrink-0"
+          :class="platformClass(selected.platform)"
+          x-text="platformLabel(selected.platform)"></span>
+      </template>
+      <template x-if="loading">
+        <span class="ml-auto text-xs text-mutedCharcoal dark:text-steelMist animate-pulse">Loading…</span>
+      </template>
+      <template x-if="selected && history.length > 0">
+        <span class="ml-auto text-xs text-mutedCharcoal dark:text-steelMist"
+          x-text="history.length + ' messages'"></span>
+      </template>
+    </div>
+
+    <!-- Messages — read-only -->
+    <div class="flex-1 overflow-y-auto p-4 space-y-2" x-ref="thread">
+
+      <template x-if="!selected">
+        <div class="flex flex-col items-center justify-center h-full opacity-40">
+          <svg class="w-10 h-10 text-saffron mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"
+              d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"/>
+          </svg>
+          <span class="text-sm">Pick a session from the left</span>
+        </div>
+      </template>
+
+      <template x-if="selected && !loading && history.length === 0">
+        <div class="flex items-center justify-center h-full opacity-40">
+          <span class="text-sm">No messages recorded yet</span>
+        </div>
+      </template>
+
+      <template x-for="(msg, i) in history" :key="i">
+        <div :class="msg.role === 'user' ? 'flex justify-end' : 'flex justify-start'">
+          <div :class="msg.role === 'user'
+                  ? 'bg-[#FF9933]/20 border border-[#FF9933]/30 text-stone-950 dark:text-slate-100 rounded-2xl rounded-tr-sm'
+                  : 'bg-pastelFog dark:bg-charcoalLayer border border-[#DEE2E6] dark:border-[#21262D] text-stone-800 dark:text-steelMist rounded-2xl rounded-tl-sm'"
+               class="max-w-2xl px-3 py-2.5 text-sm leading-normal shadow-sm inline-block">
+            <div x-html="renderMessage(msg.content)"></div>
+            <template x-if="msg.timestamp">
+              <div class="mt-1 text-[10px] text-mutedCharcoal dark:text-steelMist opacity-60"
+                x-text="formatTime(msg.timestamp)"></div>
+            </template>
+          </div>
+        </div>
+      </template>
+    </div>
+
+    <!-- Read-only footer -->
+    <div class="px-4 py-2.5 border-t border-[#DEE2E6] dark:border-[#21262D] bg-pastelFog/30 dark:bg-charcoalLayer/30 flex items-center gap-2">
+      <svg class="w-3.5 h-3.5 text-mutedCharcoal dark:text-steelMist flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/>
+      </svg>
+      <span class="text-xs text-mutedCharcoal dark:text-steelMist">Diary — read-only view of past conversations</span>
+    </div>
+  </div>
+
+</div>
+
+<script>
+  const PLATFORM_LABELS = {
+    web: 'WEB', discord: 'DC', telegram: 'TG',
+    slack: 'SL', whatsapp: 'WA', cron: 'CRON', unknown: '??',
+  };
+  const PLATFORM_CLASSES = {
+    web:      'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300',
+    discord:  'bg-indigo-100 dark:bg-indigo-900/40 text-indigo-700 dark:text-indigo-300',
+    telegram: 'bg-sky-100 dark:bg-sky-900/40 text-sky-700 dark:text-sky-300',
+    slack:    'bg-green-100 dark:bg-green-900/40 text-green-700 dark:text-green-300',
+    whatsapp: 'bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300',
+    cron:     'bg-violet-100 dark:bg-violet-900/40 text-violet-700 dark:text-violet-300',
+    unknown:  'bg-gray-100 dark:bg-gray-700 text-gray-500',
+  };
+
+  const SERVER_SESSIONS = {{ sessions | tojson }};
+
+  function diaryApp() {
+    return {
+      sessions: SERVER_SESSIONS,
+      selected: null,
+      history: [],
+      loading: false,
+      filter: '',
+      activePlatform: '',
+
+      get platforms() {
+        const ps = [...new Set(this.sessions.map(s => s.platform).filter(Boolean))];
+        return ps.sort();
+      },
+
+      get filteredSessions() {
+        return this.sessions.filter(s => {
+          const matchesPlatform = !this.activePlatform || s.platform === this.activePlatform;
+          const q = this.filter.toLowerCase();
+          const matchesFilter = !q
+            || (s.display_name || '').toLowerCase().includes(q)
+            || s.key.toLowerCase().includes(q);
+          return matchesPlatform && matchesFilter;
+        });
+      },
+
+      init() {},
+
+      async selectSession(s) {
+        if (this.selected && this.selected.key === s.key) return;
+        this.selected = s;
+        this.history = [];
+        this.loading = true;
+        try {
+          const res = await fetch(`/api/chat/sessions/${encodeURIComponent(s.key)}/history`);
+          if (res.ok) {
+            const data = await res.json();
+            this.history = (data.history || [])
+              .filter(m => m.role === 'user' || m.role === 'assistant')
+              .map(m => ({
+                role: m.role === 'assistant' ? 'agent' : m.role,
+                content: m.content,
+                timestamp: m.timestamp || null,
+              }));
+            this.$nextTick(() => {
+              const el = this.$refs.thread;
+              if (el) el.scrollTop = el.scrollHeight;
+            });
+          }
+        } catch (e) {
+          console.error('Failed to load history', e);
+        } finally {
+          this.loading = false;
+        }
+      },
+
+      platformLabel(p) { return PLATFORM_LABELS[p] || (p || 'unknown').slice(0, 2).toUpperCase(); },
+      platformClass(p) { return PLATFORM_CLASSES[p] || PLATFORM_CLASSES.unknown; },
+
+      formatTime(ts) {
+        if (!ts) return '';
+        try {
+          return new Date(ts).toLocaleString(undefined, {
+            month: 'short', day: 'numeric',
+            hour: '2-digit', minute: '2-digit',
+          });
+        } catch { return ts; }
+      },
+
+      renderMessage(content) {
+        if (!content) return '';
+        const esc = s => s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+        let normalized = content;
+        if (content.includes('</think>') && !content.includes('<think>')) {
+          normalized = '<think>' + content;
+        }
+        const parts = normalized.split(/(<think>|<\/think>)/);
+        let inThink = false;
+        let html = '';
+        for (const part of parts) {
+          if (part === '<think>') {
+            inThink = true;
+            html += `<details class="think-block"><summary class="think-summary">Thinking…</summary><div class="think-body">`;
+          } else if (part === '</think>') {
+            inThink = false;
+            html += `</div></details>`;
+          } else {
+            if (part.trim() === '') continue;
+            if (typeof marked !== 'undefined') {
+              html += `<div class="markdown-body">${marked.parse(part, { breaks: true })}</div>`;
+            } else {
+              html += `<span class="msg-text">${esc(part)}</span>`;
+            }
+          }
+        }
+        if (inThink) html += `</div></details>`;
+        return html;
+      },
+    }
+  }
+</script>
+{% endblock %}
