@@ -65,13 +65,24 @@ pub async fn run(manager: Arc<ServiceManager>) {
             }
         };
 
-        let content = match data.get("content").and_then(Value::as_str) {
-            Some(c) if !c.trim().is_empty() => c.to_string(),
-            _ => {
-                debug!("dispatch.event.empty_content — skipping");
-                continue;
-            }
-        };
+        let content_raw = data
+            .get("content")
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .map(str::to_string);
+
+        let artifact_path = data
+            .get("artifact_path")
+            .and_then(Value::as_str)
+            .filter(|s| !s.is_empty())
+            .map(str::to_string);
+
+        // Drop events that have neither text content nor an audio artifact.
+        if content_raw.is_none() && artifact_path.is_none() {
+            debug!("dispatch.event.empty_content — skipping");
+            continue;
+        }
 
         let channel = match data.get("channel").and_then(Value::as_str) {
             Some(c) => c.to_string(),
@@ -97,7 +108,8 @@ pub async fn run(manager: Arc<ServiceManager>) {
             session_id,
             channel,
             sender,
-            content_len = content.len(),
+            content_len = content_raw.as_deref().map(str::len).unwrap_or(0),
+            has_audio = artifact_path.is_some(),
             "dispatch.message.received"
         );
 
@@ -105,7 +117,7 @@ pub async fn run(manager: Arc<ServiceManager>) {
         let sem = Arc::clone(&semaphore);
 
         tokio::spawn(async move {
-            handle_message(mgr, sem, session_id, channel, sender, content).await;
+            handle_message(mgr, sem, session_id, channel, sender, content_raw, artifact_path).await;
         });
     }
 }
@@ -123,12 +135,46 @@ async fn handle_message(
     session_id: String,
     channel: String,
     sender: String,
-    content: String,
+    content_raw: Option<String>,
+    artifact_path: Option<String>,
 ) {
     // Acquire slot — back-pressures at MAX_CONCURRENT.
     let _permit = match semaphore.acquire().await {
         Ok(p) => p,
         Err(_) => return, // semaphore closed (shutdown)
+    };
+
+    // ---- STT: transcribe audio artifact if present --------------------------
+    // Audio messages from WhatsApp arrive with artifact_path set and content="".
+    // Call stt.transcribe inline here; the HTTP-path SttLayer is separate.
+    let content = if let Some(ref path) = artifact_path {
+        match manager
+            .call_tool("stt.transcribe", json!({"audio_path": path}), 120_000)
+            .await
+        {
+            Ok(payload) => {
+                let v: Value = serde_json::from_str(&payload).unwrap_or_default();
+                let transcript = v
+                    .get("text")
+                    .and_then(Value::as_str)
+                    .unwrap_or("")
+                    .trim()
+                    .to_string();
+                if transcript.is_empty() {
+                    warn!(session_id, audio_path = path, "dispatch.stt.empty_transcript — skipping");
+                    return;
+                }
+                info!(session_id, audio_path = path, transcript_len = transcript.len(), "dispatch.stt.transcribed");
+                transcript
+            }
+            Err(e) => {
+                warn!(session_id, audio_path = path, error = %e, "dispatch.stt.unavailable — skipping audio message");
+                return;
+            }
+        }
+    } else {
+        // Plain text — content_raw is guaranteed Some here (checked before spawn).
+        content_raw.unwrap_or_default()
     };
 
     // ---- Guard check --------------------------------------------------------
