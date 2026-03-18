@@ -163,6 +163,7 @@ impl ChannelRegistry {
         self.channels.len()
     }
 
+    #[allow(dead_code)]
     pub fn is_empty(&self) -> bool {
         self.channels.is_empty()
     }

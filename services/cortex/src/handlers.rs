@@ -24,18 +24,41 @@ const ACTION_SEARCH_LIMIT: usize = 8;
 
 /// Tools always included regardless of search results.
 /// - memory.search: LTM recall happens on every generation turn.
-/// - research.status: supervisor always needs the current research task graph so it
-///   can pick the next runnable task without an extra discover round-trip.
-/// - cortex.step: supervisor uses this to dispatch tasks to named worker agents
-///   (e.g. search-agent, analysis-agent). Always pinned so the supervisor never has
-///   to discover it — dispatching a worker is a first-class action at every step.
+/// - cortex.step: supervisor uses this to dispatch tasks to named worker agents.
+/// - browser.open/navigate/snapshot: primary interaction tools for web tasks.
+///
+/// NOTE: research.status is NOT pinned here — it is only added when the input
+/// matches RESEARCH_KEYWORDS or when active research already exists (see
+/// search_tools_for_step). This prevents the LLM from launching research DAGs
+/// for ordinary conversational turns.
 const ALWAYS_INCLUDE: &[&str] = &[
     "memory.search",
-    "research.status",
     "cortex.step",
     "browser.open",
     "browser.navigate",
     "browser.snapshot",
+];
+
+/// Keywords that indicate the user explicitly wants research/investigation work.
+/// When matched, research.status and research.start are added to the tool context.
+const RESEARCH_KEYWORDS: &[&str] = &[
+    // Core research intent
+    "research", "investigate", "investigation",
+    // Analysis terms
+    "analyse", "analyze", "analysis", "analytical",
+    // Study / review
+    "study", "review", "audit", "examine", "assessment",
+    // Exploration
+    "survey", "explore", "exploration", "find out", "look into",
+    "deep dive", "deep-dive", "dig into", "dive into",
+    // Reports and synthesis
+    "report", "summarise", "summarize", "synthesis", "synthesize", "synthesise",
+    "compile", "compare", "comparison",
+    // Scientific / academic
+    "hypothesis", "evaluate", "evaluation", "benchmark",
+    // Common phrasings
+    "what do we know about", "tell me about", "gather information",
+    "collect data", "track", "monitor", "follow up",
 ];
 
 #[derive(Clone, Debug)]
@@ -155,29 +178,29 @@ pub fn handle_step(params: Value, ctx: Arc<AppContext>) -> Result<String> {
     let _enter = span.enter();
 
     let started = Instant::now();
+
+    // Close any browser sessions left open from the previous step.
+    // Fire-and-forget — never fails the current step.
+    if turn_kind != "tool_call" {
+        let close_router = Arc::clone(&router);
+        tokio::task::block_in_place(|| {
+            tokio::runtime::Handle::current().block_on(async {
+                let _ = close_router.call("browser.close_all", &json!({})).await;
+            })
+        });
+    }
+
     let cfg_file = CortexConfig::load()?;
     let resolved = cfg_file
         .cfg
         .resolve_step_config(cfg_file.path.clone(), requested_agent);
-    // Phase 5: Action Search — select top-k tools relevant to the user's input
-    // rather than exposing every tool on every step.  On tool-call turns the
-    // model is already mid-ReAct; don't re-inject the candidate list.
-    let default_tools = if turn_kind != "tool_call" {
-        search_tools_for_step(&catalog, &user_input)
-    } else {
-        vec![]
-    };
-    let action_context = if turn_kind == "tool_call" {
-        None
-    } else {
-        render_default_tool_context(&default_tools)
-    };
     let mut structured_system_prompt = crate::prompt::render_step_system(&resolved.system_prompt)
         .map_err(|e| anyhow!("system prompt render failed: {e}"))?;
 
     // Phase 6: Proactively inject active research context into the system prompt on
     // generation turns so the supervisor always knows what tasks are runnable without
     // needing an extra `research.status` tool call first.
+    // Must be fetched before Phase 5 tool selection so research tools are gated correctly.
     let research_context_block = if turn_kind != "tool_call" {
         fetch_research_context(&router, &user_key)
     } else {
@@ -187,6 +210,23 @@ pub fn handle_step(params: Value, ctx: Arc<AppContext>) -> Result<String> {
         structured_system_prompt.push_str("\n\n");
         structured_system_prompt.push_str(rc);
     }
+
+    // Phase 5: Action Search — select top-k tools relevant to the user's input
+    // rather than exposing every tool on every step.  On tool-call turns the
+    // model is already mid-ReAct; don't re-inject the candidate list.
+    // Research tools are only pinned when the input mentions research keywords
+    // OR active research already exists — prevents the LLM from launching
+    // research DAGs on ordinary conversational turns.
+    let default_tools = if turn_kind != "tool_call" {
+        search_tools_for_step(&catalog, &user_input, research_context_block.is_some())
+    } else {
+        vec![]
+    };
+    let action_context = if turn_kind == "tool_call" {
+        None
+    } else {
+        render_default_tool_context(&default_tools)
+    };
 
     // Query classifier: select fast vs strong provider based on turn content.
     // When fast_provider is absent this is a no-op — all turns use the main provider.
@@ -350,8 +390,14 @@ pub fn handle_step(params: Value, ctx: Arc<AppContext>) -> Result<String> {
 /// Algorithm (all keyword-based, no embedding needed for Phase 5):
 ///   1. Run scored search over the ActionCatalog using user_input as query.
 ///   2. Pin any ALWAYS_INCLUDE tools that didn't make the top-k naturally.
-///   3. Append cortex.discover so the agent can fetch more tools mid-task.
-fn search_tools_for_step(catalog: &ActionCatalog, user_input: &str) -> Vec<SearchResult> {
+///   3. Conditionally pin research tools when input matches RESEARCH_KEYWORDS
+///      or when active research already exists (`has_active_research`).
+///   4. Append cortex.discover so the agent can fetch more tools mid-task.
+fn search_tools_for_step(
+    catalog: &ActionCatalog,
+    user_input: &str,
+    has_active_research: bool,
+) -> Vec<SearchResult> {
     let mut results = search_catalog(
         catalog,
         SearchQuery {
@@ -368,22 +414,19 @@ fn search_tools_for_step(catalog: &ActionCatalog, user_input: &str) -> Vec<Searc
     for pinned_name in ALWAYS_INCLUDE {
         if !results.iter().any(|r| r.name == *pinned_name) {
             if let Some(entry) = catalog.entries().iter().find(|e| e.name == *pinned_name) {
-                results.push(SearchResult {
-                    kind: entry.kind.as_str().to_string(),
-                    owner: entry.owner.clone(),
-                    runtime: entry.runtime.clone(),
-                    manifest_path: entry.manifest_path.display().to_string(),
-                    name: entry.name.clone(),
-                    summary: entry.summary.clone(),
-                    required: entry.required.clone(),
-                    param_names: entry.param_names.clone(),
-                    allowed_tools: entry.allowed_tools.clone(),
-                    steps: entry.steps.clone(),
-                    constraints: entry.constraints.clone(),
-                    completion_criteria: entry.completion_criteria.clone(),
-                    guidance: entry.guidance.clone(),
-                    params: Some(entry.params.clone()),
-                });
+                results.push(catalog_entry_to_result(entry));
+            }
+        }
+    }
+
+    // Conditionally pin research tools only when explicitly requested or active.
+    // This prevents ordinary conversational turns from triggering the research DAG.
+    if has_active_research || input_wants_research(user_input) {
+        for research_tool in &["research.status", "research.start"] {
+            if !results.iter().any(|r| r.name == *research_tool) {
+                if let Some(entry) = catalog.entries().iter().find(|e| e.name == *research_tool) {
+                    results.push(catalog_entry_to_result(entry));
+                }
             }
         }
     }
@@ -393,6 +436,32 @@ fn search_tools_for_step(catalog: &ActionCatalog, user_input: &str) -> Vec<Searc
     results.push(discover_tool_result());
 
     results
+}
+
+/// Returns true when the user input contains a research-intent keyword.
+fn input_wants_research(user_input: &str) -> bool {
+    let lower = user_input.to_lowercase();
+    RESEARCH_KEYWORDS.iter().any(|kw| lower.contains(kw))
+}
+
+/// Convert a catalog entry into a SearchResult for pinning into the tool context.
+fn catalog_entry_to_result(entry: &crate::action::catalog::ActionEntry) -> SearchResult {
+    SearchResult {
+        kind: entry.kind.as_str().to_string(),
+        owner: entry.owner.clone(),
+        runtime: entry.runtime.clone(),
+        manifest_path: entry.manifest_path.display().to_string(),
+        name: entry.name.clone(),
+        summary: entry.summary.clone(),
+        required: entry.required.clone(),
+        param_names: entry.param_names.clone(),
+        allowed_tools: entry.allowed_tools.clone(),
+        steps: entry.steps.clone(),
+        constraints: entry.constraints.clone(),
+        completion_criteria: entry.completion_criteria.clone(),
+        guidance: entry.guidance.clone(),
+        params: Some(entry.params.clone()),
+    }
 }
 
 fn render_default_tool_context(results: &[SearchResult]) -> Option<String> {

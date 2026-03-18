@@ -24,6 +24,7 @@ impl ChannelAddress {
     }
 
     /// The service instance or workspace identifier (e.g., "work_workspace" or guild_id).
+    #[allow(dead_code)]
     pub fn instance(&self) -> Option<&str> {
         self.url.host_str()
     }

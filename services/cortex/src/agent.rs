@@ -261,7 +261,7 @@ impl CortexAgent {
 }
 
 /// Maximum number of LLM→tool→LLM turns per `cortex.step` request.
-const MAX_REACT_ITERATIONS: usize = 10;
+const MAX_REACT_ITERATIONS: usize = 100;
 
 // ── AgentDeriveT ─────────────────────────────────────────────────────────────
 
