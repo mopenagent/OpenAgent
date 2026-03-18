@@ -8,7 +8,7 @@ use axum::extract::{Path, State};
 use axum::http::StatusCode;
 use axum::response::IntoResponse;
 use axum::Json;
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use serde_json::{json, Value};
 use std::time::Instant;
 use tracing::{error, info};
@@ -119,16 +119,6 @@ pub struct StepRequest {
     pub agent_name: Option<String>,
     /// "generation" (default) or "tool_call".
     pub turn_kind: Option<String>,
-}
-
-#[derive(Debug, Serialize)]
-pub struct StepResponse {
-    pub session_id: String,
-    pub agent_name: String,
-    pub response_text: String,
-    pub provider_kind: String,
-    pub model: String,
-    pub react_summary: Value,
 }
 
 pub async fn step(

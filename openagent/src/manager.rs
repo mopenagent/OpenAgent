@@ -249,6 +249,12 @@ async fn run_service_loop(
             .stdin(std::process::Stdio::null())
             .stdout(std::process::Stdio::null())
             .stderr(std::process::Stdio::null())
+            // Put each child in its own process group so terminal Ctrl-C (SIGINT
+            // to the foreground group) only hits openagent.  openagent then calls
+            // stop_all() which aborts the task and kill_on_drop delivers SIGKILL.
+            // Without this, children receive SIGINT at the same instant as the
+            // parent, causing a restart race before stop_all() can run.
+            .process_group(0)
             .env("OPENAGENT_SOCKET_PATH", &socket_str)
             .env("OPENAGENT_LOGS_DIR", project_root.join("logs").to_string_lossy().as_ref())
             .envs(env_extras)

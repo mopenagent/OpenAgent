@@ -37,7 +37,6 @@ impl Default for HealthConfig {
 #[derive(Debug, Clone, Deserialize)]
 pub struct ServiceManifest {
     pub name: String,
-    pub description: Option<String>,
     pub version: Option<String>,
     pub binary: BinaryMap,
     pub socket: String,
@@ -133,7 +132,6 @@ mod tests {
     fn binary_path_resolves_relative_to_root() {
         let manifest = ServiceManifest {
             name: "guard".into(),
-            description: None,
             version: None,
             binary: HashMap::from([("darwin/arm64".to_string(), "bin/guard-darwin-arm64".to_string())]),
             socket: "data/sockets/guard.sock".to_string(),
@@ -152,7 +150,6 @@ mod tests {
     fn binary_path_returns_none_for_missing_platform() {
         let manifest = ServiceManifest {
             name: "guard".into(),
-            description: None,
             version: None,
             binary: HashMap::new(),
             socket: "data/sockets/guard.sock".to_string(),
@@ -168,7 +165,6 @@ mod tests {
     fn socket_path_resolves_relative_to_root() {
         let manifest = ServiceManifest {
             name: "guard".into(),
-            description: None,
             version: None,
             binary: HashMap::new(),
             socket: "data/sockets/guard.sock".to_string(),

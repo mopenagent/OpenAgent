@@ -53,8 +53,6 @@ pub struct ProviderConfig {
     pub model: String,
     #[serde(default = "default_timeout")]
     pub timeout: f64,
-    #[serde(default = "default_max_tokens")]
-    pub max_tokens: u32,
     #[serde(default)]
     pub debug_llm: bool,
 }
@@ -65,9 +63,6 @@ fn default_provider_kind() -> String {
 fn default_timeout() -> f64 {
     120.0
 }
-fn default_max_tokens() -> u32 {
-    2048
-}
 
 impl Default for ProviderConfig {
     fn default() -> Self {
@@ -77,7 +72,6 @@ impl Default for ProviderConfig {
             api_key: String::new(),
             model: String::new(),
             timeout: default_timeout(),
-            max_tokens: default_max_tokens(),
             debug_llm: false,
         }
     }
@@ -133,62 +127,6 @@ impl ProviderConfig {
 }
 
 // ---------------------------------------------------------------------------
-// Agents
-// ---------------------------------------------------------------------------
-
-#[derive(Debug, Clone, Deserialize)]
-pub struct AgentConfig {
-    pub name: String,
-    #[serde(default)]
-    pub system_prompt: String,
-    #[serde(default = "default_max_iterations")]
-    pub max_iterations: u32,
-    #[serde(default = "default_max_tool_output")]
-    pub max_tool_output: u32,
-}
-
-fn default_max_iterations() -> u32 {
-    40
-}
-fn default_max_tool_output() -> u32 {
-    500
-}
-
-// ---------------------------------------------------------------------------
-// Session
-// ---------------------------------------------------------------------------
-
-#[derive(Debug, Clone, Deserialize)]
-pub struct SessionConfig {
-    #[serde(default = "default_summarise_after")]
-    pub summarise_after: u32,
-    #[serde(default = "default_backend")]
-    pub backend: String,
-    #[serde(default = "default_db_path")]
-    pub db_path: String,
-}
-
-fn default_summarise_after() -> u32 {
-    40
-}
-fn default_backend() -> String {
-    "sqlite".to_string()
-}
-fn default_db_path() -> String {
-    "data/openagent.db".to_string()
-}
-
-impl Default for SessionConfig {
-    fn default() -> Self {
-        Self {
-            summarise_after: default_summarise_after(),
-            backend: default_backend(),
-            db_path: default_db_path(),
-        }
-    }
-}
-
-// ---------------------------------------------------------------------------
 // Platforms
 // ---------------------------------------------------------------------------
 
@@ -228,12 +166,6 @@ pub struct WhatsAppPlatformConfig {
     pub enabled: bool,
     #[serde(default)]
     pub phone_number: String,
-    #[serde(default = "default_data_dir")]
-    pub data_dir: String,
-}
-
-fn default_data_dir() -> String {
-    "data".to_string()
 }
 
 #[derive(Debug, Clone, Deserialize, Default)]
@@ -351,44 +283,6 @@ impl GuardConfig {
 }
 
 // ---------------------------------------------------------------------------
-// Browser
-// ---------------------------------------------------------------------------
-
-#[derive(Debug, Clone, Deserialize, Default)]
-pub struct BrowserIdentityConfig {
-    #[serde(default)]
-    pub user_agent: String,
-    #[serde(default = "default_color_scheme")]
-    pub color_scheme: String,
-    #[serde(default)]
-    pub headed: bool,
-    #[serde(default = "default_viewport_width")]
-    pub viewport_width: u32,
-    #[serde(default = "default_viewport_height")]
-    pub viewport_height: u32,
-    #[serde(default)]
-    pub extra_headers: HashMap<String, String>,
-    #[serde(default)]
-    pub launch_args: Vec<String>,
-}
-
-fn default_color_scheme() -> String {
-    "light".to_string()
-}
-fn default_viewport_width() -> u32 {
-    1440
-}
-fn default_viewport_height() -> u32 {
-    900
-}
-
-#[derive(Debug, Clone, Deserialize, Default)]
-pub struct BrowserConfig {
-    #[serde(default)]
-    pub identity: BrowserIdentityConfig,
-}
-
-// ---------------------------------------------------------------------------
 // Middleware
 // ---------------------------------------------------------------------------
 
@@ -496,15 +390,9 @@ pub struct OpenAgentConfig {
     #[serde(default)]
     pub provider: ProviderConfig,
     #[serde(default)]
-    pub agents: Vec<AgentConfig>,
-    #[serde(default)]
-    pub session: SessionConfig,
-    #[serde(default)]
     pub platforms: PlatformsConfig,
     #[serde(default)]
     pub guard: GuardConfig,
-    #[serde(default)]
-    pub browser: BrowserConfig,
     #[serde(default)]
     pub middleware: MiddlewareConfig,
     #[serde(default)]
@@ -543,7 +431,6 @@ mod tests {
         assert!((cfg.middleware.tts.speed - 1.0).abs() < f64::EPSILON);
         assert_eq!(cfg.middleware.tts.language, "en-us");
         assert_eq!(cfg.provider.kind, "openai_compat");
-        assert_eq!(cfg.session.summarise_after, 40);
         assert!(cfg.guard.enabled);
     }
 
@@ -577,20 +464,6 @@ mod tests {
         let cfg: OpenAgentConfig = toml::from_str(raw).expect("should parse");
         assert_eq!(cfg.provider.kind, "anthropic");
         assert_eq!(cfg.provider.model, "claude-sonnet-4-6");
-    }
-
-    #[test]
-    fn parses_agents() {
-        let raw = r#"
-            [[agents]]
-            name = "AgentM"
-            system_prompt = "Be helpful."
-            max_iterations = 20
-        "#;
-        let cfg: OpenAgentConfig = toml::from_str(raw).expect("should parse");
-        assert_eq!(cfg.agents.len(), 1);
-        assert_eq!(cfg.agents[0].name, "AgentM");
-        assert_eq!(cfg.agents[0].max_iterations, 20);
     }
 
     #[test]

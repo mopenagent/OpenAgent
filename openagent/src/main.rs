@@ -77,7 +77,6 @@ async fn main() -> Result<()> {
         guard_enabled     = cfg.guard.enabled,
         stt_enabled       = cfg.middleware.stt.enabled,
         tts_enabled       = cfg.middleware.tts.enabled,
-        agent_count       = cfg.agents.len(),
         services_disabled = ?cfg.services.disabled,
         "openagent.config.loaded"
     );
