@@ -22,16 +22,23 @@ use tracing::{error, info, warn};
 /// Keep this tight — every extra tool adds ~80 tokens to the context window.
 const ACTION_SEARCH_LIMIT: usize = 8;
 
-/// The single catalog-based Capability pinned on every generation turn.
-/// memory.search provides LTM recall and is the only Capability sourced from
-/// the ActionCatalog. cortex.discover and skill.read are injected via their own
-/// hardcoded result builders (discover_tool_result / skill_read_tool_result).
+/// Catalog-based tool Capabilities pinned on every generation turn (full schema).
+/// memory.search is the only tool-kind Capability sourced from the ActionCatalog.
+/// cortex.discover and skill.read are injected via hardcoded result builders.
 ///
 /// NOTE: research.status is NOT pinned here — it is only added when the input
 /// matches RESEARCH_KEYWORDS or when active research already exists (see
 /// search_tools_for_step). This prevents the LLM from launching research DAGs
 /// on ordinary conversational turns.
 const CAPABILITIES: &[&str] = &["memory.search"];
+
+/// Skill-kind entries that are always pinned in the context (summary + hint only,
+/// never full schema). These act as lightweight always-visible capabilities —
+/// the LLM calls skill.read(name=...) to load their full body on demand.
+///
+/// Add a skill name here when it should be permanently visible every turn,
+/// not just when it scores into the keyword top-k.
+const PINNED_SKILLS: &[&str] = &["agent-browser"];
 
 /// Keywords that indicate the user explicitly wants research/investigation work.
 /// When matched, research.status and research.start are added to the tool context.
@@ -420,6 +427,16 @@ fn search_tools_for_step(
     // Keep only skill_guidance entries from the top-k search.
     // Tool schemas are never pre-injected — the LLM calls cortex.discover to get them.
     results.retain(|r| r.kind == "skill_guidance");
+
+    // Always pin skill-kind capabilities (summary + hint, no full schema).
+    // These appear every turn regardless of keyword match.
+    for skill_name in PINNED_SKILLS {
+        if !results.iter().any(|r| r.name == *skill_name) {
+            if let Some(entry) = catalog.entries().iter().find(|e| e.name == *skill_name) {
+                results.push(catalog_entry_to_result(entry));
+            }
+        }
+    }
 
     // Pin catalog-based Capabilities (memory.search for LTM recall).
     for cap_name in CAPABILITIES {

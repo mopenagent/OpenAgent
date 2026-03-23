@@ -26,7 +26,7 @@
     "tools": [
         {
             "name": "guard.check",
-            "description": "Check whether a sender is allowed to interact with the agent. Returns allowed=true if whitelisted or on the web platform (web always bypasses). Call this before routing any inbound message to Cortex.",
+            "description": "Check whether a sender is allowed to interact with the agent. Returns allowed=true/false, reason ('allowed'|'blocked'|'unknown'|'platform_bypass'), and contact name. Call before routing any inbound message to Cortex.",
             "params": {
                 "type": "object",
                 "properties": {
@@ -39,15 +39,38 @@
                         "description": "Platform-specific sender/channel identifier."
                     }
                 },
-                "required": [
-                    "platform",
-                    "channel_id"
-                ]
+                "required": ["platform", "channel_id"]
             }
         },
         {
-            "name": "guard.add",
-            "description": "Add a sender to the whitelist, granting them access. Idempotent \u2014 updates note if the entry already exists.",
+            "name": "guard.allow",
+            "description": "Allow a contact to interact with the agent (sets status=allowed). Idempotent — calling again updates name/note. Also accepts 'label' for backward compatibility.",
+            "params": {
+                "type": "object",
+                "properties": {
+                    "platform": {
+                        "type": "string",
+                        "description": "Platform identifier."
+                    },
+                    "channel_id": {
+                        "type": "string",
+                        "description": "Platform-specific sender/channel identifier."
+                    },
+                    "name": {
+                        "type": "string",
+                        "description": "Optional human-readable name for this contact."
+                    },
+                    "note": {
+                        "type": "string",
+                        "description": "Optional admin note."
+                    }
+                },
+                "required": ["platform", "channel_id"]
+            }
+        },
+        {
+            "name": "guard.block",
+            "description": "Block a contact (sets status=blocked). Future messages from this contact will be rejected with reason=blocked.",
             "params": {
                 "type": "object",
                 "properties": {
@@ -61,18 +84,37 @@
                     },
                     "note": {
                         "type": "string",
-                        "description": "Optional label (e.g. a name or reason)."
+                        "description": "Optional reason for blocking."
                     }
                 },
-                "required": [
-                    "platform",
-                    "channel_id"
-                ]
+                "required": ["platform", "channel_id"]
+            }
+        },
+        {
+            "name": "guard.name",
+            "description": "Set or update the human-readable name for an existing contact. Returns ok=false if the contact is not yet in the guard table.",
+            "params": {
+                "type": "object",
+                "properties": {
+                    "platform": {
+                        "type": "string",
+                        "description": "Platform identifier."
+                    },
+                    "channel_id": {
+                        "type": "string",
+                        "description": "Platform-specific sender/channel identifier."
+                    },
+                    "name": {
+                        "type": "string",
+                        "description": "Human-readable display name."
+                    }
+                },
+                "required": ["platform", "channel_id", "name"]
             }
         },
         {
             "name": "guard.remove",
-            "description": "Remove a sender from the whitelist, revoking access. Returns ok=false if the entry did not exist.",
+            "description": "Remove a contact from the guard table entirely. Returns ok=false if the entry did not exist.",
             "params": {
                 "type": "object",
                 "properties": {
@@ -85,15 +127,12 @@
                         "description": "Platform-specific sender/channel identifier."
                     }
                 },
-                "required": [
-                    "platform",
-                    "channel_id"
-                ]
+                "required": ["platform", "channel_id"]
             }
         },
         {
             "name": "guard.list",
-            "description": "List all whitelisted senders, ordered newest first.",
+            "description": "List all contacts in the guard table (allowed, blocked, and unknown), ordered by most recently seen.",
             "params": {
                 "type": "object",
                 "properties": {},
