@@ -166,6 +166,92 @@ async def whatsapp_qr(request: Request):
 
 
 # ---------------------------------------------------------------------------
+# Whitelist API — /api/settings/whitelist  (what the UI calls)
+# Bridges to the guard service: guard.list / guard.allow / guard.remove.
+# ---------------------------------------------------------------------------
+
+@router.get("/api/settings/whitelist")
+async def list_whitelist(request: Request):
+    """Return all allowed contacts (status=allowed) as whitelist entries."""
+    api = _api(request)
+    if not api:
+        return {"entries": [], "count": 0}
+    try:
+        data = await _guard_call(api, "guard.list", {})
+        entries = [
+            {
+                "platform":   e["platform"],
+                "channel_id": e["channel_id"],
+                "label":      e.get("name", ""),
+                "added_by":   e.get("note", ""),
+                "added_at":   e.get("first_seen", ""),
+            }
+            for e in data.get("entries", [])
+            if e.get("status") == "allowed"
+        ]
+        return {"entries": entries, "count": len(entries)}
+    except Exception as e:
+        return JSONResponse({"error": str(e)}, status_code=503)
+
+
+@router.post("/api/settings/whitelist")
+async def add_whitelist(request: Request):
+    """Allow a contact (add to guard table as status=allowed)."""
+    body = await request.json()
+    platform   = body.get("platform", "").strip()
+    channel_id = body.get("channel_id", "").strip()
+    label      = body.get("label", "").strip()
+    added_by   = body.get("added_by", "").strip()
+    if not platform or not channel_id:
+        return JSONResponse({"error": "platform and channel_id required"}, status_code=400)
+    api = _api(request)
+    if not api:
+        return JSONResponse({"error": "api unavailable"}, status_code=503)
+    try:
+        return await _guard_call(api, "guard.allow", {
+            "platform": platform, "channel_id": channel_id,
+            "name": label, "note": added_by,
+        })
+    except Exception as e:
+        return JSONResponse({"error": str(e)}, status_code=503)
+
+
+@router.delete("/api/settings/whitelist/{platform}/{channel_id:path}")
+async def remove_whitelist(request: Request, platform: str, channel_id: str):
+    """Remove a contact from the whitelist."""
+    api = _api(request)
+    if not api:
+        return JSONResponse({"error": "api unavailable"}, status_code=503)
+    try:
+        return await _guard_call(api, "guard.remove", {"platform": platform, "channel_id": channel_id})
+    except Exception as e:
+        return JSONResponse({"error": str(e)}, status_code=503)
+
+
+@router.get("/api/settings/whitelist/seen")
+async def list_seen_senders(request: Request):
+    """Return unknown/blocked senders (contacts seen but not yet whitelisted)."""
+    api = _api(request)
+    if not api:
+        return {"senders": []}
+    try:
+        data = await _guard_call(api, "guard.list", {})
+        senders = [
+            {
+                "platform":     e["platform"],
+                "channel_id":   e["channel_id"],
+                "message_count": e.get("hit_count", 0),
+                "last_seen":    e.get("last_seen", ""),
+            }
+            for e in data.get("entries", [])
+            if e.get("status") in ("unknown", "blocked")
+        ]
+        return {"senders": senders}
+    except Exception as e:
+        return JSONResponse({"error": str(e)}, status_code=503)
+
+
+# ---------------------------------------------------------------------------
 # Guard API — contacts (allowed/blocked/unknown) via Rust guard service
 # ---------------------------------------------------------------------------
 
