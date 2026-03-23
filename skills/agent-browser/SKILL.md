@@ -1,7 +1,9 @@
 ---
 name: agent-browser
 description: Browser automation CLI for AI agents. Use when the user needs to interact with websites — navigate pages, fill forms, click buttons, take screenshots, extract data, handle auth flows, or run parallel sessions.
-tools: browser.open, browser.navigate, browser.snapshot
+hint: Call skill.read(name="agent-browser") for commands, patterns, auth workflows, and ready-to-use scripts.
+enabled: true
+allowed-tools: browser.open, browser.navigate, browser.snapshot, browser.click, browser.fill, browser.screenshot, browser.wait, browser.get
 enforce: false
 version: 0.2.0
 ---

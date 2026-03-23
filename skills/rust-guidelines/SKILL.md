@@ -1,6 +1,7 @@
 ---
 name: rust-guidelines
 description: Rust coding guidelines — pragmatic checklist, 179 rules across 14 categories, architecture patterns, and OpenAgent service conventions. Use when writing, reviewing, or architecting Rust code.
+hint: Call skill.read(name="rust-guidelines") for the full checklist, architecture patterns, compiler-error design questions, and domain-specific patterns.
 version: 2.0.0
 enforce: false
 ---

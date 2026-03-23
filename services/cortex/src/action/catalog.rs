@@ -81,7 +81,13 @@ impl ActionCatalog {
             }
             let raw = fs::read_to_string(&skill_path)
                 .with_context(|| format!("failed to read {}", skill_path.display()))?;
-            entries.push(ActionEntry::from_skill(skill_path, &raw)?);
+            let entry = ActionEntry::from_skill(skill_path, &raw)?;
+            // Only load skills that have explicitly opted in with `enabled: true`.
+            // Skills without the field (or with `enabled: false`) are not loaded into
+            // the catalog — they don't appear in search or in the action context.
+            if entry.enabled {
+                entries.push(entry);
+            }
         }
 
         Ok(Self { entries })
@@ -100,7 +106,7 @@ pub struct ActionEntry {
     pub runtime: String,
     pub manifest_path: PathBuf,
     pub name: String,
-    /// Short description shown in semantic search (description + hint for skills).
+    /// Short description shown in semantic search. For skills: description + hint line.
     pub summary: String,
     pub params: Value,
     pub required: Vec<String>,
@@ -108,6 +114,8 @@ pub struct ActionEntry {
     pub allowed_tools: Vec<String>,
     /// When true, Cortex enforces allowed_tools — rejects calls outside the list.
     pub enforce: bool,
+    /// When false (default), this skill is not loaded into the catalog.
+    pub enabled: bool,
     pub steps: Vec<String>,
     pub constraints: Vec<String>,
     pub completion_criteria: Vec<String>,
@@ -172,6 +180,7 @@ impl ActionEntry {
             param_names,
             allowed_tools: Vec::new(),
             enforce: false,
+            enabled: true,  // tools are always enabled; filtering is per skill only
             steps: Vec::new(),
             constraints: Vec::new(),
             completion_criteria: Vec::new(),
@@ -188,19 +197,28 @@ impl ActionEntry {
             .and_then(|v| v.to_str())
             .unwrap_or("skills")
             .to_string();
-        // summary = description only. Full SKILL.md body is injected automatically
-        // when the skill scores into the top-k action search results (Claude Code alignment).
-        let summary = parsed
+
+        let description = parsed
             .frontmatter
             .description
             .clone()
             .unwrap_or_else(|| "Local skill guidance".to_string());
+
+        // summary = description + hint line (if present).
+        // The hint is rendered in the action context so the LLM knows exactly how
+        // to invoke skill.read for this skill.
+        let summary = match parsed.frontmatter.hint.as_deref() {
+            Some(hint) if !hint.is_empty() => format!("{}\nhint: {}", description, hint),
+            _ => description,
+        };
+
         let name = parsed
             .frontmatter
             .name
             .clone()
             .unwrap_or_else(|| owner.clone());
         let enforce = parsed.frontmatter.enforce;
+        let enabled = parsed.frontmatter.enabled;
         let search_blob = build_search_blob(
             ActionKind::SkillGuidance.as_str(),
             &owner,
@@ -227,6 +245,7 @@ impl ActionEntry {
             param_names: Vec::new(),
             allowed_tools: parsed.allowed_tools,
             enforce,
+            enabled,
             steps: parsed.steps,
             constraints: parsed.constraints,
             completion_criteria: parsed.completion_criteria,
@@ -283,36 +302,40 @@ struct ManifestTool {
     params: Value,
 }
 
-/// Frontmatter parsed from SKILL.md. Schema aligned with Claude Code skill format.
+/// Frontmatter parsed from SKILL.md.
 ///
-/// Model-invoked fields: name, description, version, license, tools, enforce
-/// User-invoked (slash command) fields: argument-hint, model
+/// `enabled` is the gate — only skills with `enabled: true` are loaded into the
+/// ActionCatalog and appear in the LLM's action context.  Default is `false`
+/// (opt-in) so new skills are invisible until explicitly activated.
 ///
-/// `enforce` is an OpenAgent extension — Claude Code has no enforcement gate.
+/// `hint` is appended to `description` in the rendered context block so the LLM
+/// knows exactly which `skill.read(name=...)` call to make for this skill.
+///
+/// `allowed-tools` (preferred) or `tools` both accepted for backward compat.
 #[derive(Debug, Default, Deserialize)]
 struct SkillFrontmatter {
     #[serde(default)]
     name: Option<String>,
     #[serde(default)]
     description: Option<String>,
+    /// One-line call-to-action appended to description in context.
+    /// Example: `hint: Call skill.read(name="agent-browser") for commands and patterns.`
     #[serde(default)]
-    version: Option<String>,
+    hint: Option<String>,
+    /// When true, this skill is loaded into the ActionCatalog. Default false (opt-in).
     #[serde(default)]
-    license: Option<String>,
-    /// Tools this skill uses. Equivalent to Claude Code `tools:` on model-invoked skills
-    /// and `allowed-tools:` on user-invoked skills. Accepts comma string or YAML list.
+    enabled: bool,
+    /// Preferred key for listing the tools this skill uses.
+    #[serde(rename = "allowed-tools", default)]
+    allowed_tools: Option<Value>,
+    /// Legacy alias for `allowed-tools`. Ignored when `allowed-tools` is present.
     #[serde(default)]
     tools: Option<Value>,
-    /// OpenAgent extension: when true, Cortex rejects tool calls outside `tools` list.
-    /// Default false — soft guidance only (same as Claude Code behaviour).
+    /// When true, Cortex rejects tool calls outside `allowed-tools`. Default false.
     #[serde(default)]
     enforce: bool,
-    /// Hint for slash-command arguments shown to the user. Claude Code `argument-hint`.
-    #[serde(rename = "argument-hint", default)]
-    argument_hint: Option<String>,
-    /// Override the LLM model for this skill invocation. Claude Code `model`.
     #[serde(default)]
-    model: Option<String>,
+    version: Option<String>,
 }
 
 #[derive(Debug)]
@@ -337,7 +360,10 @@ fn parse_skill_file(raw: &str) -> Result<ParsedSkill> {
     };
 
     Ok(ParsedSkill {
-        allowed_tools: parse_allowed_tools(frontmatter.tools.as_ref()),
+        // `allowed-tools` takes precedence; `tools` is the legacy alias.
+        allowed_tools: parse_allowed_tools(
+            frontmatter.allowed_tools.as_ref().or(frontmatter.tools.as_ref())
+        ),
         steps: extract_numbered_steps(body),
         constraints: extract_section_bullets(body, &["constraints", "guardrails"]),
         completion_criteria: extract_section_bullets(
@@ -448,6 +474,7 @@ mod tests {
             r#"---
 name: demo-skill
 description: Demo skill
+enabled: true
 allowed-tools:
   - demo.echo
 ---
