@@ -1,52 +1,58 @@
 ---
 name: agent-browser
-description: Browser automation CLI for AI agents. Use when the user needs to interact with websites — navigate pages, fill forms, click buttons, take screenshots, extract data, handle auth flows, or run parallel sessions.
-hint: Call skill.read(name="agent-browser") for commands, patterns, auth workflows, and ready-to-use scripts.
+description: Browser automation for AI agents via the browser service. Use when the user needs to interact with websites — navigate pages, fill forms, click buttons, take screenshots, extract data, handle auth flows, or run parallel sessions.
+hint: Call skill.read(name="agent-browser") for the tool call workflow, patterns, auth, and ready-to-use scripts.
 enabled: true
 allowed-tools: browser.open, browser.navigate, browser.snapshot, browser.click, browser.fill, browser.screenshot, browser.wait, browser.get
 enforce: false
-version: 0.2.0
+version: 0.3.0
 ---
 
-# Browser Automation with agent-browser
+# Browser Automation — agent-browser
+
+## How This Works
+
+The `browser` service wraps the `agent-browser` CLI. You call `browser.*` service tools — the service translates each call into the equivalent `agent-browser` CLI command internally.
+
+**Never run `agent-browser` CLI commands directly.** Use `browser.*` tools instead.
+If you do not have the tool schema, call `cortex.discover(query="browser")` first.
 
 ## Core Workflow
 
 Every browser automation follows this pattern:
 
-1. **Navigate**: `agent-browser open <url>`
-2. **Snapshot**: `agent-browser snapshot -i` (get element refs like `@e1`, `@e2`)
-3. **Interact**: Use refs to click, fill, select
-4. **Re-snapshot**: After navigation or DOM changes, get fresh refs
+1. **Open** — `browser.open` with the target URL
+2. **Snapshot** — `browser.snapshot` to get element refs (`@e1`, `@e2`, ...)
+3. **Interact** — use refs with `browser.click`, `browser.fill`, `browser.select`, etc.
+4. **Re-snapshot** — after any navigation or DOM change, snapshot again before the next interaction
 
-```bash
-agent-browser open https://example.com/form
-agent-browser snapshot -i
-# Output: @e1 [input type="email"], @e2 [input type="password"], @e3 [button] "Submit"
+```
+browser.open    → {"url": "https://example.com/form"}
+browser.snapshot → {"interactive": true}
+  # Returns: @e1 [input type="email"], @e2 [input type="password"], @e3 [button] "Submit"
 
-agent-browser fill @e1 "user@example.com"
-agent-browser fill @e2 "password123"
-agent-browser click @e3
-agent-browser wait --load networkidle
-agent-browser snapshot -i  # Check result
+browser.fill    → {"ref": "@e1", "value": "user@example.com"}
+browser.fill    → {"ref": "@e2", "value": "password123"}
+browser.click   → {"ref": "@e3"}
+browser.wait    → {"load": "networkidle"}
+browser.snapshot → {"interactive": true}   ← always re-snapshot after navigation
 ```
 
-## Command Chaining
+## Service Tool → CLI Mapping
 
-Commands can be chained with `&&` in a single shell invocation. The browser persists between commands via a background daemon, so chaining is safe and more efficient than separate calls.
+The CLI documentation below shows what each `browser.*` tool does internally.
+Use it to understand behaviour, edge cases, and options — but call the service tools.
 
-```bash
-# Chain open + wait + snapshot in one call
-agent-browser open https://example.com && agent-browser wait --load networkidle && agent-browser snapshot -i
-
-# Chain multiple interactions
-agent-browser fill @e1 "user@example.com" && agent-browser fill @e2 "password123" && agent-browser click @e3
-
-# Navigate and capture
-agent-browser open https://example.com && agent-browser wait --load networkidle && agent-browser screenshot page.png
-```
-
-**When to chain:** Use `&&` when you don't need to read the output of an intermediate command before proceeding (e.g., open + wait + screenshot). Run commands separately when you need to parse the output first (e.g., snapshot to discover refs, then interact using those refs).
+| Service Tool | Equivalent CLI |
+|---|---|
+| `browser.open` | `agent-browser open <url>` |
+| `browser.snapshot` | `agent-browser snapshot -i` |
+| `browser.click` | `agent-browser click @eN` |
+| `browser.fill` | `agent-browser fill @eN "text"` |
+| `browser.screenshot` | `agent-browser screenshot` |
+| `browser.wait` | `agent-browser wait --load networkidle` |
+| `browser.get` | `agent-browser get text @eN` |
+| `browser.navigate` | `agent-browser navigate <url>` |
 
 ## Essential Commands
 
