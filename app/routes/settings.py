@@ -21,7 +21,7 @@ templates: Jinja2Templates  # injected by main.py
 
 @router.get("/settings")
 async def settings_page(request: Request):
-    return templates.TemplateResponse("settings.html", {
+    return templates.TemplateResponse(request, "settings.html", {
         "request": request,
         "active": "settings",
     })
