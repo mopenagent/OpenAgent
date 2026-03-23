@@ -141,7 +141,7 @@ async def logs_page(request: Request, file: str | None = Query(None)):
     if selected_file:
         log_entries = await asyncio.to_thread(_read_log_file, root, selected_file)
         
-    return templates.TemplateResponse("logs.html", {
+    return templates.TemplateResponse(request, "logs.html", {
         "request": request,
         "active": "logs",
         "log_files": log_files,

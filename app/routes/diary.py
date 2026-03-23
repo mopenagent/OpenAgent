@@ -31,7 +31,7 @@ async def diary_page(request: Request):
         }
         for s in raw
     ]
-    return templates.TemplateResponse("diary.html", {
+    return templates.TemplateResponse(request, "diary.html", {
         "request": request,
         "active": "diary",
         "sessions": sessions,

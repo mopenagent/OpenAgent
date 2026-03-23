@@ -45,6 +45,7 @@ async def research_page(request: Request):
     db_path = root / "data" / "research.db"
     researches = await _get_researches(db_path)
     return templates.TemplateResponse(
+        request,
         "research.html",
         {
             "request": request,

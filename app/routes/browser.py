@@ -60,7 +60,7 @@ async def _call_tool(request: Request, tool: str, params: dict[str, Any]) -> dic
 
 @router.get("/browser")
 async def browser_page(request: Request):
-    return templates.TemplateResponse("browser.html", {
+    return templates.TemplateResponse(request, "browser.html", {
         "request": request,
         "active": "browser",
     })

@@ -23,7 +23,7 @@ def _diary(request: Request) -> DiaryStore | None:
 
 @router.get("/chat")
 async def chat_page(request: Request):
-    return templates.TemplateResponse("chat.html", {
+    return templates.TemplateResponse(request, "chat.html", {
         "request": request,
         "active": "chat",
     })

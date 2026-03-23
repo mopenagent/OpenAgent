@@ -32,7 +32,7 @@ def _load_config(root: Path) -> tuple[str, str | None]:
 async def config_page(request: Request):
     raw, error = _load_config(request.app.state.root)
     cfg = request.app.state.provider_config
-    return templates.TemplateResponse("config.html", {
+    return templates.TemplateResponse(request, "config.html", {
         "request": request,
         "active": "config",
         "config_raw": raw,

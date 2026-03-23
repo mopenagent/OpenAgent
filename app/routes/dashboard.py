@@ -230,7 +230,7 @@ async def dashboard(request: Request):
         _all_services(request),
     )
 
-    return templates.TemplateResponse("dashboard.html", {
+    return templates.TemplateResponse(request, "dashboard.html", {
         "request": request,
         "active": "dashboard",
         "stats": stats,
@@ -254,7 +254,7 @@ async def stats_partial(request: Request):
         _all_services(request),
     )
 
-    return templates.TemplateResponse("_stats_cards.html", {
+    return templates.TemplateResponse(request, "_stats_cards.html", {
         "request": request,
         "stats": stats,
         "python_packages": packages,

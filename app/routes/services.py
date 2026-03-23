@@ -133,7 +133,7 @@ async def services_page(request: Request):
         go_services = [_merge_state(s) for s in go_services]
         rust_services = [_merge_state(s) for s in rust_services]
 
-    return templates.TemplateResponse("services.html", {
+    return templates.TemplateResponse(request, "services.html", {
         "request": request,
         "active": "services",
         "services": go_services,
