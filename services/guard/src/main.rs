@@ -47,29 +47,37 @@ async fn main() -> Result<()> {
         let conn = Arc::clone(&conn);
         let tel = telemetry.clone();
         server.register_tool("guard.check", move |params: Value| {
-            let _cx = GuardTelemetry::attach_context(
-                &params,
-                vec![opentelemetry::KeyValue::new("tool", "guard.check")],
-            );
+            let conn = Arc::clone(&conn);
+            let tel = tel.clone();
+            // Sync work done before async block — ContextGuard is !Send
+            let span = {
+                let _cx = GuardTelemetry::attach_context(
+                    &params,
+                    vec![opentelemetry::KeyValue::new("tool", "guard.check")],
+                );
+                let platform = params
+                    .get("platform")
+                    .and_then(Value::as_str)
+                    .unwrap_or("unknown");
+                info_span!(
+                    "guard.check",
+                    platform = platform,
+                    status = tracing::field::Empty,
+                    duration_ms = tracing::field::Empty
+                )
+            };
             let platform = params
                 .get("platform")
                 .and_then(Value::as_str)
                 .unwrap_or("unknown")
                 .to_string();
-            let span = info_span!(
-                "guard.check",
-                platform = platform.as_str(),
-                status = tracing::field::Empty,
-                duration_ms = tracing::field::Empty
-            );
-            let _enter = span.enter();
             let started = Instant::now();
-
-            let result = conn
-                .lock()
-                .map_err(|e| anyhow::anyhow!("db lock poisoned: {e}"))
-                .and_then(|c| handlers::handle_check(&c, params));
-
+            let result = {
+                let _enter = span.enter();
+                conn.lock()
+                    .map_err(|e| anyhow::anyhow!("db lock poisoned: {e}"))
+                    .and_then(|c| handlers::handle_check(&c, params))
+            };
             match &result {
                 Ok(payload) => {
                     let v: Value = serde_json::from_str(payload).unwrap_or_default();
@@ -90,8 +98,7 @@ async fn main() -> Result<()> {
                     tel.record(&check_metric(&platform, "error", started));
                 }
             }
-
-            result
+            async move { result }
         });
     }
 
@@ -100,10 +107,28 @@ async fn main() -> Result<()> {
         let conn = Arc::clone(&conn);
         let tel = telemetry.clone();
         server.register_tool("guard.allow", move |params: Value| {
-            let _cx = GuardTelemetry::attach_context(
-                &params,
-                vec![opentelemetry::KeyValue::new("tool", "guard.allow")],
-            );
+            let conn = Arc::clone(&conn);
+            let tel = tel.clone();
+            let span = {
+                let _cx = GuardTelemetry::attach_context(
+                    &params,
+                    vec![opentelemetry::KeyValue::new("tool", "guard.allow")],
+                );
+                let platform = params
+                    .get("platform")
+                    .and_then(Value::as_str)
+                    .unwrap_or("unknown");
+                let channel_id = params
+                    .get("channel_id")
+                    .and_then(Value::as_str)
+                    .unwrap_or("");
+                info_span!(
+                    "guard.allow",
+                    platform = platform,
+                    channel_id = channel_id,
+                    status = tracing::field::Empty
+                )
+            };
             let platform = params
                 .get("platform")
                 .and_then(Value::as_str)
@@ -114,20 +139,13 @@ async fn main() -> Result<()> {
                 .and_then(Value::as_str)
                 .unwrap_or("")
                 .to_string();
-            let span = info_span!(
-                "guard.allow",
-                platform = platform.as_str(),
-                channel_id = channel_id.as_str(),
-                status = tracing::field::Empty
-            );
-            let _enter = span.enter();
             let started = Instant::now();
-
-            let result = conn
-                .lock()
-                .map_err(|e| anyhow::anyhow!("db lock poisoned: {e}"))
-                .and_then(|c| handlers::handle_allow(&c, params));
-
+            let result = {
+                let _enter = span.enter();
+                conn.lock()
+                    .map_err(|e| anyhow::anyhow!("db lock poisoned: {e}"))
+                    .and_then(|c| handlers::handle_allow(&c, params))
+            };
             match &result {
                 Ok(_) => {
                     span.record("status", "ok");
@@ -140,8 +158,7 @@ async fn main() -> Result<()> {
                     tel.record(&write_metric("guard.allow", &platform, "error", started));
                 }
             }
-
-            result
+            async move { result }
         });
     }
 
@@ -150,10 +167,28 @@ async fn main() -> Result<()> {
         let conn = Arc::clone(&conn);
         let tel = telemetry.clone();
         server.register_tool("guard.block", move |params: Value| {
-            let _cx = GuardTelemetry::attach_context(
-                &params,
-                vec![opentelemetry::KeyValue::new("tool", "guard.block")],
-            );
+            let conn = Arc::clone(&conn);
+            let tel = tel.clone();
+            let span = {
+                let _cx = GuardTelemetry::attach_context(
+                    &params,
+                    vec![opentelemetry::KeyValue::new("tool", "guard.block")],
+                );
+                let platform = params
+                    .get("platform")
+                    .and_then(Value::as_str)
+                    .unwrap_or("unknown");
+                let channel_id = params
+                    .get("channel_id")
+                    .and_then(Value::as_str)
+                    .unwrap_or("");
+                info_span!(
+                    "guard.block",
+                    platform = platform,
+                    channel_id = channel_id,
+                    status = tracing::field::Empty
+                )
+            };
             let platform = params
                 .get("platform")
                 .and_then(Value::as_str)
@@ -164,20 +199,13 @@ async fn main() -> Result<()> {
                 .and_then(Value::as_str)
                 .unwrap_or("")
                 .to_string();
-            let span = info_span!(
-                "guard.block",
-                platform = platform.as_str(),
-                channel_id = channel_id.as_str(),
-                status = tracing::field::Empty
-            );
-            let _enter = span.enter();
             let started = Instant::now();
-
-            let result = conn
-                .lock()
-                .map_err(|e| anyhow::anyhow!("db lock poisoned: {e}"))
-                .and_then(|c| handlers::handle_block(&c, params));
-
+            let result = {
+                let _enter = span.enter();
+                conn.lock()
+                    .map_err(|e| anyhow::anyhow!("db lock poisoned: {e}"))
+                    .and_then(|c| handlers::handle_block(&c, params))
+            };
             match &result {
                 Ok(_) => {
                     span.record("status", "ok");
@@ -190,8 +218,7 @@ async fn main() -> Result<()> {
                     tel.record(&write_metric("guard.block", &platform, "error", started));
                 }
             }
-
-            result
+            async move { result }
         });
     }
 
@@ -200,10 +227,28 @@ async fn main() -> Result<()> {
         let conn = Arc::clone(&conn);
         let tel = telemetry.clone();
         server.register_tool("guard.name", move |params: Value| {
-            let _cx = GuardTelemetry::attach_context(
-                &params,
-                vec![opentelemetry::KeyValue::new("tool", "guard.name")],
-            );
+            let conn = Arc::clone(&conn);
+            let tel = tel.clone();
+            let span = {
+                let _cx = GuardTelemetry::attach_context(
+                    &params,
+                    vec![opentelemetry::KeyValue::new("tool", "guard.name")],
+                );
+                let platform = params
+                    .get("platform")
+                    .and_then(Value::as_str)
+                    .unwrap_or("unknown");
+                let channel_id = params
+                    .get("channel_id")
+                    .and_then(Value::as_str)
+                    .unwrap_or("");
+                info_span!(
+                    "guard.name",
+                    platform = platform,
+                    channel_id = channel_id,
+                    status = tracing::field::Empty
+                )
+            };
             let platform = params
                 .get("platform")
                 .and_then(Value::as_str)
@@ -214,20 +259,13 @@ async fn main() -> Result<()> {
                 .and_then(Value::as_str)
                 .unwrap_or("")
                 .to_string();
-            let span = info_span!(
-                "guard.name",
-                platform = platform.as_str(),
-                channel_id = channel_id.as_str(),
-                status = tracing::field::Empty
-            );
-            let _enter = span.enter();
             let started = Instant::now();
-
-            let result = conn
-                .lock()
-                .map_err(|e| anyhow::anyhow!("db lock poisoned: {e}"))
-                .and_then(|c| handlers::handle_name(&c, params));
-
+            let result = {
+                let _enter = span.enter();
+                conn.lock()
+                    .map_err(|e| anyhow::anyhow!("db lock poisoned: {e}"))
+                    .and_then(|c| handlers::handle_name(&c, params))
+            };
             match &result {
                 Ok(payload) => {
                     let v: Value = serde_json::from_str(payload).unwrap_or_default();
@@ -243,8 +281,7 @@ async fn main() -> Result<()> {
                     tel.record(&write_metric("guard.name", &platform, "error", started));
                 }
             }
-
-            result
+            async move { result }
         });
     }
 
@@ -253,10 +290,28 @@ async fn main() -> Result<()> {
         let conn = Arc::clone(&conn);
         let tel = telemetry.clone();
         server.register_tool("guard.remove", move |params: Value| {
-            let _cx = GuardTelemetry::attach_context(
-                &params,
-                vec![opentelemetry::KeyValue::new("tool", "guard.remove")],
-            );
+            let conn = Arc::clone(&conn);
+            let tel = tel.clone();
+            let span = {
+                let _cx = GuardTelemetry::attach_context(
+                    &params,
+                    vec![opentelemetry::KeyValue::new("tool", "guard.remove")],
+                );
+                let platform = params
+                    .get("platform")
+                    .and_then(Value::as_str)
+                    .unwrap_or("unknown");
+                let channel_id = params
+                    .get("channel_id")
+                    .and_then(Value::as_str)
+                    .unwrap_or("");
+                info_span!(
+                    "guard.remove",
+                    platform = platform,
+                    channel_id = channel_id,
+                    status = tracing::field::Empty
+                )
+            };
             let platform = params
                 .get("platform")
                 .and_then(Value::as_str)
@@ -267,20 +322,13 @@ async fn main() -> Result<()> {
                 .and_then(Value::as_str)
                 .unwrap_or("")
                 .to_string();
-            let span = info_span!(
-                "guard.remove",
-                platform = platform.as_str(),
-                channel_id = channel_id.as_str(),
-                status = tracing::field::Empty
-            );
-            let _enter = span.enter();
             let started = Instant::now();
-
-            let result = conn
-                .lock()
-                .map_err(|e| anyhow::anyhow!("db lock poisoned: {e}"))
-                .and_then(|c| handlers::handle_remove(&c, params));
-
+            let result = {
+                let _enter = span.enter();
+                conn.lock()
+                    .map_err(|e| anyhow::anyhow!("db lock poisoned: {e}"))
+                    .and_then(|c| handlers::handle_remove(&c, params))
+            };
             let status = match &result {
                 Ok(payload) => {
                     let v: Value = serde_json::from_str(payload).unwrap_or_default();
@@ -297,8 +345,7 @@ async fn main() -> Result<()> {
                 }
             };
             tel.record(&write_metric("guard.remove", &platform, status, started));
-
-            result
+            async move { result }
         });
     }
 
@@ -307,19 +354,22 @@ async fn main() -> Result<()> {
         let conn = Arc::clone(&conn);
         let tel = telemetry.clone();
         server.register_tool("guard.list", move |params: Value| {
-            let _cx = GuardTelemetry::attach_context(
-                &params,
-                vec![opentelemetry::KeyValue::new("tool", "guard.list")],
-            );
-            let span = info_span!("guard.list", count = tracing::field::Empty);
-            let _enter = span.enter();
+            let conn = Arc::clone(&conn);
+            let tel = tel.clone();
+            let span = {
+                let _cx = GuardTelemetry::attach_context(
+                    &params,
+                    vec![opentelemetry::KeyValue::new("tool", "guard.list")],
+                );
+                info_span!("guard.list", count = tracing::field::Empty)
+            };
             let started = Instant::now();
-
-            let result = conn
-                .lock()
-                .map_err(|e| anyhow::anyhow!("db lock poisoned: {e}"))
-                .and_then(|c| handlers::handle_list(&c));
-
+            let result = {
+                let _enter = span.enter();
+                conn.lock()
+                    .map_err(|e| anyhow::anyhow!("db lock poisoned: {e}"))
+                    .and_then(|c| handlers::handle_list(&c))
+            };
             match &result {
                 Ok(payload) => {
                     let v: Value = serde_json::from_str(payload).unwrap_or_default();
@@ -333,8 +383,7 @@ async fn main() -> Result<()> {
                     tel.record(&write_metric("guard.list", "all", "error", started));
                 }
             }
-
-            result
+            async move { result }
         });
     }
 

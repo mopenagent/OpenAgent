@@ -96,17 +96,20 @@ pub fn make_tools() -> Vec<ToolDefinition> {
 }
 
 pub fn register_handlers(server: &mut McpLiteServer, ctx: Arc<AppContext>) {
-    server.register_tool("cortex.describe_boundary", |_params| {
+    server.register_tool("cortex.describe_boundary", |_params| async move {
         Ok(handle_describe_boundary())
     });
 
     let step_ctx = Arc::clone(&ctx);
     server.register_tool("cortex.step", move |params| {
-        handle_step(params, Arc::clone(&step_ctx))
+        let ctx = Arc::clone(&step_ctx);
+        async move { handle_step(params, ctx) }
     });
+
     let skill_ctx = Arc::clone(&ctx);
     server.register_tool("skill.read", move |params| {
-        Ok(handle_skill_read(&params, skill_ctx.project_root()))
+        let root = skill_ctx.project_root().to_path_buf();
+        async move { Ok(handle_skill_read(&params, &root)) }
     });
     // cortex.discover and cortex.search_tools handler registration temporarily disabled
 }

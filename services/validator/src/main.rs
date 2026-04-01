@@ -31,28 +31,34 @@ async fn main() -> Result<()> {
     let telemetry = ValidatorTelemetry::new(&logs_dir)?;
     let mut server = McpLiteServer::new(tools::make_tools(), "ready");
 
+    let tel = telemetry.clone();
     server.register_tool("validator.repair_json", move |params: Value| {
-        let _cx_guard = ValidatorTelemetry::attach_context(
-            &params,
-            vec![opentelemetry::KeyValue::new("tool", "validator.repair_json")],
-        );
+        let tel = tel.clone();
+        async move {
         let mode = params
             .get("mode")
             .and_then(Value::as_str)
             .unwrap_or("auto")
             .to_string();
         let input_len = params.get("text").and_then(Value::as_str).map_or(0, str::len);
-        let span = info_span!(
-            "validator.repair_json",
-            backend = "llm_json",
-            mode = mode.as_str(),
-            input_len = input_len,
-            status = tracing::field::Empty,
-            was_repaired = tracing::field::Empty,
-            changed = tracing::field::Empty,
-            output_len = tracing::field::Empty,
-            duration_ms = tracing::field::Empty
-        );
+        // ContextGuard is !Send — create span inside its scope then drop before any await.
+        let span = {
+            let _cx_guard = ValidatorTelemetry::attach_context(
+                &params,
+                vec![opentelemetry::KeyValue::new("tool", "validator.repair_json")],
+            );
+            info_span!(
+                "validator.repair_json",
+                backend = "llm_json",
+                mode = mode.as_str(),
+                input_len = input_len,
+                status = tracing::field::Empty,
+                was_repaired = tracing::field::Empty,
+                changed = tracing::field::Empty,
+                output_len = tracing::field::Empty,
+                duration_ms = tracing::field::Empty
+            )
+        };
         let _enter = span.enter();
         let started = Instant::now();
 
@@ -102,7 +108,7 @@ async fn main() -> Result<()> {
                     );
                 }
 
-                telemetry.record(&repair_metric(
+                tel.record(&repair_metric(
                     mode.as_str(),
                     status,
                     was_repaired,
@@ -128,7 +134,7 @@ async fn main() -> Result<()> {
                     "validator.repair.error"
                 );
 
-                telemetry.record(&repair_metric(
+                tel.record(&repair_metric(
                     mode.as_str(),
                     "error",
                     false,
@@ -141,6 +147,7 @@ async fn main() -> Result<()> {
         }
 
         result
+        }
     });
 
     info!(socket = %socket_path, backend = "llm_json", "validator.start");

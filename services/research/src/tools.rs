@@ -207,41 +207,49 @@ pub fn register_handlers(
 ) {
     let (s1, d1, t1) = (Arc::clone(&store), Arc::clone(&research_dir), Arc::clone(&tel));
     server.register_tool("research.start", move |p| {
-        handle_research_start(p, Arc::clone(&s1), Arc::clone(&d1), Arc::clone(&t1))
+        let (s, d, t) = (Arc::clone(&s1), Arc::clone(&d1), Arc::clone(&t1));
+        async move { handle_research_start(p, s, d, t) }
     });
 
     let (s2, t2) = (Arc::clone(&store), Arc::clone(&tel));
     server.register_tool("research.list", move |p| {
-        handle_research_list(p, Arc::clone(&s2), Arc::clone(&t2))
+        let (s, t) = (Arc::clone(&s2), Arc::clone(&t2));
+        async move { handle_research_list(p, s, t) }
     });
 
     let (s3, d3, t3) = (Arc::clone(&store), Arc::clone(&research_dir), Arc::clone(&tel));
     server.register_tool("research.switch", move |p| {
-        handle_research_switch(p, Arc::clone(&s3), Arc::clone(&d3), Arc::clone(&t3))
+        let (s, d, t) = (Arc::clone(&s3), Arc::clone(&d3), Arc::clone(&t3));
+        async move { handle_research_switch(p, s, d, t) }
     });
 
     let (s4, t4) = (Arc::clone(&store), Arc::clone(&tel));
     server.register_tool("research.status", move |p| {
-        handle_research_status(p, Arc::clone(&s4), Arc::clone(&t4))
+        let (s, t) = (Arc::clone(&s4), Arc::clone(&t4));
+        async move { handle_research_status(p, s, t) }
     });
 
     let (s5, d5, t5) = (Arc::clone(&store), Arc::clone(&research_dir), Arc::clone(&tel));
     server.register_tool("research.complete", move |p| {
-        handle_research_complete(p, Arc::clone(&s5), Arc::clone(&d5), Arc::clone(&t5))
+        let (s, d, t) = (Arc::clone(&s5), Arc::clone(&d5), Arc::clone(&t5));
+        async move { handle_research_complete(p, s, d, t) }
     });
 
     let (s6, d6, t6) = (Arc::clone(&store), Arc::clone(&research_dir), Arc::clone(&tel));
     server.register_tool("research.task_add", move |p| {
-        handle_task_add(p, Arc::clone(&s6), Arc::clone(&d6), Arc::clone(&t6))
+        let (s, d, t) = (Arc::clone(&s6), Arc::clone(&d6), Arc::clone(&t6));
+        async move { handle_task_add(p, s, d, t) }
     });
 
     let (s7, d7, t7) = (Arc::clone(&store), Arc::clone(&research_dir), Arc::clone(&tel));
     server.register_tool("research.task_done", move |p| {
-        handle_task_done(p, Arc::clone(&s7), Arc::clone(&d7), Arc::clone(&t7))
+        let (s, d, t) = (Arc::clone(&s7), Arc::clone(&d7), Arc::clone(&t7));
+        async move { handle_task_done(p, s, d, t) }
     });
 
     let (s8, d8, t8) = (Arc::clone(&store), Arc::clone(&research_dir), Arc::clone(&tel));
     server.register_tool("research.task_fail", move |p| {
-        handle_task_fail(p, Arc::clone(&s8), Arc::clone(&d8), Arc::clone(&t8))
+        let (s, d, t) = (Arc::clone(&s8), Arc::clone(&d8), Arc::clone(&t8));
+        async move { handle_task_fail(p, s, d, t) }
     });
 }

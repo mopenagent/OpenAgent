@@ -83,12 +83,10 @@ async fn main() -> anyhow::Result<()> {
     registry.spawn_listeners(event_tx.clone());
 
     // 7. Register tool handlers
-    // sdk-rust register_tool expects sync Fn. We bridge to async via Handle::current().block_on().
-
     let reg = Arc::clone(&registry);
     server.register_tool("channel.send", move |params| {
         let reg = Arc::clone(&reg);
-        tokio::runtime::Handle::current().block_on(async move {
+        async move {
             let address_str = params
                 .get("address")
                 .and_then(|v| v.as_str())
@@ -107,13 +105,13 @@ async fn main() -> anyhow::Result<()> {
             let msg = SendMessage::new(content, addr.chat_id()).in_thread(addr.thread_id());
             ch.send(&msg).await?;
             Ok(format!("sent to {address_str}"))
-        })
+        }
     });
 
     let reg = Arc::clone(&registry);
     server.register_tool("channel.update_draft", move |params| {
         let reg = Arc::clone(&reg);
-        tokio::runtime::Handle::current().block_on(async move {
+        async move {
             let address_str = str_param(&params, "address")?;
             let message_id = str_param(&params, "message_id")?;
             let content = str_param(&params, "content")?;
@@ -124,13 +122,13 @@ async fn main() -> anyhow::Result<()> {
                 .ok_or_else(|| anyhow::anyhow!("no channel: {}", addr.platform()))?;
             ch.update_draft(addr.chat_id(), &message_id, &content).await?;
             Ok(format!("draft updated on {address_str}"))
-        })
+        }
     });
 
     let reg = Arc::clone(&registry);
     server.register_tool("channel.finalize_draft", move |params| {
         let reg = Arc::clone(&reg);
-        tokio::runtime::Handle::current().block_on(async move {
+        async move {
             let address_str = str_param(&params, "address")?;
             let message_id = str_param(&params, "message_id")?;
             let content = str_param(&params, "content")?;
@@ -141,13 +139,13 @@ async fn main() -> anyhow::Result<()> {
                 .ok_or_else(|| anyhow::anyhow!("no channel: {}", addr.platform()))?;
             ch.finalize_draft(addr.chat_id(), &message_id, &content).await?;
             Ok(format!("draft finalized on {address_str}"))
-        })
+        }
     });
 
     let reg = Arc::clone(&registry);
     server.register_tool("channel.cancel_draft", move |params| {
         let reg = Arc::clone(&reg);
-        tokio::runtime::Handle::current().block_on(async move {
+        async move {
             let address_str = str_param(&params, "address")?;
             let message_id = str_param(&params, "message_id")?;
             let addr = ChannelAddress::parse(&address_str)
@@ -157,13 +155,13 @@ async fn main() -> anyhow::Result<()> {
                 .ok_or_else(|| anyhow::anyhow!("no channel: {}", addr.platform()))?;
             ch.cancel_draft(addr.chat_id(), &message_id).await?;
             Ok(format!("draft cancelled on {address_str}"))
-        })
+        }
     });
 
     let reg = Arc::clone(&registry);
     server.register_tool("channel.react", move |params| {
         let reg = Arc::clone(&reg);
-        tokio::runtime::Handle::current().block_on(async move {
+        async move {
             let address_str = str_param(&params, "address")?;
             let message_id = str_param(&params, "message_id")?;
             let emoji = str_param(&params, "emoji")?;
@@ -174,13 +172,13 @@ async fn main() -> anyhow::Result<()> {
                 .ok_or_else(|| anyhow::anyhow!("no channel: {}", addr.platform()))?;
             ch.add_reaction(addr.chat_id(), &message_id, &emoji).await?;
             Ok(format!("reaction {emoji} added on {address_str}"))
-        })
+        }
     });
 
     let reg = Arc::clone(&registry);
     server.register_tool("channel.typing_start", move |params| {
         let reg = Arc::clone(&reg);
-        tokio::runtime::Handle::current().block_on(async move {
+        async move {
             let address_str = str_param(&params, "address")?;
             let addr = ChannelAddress::parse(&address_str)
                 .map_err(|e| anyhow::anyhow!("invalid address: {e}"))?;
@@ -189,13 +187,13 @@ async fn main() -> anyhow::Result<()> {
                 .ok_or_else(|| anyhow::anyhow!("no channel: {}", addr.platform()))?;
             ch.start_typing(addr.chat_id()).await?;
             Ok("typing started".to_string())
-        })
+        }
     });
 
     let reg = Arc::clone(&registry);
     server.register_tool("channel.typing_stop", move |params| {
         let reg = Arc::clone(&reg);
-        tokio::runtime::Handle::current().block_on(async move {
+        async move {
             let address_str = str_param(&params, "address")?;
             let addr = ChannelAddress::parse(&address_str)
                 .map_err(|e| anyhow::anyhow!("invalid address: {e}"))?;
@@ -204,13 +202,13 @@ async fn main() -> anyhow::Result<()> {
                 .ok_or_else(|| anyhow::anyhow!("no channel: {}", addr.platform()))?;
             ch.stop_typing(addr.chat_id()).await?;
             Ok("typing stopped".to_string())
-        })
+        }
     });
 
     let reg = Arc::clone(&registry);
     server.register_tool("channel.list", move |_params| {
         let names: Vec<String> = reg.all().iter().map(|c| c.name().to_string()).collect();
-        Ok(serde_json::to_string(&names).unwrap_or_else(|_| "[]".into()))
+        async move { Ok(serde_json::to_string(&names).unwrap_or_else(|_| "[]".into())) }
     });
 
     // Push initial channel.status event

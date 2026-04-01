@@ -154,26 +154,31 @@ pub fn register_handlers(
 ) {
     let (db1, m1, t1) = (Arc::clone(&db), Arc::clone(&model), Arc::clone(&tel));
     server.register_tool("memory.index", move |p| {
-        handle_index(p, Arc::clone(&db1), Arc::clone(&m1), Arc::clone(&t1))
+        let (db, m, t) = (Arc::clone(&db1), Arc::clone(&m1), Arc::clone(&t1));
+        async move { handle_index(p, db, m, t) }
     });
 
     let (db2, m2, t2) = (Arc::clone(&db), Arc::clone(&model), Arc::clone(&tel));
     server.register_tool("memory.search", move |p| {
-        handle_search(p, Arc::clone(&db2), Arc::clone(&m2), Arc::clone(&t2))
+        let (db, m, t) = (Arc::clone(&db2), Arc::clone(&m2), Arc::clone(&t2));
+        async move { handle_search(p, db, m, t) }
     });
 
     let (db3, t3) = (Arc::clone(&db), Arc::clone(&tel));
     server.register_tool("memory.delete", move |p| {
-        handle_delete(p, Arc::clone(&db3), Arc::clone(&t3))
+        let (db, t) = (Arc::clone(&db3), Arc::clone(&t3));
+        async move { handle_delete(p, db, t) }
     });
 
     let (db4, t4) = (Arc::clone(&db), Arc::clone(&tel));
     server.register_tool("memory.prune", move |p| {
-        handle_prune(p, Arc::clone(&db4), Arc::clone(&t4))
+        let (db, t) = (Arc::clone(&db4), Arc::clone(&t4));
+        async move { handle_prune(p, db, t) }
     });
 
     let (db5, t5) = (Arc::clone(&db), Arc::clone(&tel));
     server.register_tool("memory.diary_write", move |p| {
-        handle_diary_write(p, Arc::clone(&db5), Arc::clone(&t5))
+        let (db, t) = (Arc::clone(&db5), Arc::clone(&t5));
+        async move { handle_diary_write(p, db, t) }
     });
 }
