@@ -23,14 +23,19 @@ use tracing::{error, info, warn};
 const ACTION_SEARCH_LIMIT: usize = 8;
 
 /// Catalog-based tool Capabilities pinned on every generation turn (full schema).
-/// memory.search is the only tool-kind Capability sourced from the ActionCatalog.
+/// These are sourced from the ActionCatalog (service.json declarations).
 /// cortex.discover and skill.read are injected via hardcoded result builders.
+///
+/// Pinned Capabilities (always in context, full schema):
+///   - memory.search  — long-term memory recall
+///   - web.search     — search the web via SearXNG (step 1 of 2-turn web workflow)
+///   - web.fetch      — fetch a URL as Markdown (step 2 of 2-turn web workflow)
 ///
 /// NOTE: research.status is NOT pinned here — it is only added when the input
 /// matches RESEARCH_KEYWORDS or when active research already exists (see
 /// search_tools_for_step). This prevents the LLM from launching research DAGs
 /// on ordinary conversational turns.
-const CAPABILITIES: &[&str] = &["memory.search"];
+const CAPABILITIES: &[&str] = &["memory.search", "web.search", "web.fetch"];
 
 /// Skill-kind entries that are always pinned in the context (summary + hint only,
 /// never full schema). These act as lightweight always-visible capabilities —
@@ -399,10 +404,14 @@ pub fn handle_step(params: Value, ctx: Arc<AppContext>) -> Result<String> {
 ///   Skills       — top-k matched, injected as one-line summary only.
 ///   Tools        — never pre-injected; LLM discovers via cortex.discover.
 ///
+/// Pinned Capabilities (full schema, every turn):
+///   memory.search, web.search, web.fetch — from CAPABILITIES constant (catalog-sourced).
+///   skill.read, cortex.discover          — hardcoded result builders (internal tools).
+///
 /// Algorithm:
 ///   1. Run keyword-scored search over the ActionCatalog.
-///   2. Discard all tool-kind results — tools are never pre-injected.
-///   3. Pin catalog-based Capability (memory.search) if not already present.
+///   2. Discard all tool-kind results from search — only skill summaries kept.
+///   3. Pin CAPABILITIES (memory.search, web.search, web.fetch) with full schema.
 ///   4. Conditionally pin research tools when input matches RESEARCH_KEYWORDS
 ///      or when active research already exists (`has_active_research`).
 ///   5. Append skill.read Capability (always available for on-demand skill loading).
@@ -438,7 +447,7 @@ fn search_tools_for_step(
         }
     }
 
-    // Pin catalog-based Capabilities (memory.search for LTM recall).
+    // Pin catalog-based Capabilities (memory.search, web.search, web.fetch).
     for cap_name in CAPABILITIES {
         if !results.iter().any(|r| r.name == *cap_name) {
             if let Some(entry) = catalog.entries().iter().find(|e| e.name == *cap_name) {
