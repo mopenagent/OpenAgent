@@ -59,11 +59,13 @@ pub fn make_tools() -> Vec<ToolDefinition> {
 pub fn register_handlers(server: &mut McpLiteServer, tel: Arc<SandboxTelemetry>) {
     let t = Arc::clone(&tel);
     server.register_tool("sandbox.execute", move |params| {
-        handle_execute(params, Arc::clone(&t))
+        let t = Arc::clone(&t);
+        async move { handle_execute(params, t) }
     });
 
     let t = Arc::clone(&tel);
     server.register_tool("sandbox.shell", move |params| {
-        handle_shell(params, Arc::clone(&t))
+        let t = Arc::clone(&t);
+        async move { handle_shell(params, t) }
     });
 }

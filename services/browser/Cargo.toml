@@ -1,20 +1,31 @@
 [package]
 name = "browser"
-version = "0.2.0"
+version = "0.3.0"
 edition = "2021"
 
+[lib]
+name = "browser_lib"
+path = "src/lib.rs"
+
+[[bin]]
+name = "browser"
+path = "src/main.rs"
+
 [dependencies]
-sdk-rust   = { path = "../sdk-rust" }
-mimalloc   = { version = "0.1", default-features = false }
-tokio      = { version = "1", features = ["rt-multi-thread", "macros", "fs", "io-util", "process"] }
-serde      = { version = "1.0", features = ["derive"] }
-serde_json = "1.0"
-serde_yaml = "0.9"
-uuid       = { version = "1", features = ["v4"] }
-tracing    = "0.1"
+sdk-rust      = { path = "../sdk-rust" }
+mimalloc      = { version = "0.1", default-features = false }
+tokio         = { version = "1", features = ["rt-multi-thread", "macros"] }
+serde         = { version = "1.0", features = ["derive"] }
+serde_json    = "1.0"
+reqwest       = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+rustls        = { version = "0.23", features = ["ring"] }
+dom_smoothie  = "0.17"
+tracing       = "0.1"
 opentelemetry = { version = "0.27", features = ["trace"] }
-hex = "0.4"
-anyhow     = "1.0"
+anyhow        = "1.0"
+
+[dev-dependencies]
+mockito = "1"
 
 [lints.rust]
 ambiguous_negative_literals    = "warn"

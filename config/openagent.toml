@@ -113,7 +113,22 @@ enabled = true
 db_path = "data/openagent.db"
 
 # ---------------------------------------------------------------------------
-# Browser identity
+# Web access service (browser service — tiered fetch pipeline)
+# ---------------------------------------------------------------------------
+#
+# SEARXNG_URL        — self-hosted SearXNG instance for web.search
+# BROWSER_REMOTE_URL — MCP endpoint for Tier-3 remote browser (Playwright/Stagehand)
+# BROWSER_REMOTE_TOOL — tool name on the remote MCP server (default: browser_fetch)
+#
+# These are injected as env vars into the browser service process by ServiceManager.
+
+[web]
+searxng_url         = "http://100.96.81.109:8888"
+browser_remote_url  = "http://localhost:3000/mcp"
+browser_remote_tool = "browser_fetch"
+
+# ---------------------------------------------------------------------------
+# Browser identity (agent-browser remote client sessions)
 # ---------------------------------------------------------------------------
 
 [browser.identity]

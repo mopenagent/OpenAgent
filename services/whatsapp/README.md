@@ -11,11 +11,12 @@ Go service that connects OpenAgent to WhatsApp via [whatsmeow](https://github.co
 
 ## Linking Your Phone
 
-1. Ensure WhatsApp is configured in `config/openagent.yaml`:
-   ```yaml
-   platforms:
-     whatsapp:
-       data_dir: data   # whatsapp.db stored at data/whatsapp.db
+1. Ensure WhatsApp is configured in `config/openagent.toml`:
+   ```toml
+   [platforms.whatsapp]
+   enabled      = true
+   phone_number = "${WHATSAPP_PHONE}"
+   data_dir     = "data"   # whatsapp.db stored at data/whatsapp.db
    ```
 
 2. Build the service: `make whatsapp`
@@ -28,10 +29,12 @@ Go service that connects OpenAgent to WhatsApp via [whatsmeow](https://github.co
 
 ## Configuration
 
-| Method | Variable | Example |
-|--------|----------|---------|
-| Config | `platforms.whatsapp.data_dir` | `data` |
+| Method | Key / Variable | Example |
+|--------|----------------|---------|
+| `config/openagent.toml` | `platforms.whatsapp.data_dir` | `data` |
+| `config/openagent.toml` | `platforms.whatsapp.enabled` | `true` |
 | Env | `WHATSAPP_DATA_DIR` | `data` |
+| Env | `WHATSAPP_PHONE` | `+1555…` |
 
 Session data (device store) is stored at `data_dir/whatsapp.db` (e.g. `data/whatsapp.db`).
 

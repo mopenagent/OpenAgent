@@ -3,7 +3,9 @@ use crate::error::{Error, Result};
 use crate::types::{Frame, OutboundEvent, ToolDefinition};
 use std::collections::HashMap;
 use std::fs;
+use std::future::Future;
 use std::path::Path;
+use std::pin::Pin;
 use std::sync::Arc;
 use std::time::Instant;
 use tokio::net::UnixListener;
@@ -11,10 +13,14 @@ use tokio::sync::{broadcast, Mutex};
 use tracing::{error, info, warn};
 use tracing_opentelemetry::OpenTelemetrySpanExt;
 
+/// Async handler return type — a pinned boxed future so handlers can be stored
+/// as trait objects without knowing the concrete future type.
+type BoxFuture = Pin<Box<dyn Future<Output = anyhow::Result<String>> + Send>>;
+
 /// Handler closures are application code and may use `anyhow::Result<String>`.
 /// The server converts any error to a `tool.result` error frame — handler
 /// errors never propagate as [`Error`] variants.
-type ToolHandler = Box<dyn Fn(serde_json::Value) -> anyhow::Result<String> + Send + Sync>;
+type ToolHandler = Box<dyn Fn(serde_json::Value) -> BoxFuture + Send + Sync>;
 
 /// MCP-lite server — accepts Unix socket connections and dispatches tool calls.
 ///
@@ -59,16 +65,18 @@ impl McpLiteServer {
         self.event_tx.clone()
     }
 
-    /// Register a handler for a named tool.
+    /// Register an async handler for a named tool.
     ///
     /// The handler receives the raw JSON params and returns a JSON result
     /// string.  Returning `Err` sends a `tool.result` error frame to the
     /// caller — it does not terminate the connection.
-    pub fn register_tool<F>(&mut self, name: &str, handler: F)
+    pub fn register_tool<F, Fut>(&mut self, name: &str, handler: F)
     where
-        F: Fn(serde_json::Value) -> anyhow::Result<String> + Send + Sync + 'static,
+        F: Fn(serde_json::Value) -> Fut + Send + Sync + 'static,
+        Fut: Future<Output = anyhow::Result<String>> + Send + 'static,
     {
-        self.handlers.insert(name.to_string(), Box::new(handler));
+        self.handlers
+            .insert(name.to_string(), Box::new(move |p| Box::pin(handler(p))));
     }
 
     /// Dispatch a single frame and return the response frame.
@@ -107,7 +115,7 @@ impl McpLiteServer {
                 let start = Instant::now();
 
                 let response = if let Some(handler) = self.handlers.get(&tool) {
-                    match handler(params) {
+                    match handler(params).await {
                         Ok(res) => {
                             span.record("status", "ok");
                             Frame::ToolCallResponse { id, result: Some(res), error: None }

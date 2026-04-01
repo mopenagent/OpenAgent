@@ -41,6 +41,8 @@ pub fn register_handlers(
     let ctx_clone = Arc::clone(&ctx);
     let tel_clone = Arc::clone(&tel);
     server.register_tool("stt.transcribe", move |params| {
-        handle_transcribe(params, Arc::clone(&ctx_clone), Arc::clone(&tel_clone))
+        let ctx = Arc::clone(&ctx_clone);
+        let tel = Arc::clone(&tel_clone);
+        async move { handle_transcribe(params, ctx, tel) }
     });
 }

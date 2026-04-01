@@ -59,12 +59,17 @@ pub fn register_handlers(
     let tel_s = Arc::clone(&tel);
     let dir_s = out_dir.clone();
     server.register_tool("tts.synthesize", move |params| {
-        handle_synthesize(params, Arc::clone(&tts_s), Arc::clone(&tel_s), dir_s.clone())
+        let tts = Arc::clone(&tts_s);
+        let tel = Arc::clone(&tel_s);
+        let dir = dir_s.clone();
+        async move { handle_synthesize(params, tts, tel, dir) }
     });
 
     let tts_b = Arc::clone(&tts);
     let tel_b = Arc::clone(&tel);
     server.register_tool("tts.synthesize_bytes", move |params| {
-        handle_synthesize_bytes(params, Arc::clone(&tts_b), Arc::clone(&tel_b))
+        let tts = Arc::clone(&tts_b);
+        let tel = Arc::clone(&tel_b);
+        async move { handle_synthesize_bytes(params, tts, tel) }
     });
 }

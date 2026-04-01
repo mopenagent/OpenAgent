@@ -2,7 +2,11 @@
   "permissions": {
     "allow": [
       "Bash(curl -s https://api.github.com/repos/liquidos-ai/AutoAgents/contents/crates/autoagents-llm/src/chat?ref=main)",
-      "Bash(curl -s https://raw.githubusercontent.com/liquidos-ai/AutoAgents/main/crates/autoagents-llm/src/providers.rs)"
+      "Bash(curl -s https://raw.githubusercontent.com/liquidos-ai/AutoAgents/main/crates/autoagents-llm/src/providers.rs)",
+      "WebFetch(domain:docs.rs)",
+      "WebFetch(domain:crates.io)",
+      "WebSearch",
+      "Bash(cargo build:*)"
     ]
   }
 }

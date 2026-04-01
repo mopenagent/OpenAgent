@@ -166,6 +166,12 @@ pub struct WhatsAppPlatformConfig {
     pub enabled: bool,
     #[serde(default)]
     pub phone_number: String,
+    #[serde(default = "default_whatsapp_data_dir")]
+    pub data_dir: String,
+}
+
+fn default_whatsapp_data_dir() -> String {
+    "data".to_string()
 }
 
 #[derive(Debug, Clone, Deserialize, Default)]
@@ -241,6 +247,9 @@ impl PlatformsConfig {
                 "WHATSAPP_PHONE".into(),
                 self.whatsapp.phone_number.clone(),
             );
+        }
+        if !self.whatsapp.data_dir.is_empty() {
+            m.insert("WHATSAPP_DATA_DIR".into(), self.whatsapp.data_dir.clone());
         }
         m
     }
