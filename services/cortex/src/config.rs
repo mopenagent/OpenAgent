@@ -111,7 +111,7 @@ impl CortexConfig {
         let path = resolve_config_path();
         let raw = fs::read_to_string(&path)
             .with_context(|| format!("failed to read config file {}", path.display()))?;
-        let mut cfg: Self = serde_yaml::from_str(&raw)
+        let mut cfg: Self = toml::from_str(&raw)
             .with_context(|| format!("failed to parse config file {}", path.display()))?;
 
         apply_provider_env_overrides(&mut cfg.provider);
@@ -155,18 +155,12 @@ fn resolve_config_path() -> PathBuf {
         return PathBuf::from(path);
     }
 
-    let candidates = [
-        Path::new("config/openagent.yml"),
-        Path::new("config/openagent.yaml"),
-    ];
-
-    for candidate in candidates {
-        if candidate.exists() {
-            return candidate.to_path_buf();
-        }
+    let config = Path::new("config/openagent.toml");
+    if config.exists() {
+        return config.to_path_buf();
     }
 
-    PathBuf::from("config/openagent.yaml")
+    PathBuf::from("config/openagent.toml")
 }
 
 fn apply_provider_env_overrides(provider: &mut ProviderConfig) {
@@ -243,7 +237,7 @@ mod tests {
         };
 
         let resolved =
-            cfg.resolve_step_config(PathBuf::from("config/openagent.yaml"), Some("secondary"));
+            cfg.resolve_step_config(PathBuf::from("config/openagent.toml"), Some("secondary"));
         assert_eq!(resolved.agent_name, "secondary");
         assert_eq!(resolved.system_prompt, "Secondary prompt");
     }
