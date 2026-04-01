@@ -409,10 +409,14 @@ The action context has three distinct tiers with different injection rules:
 | **Skill** | Domain knowledge, patterns, guidance | Summary only (top-k match) | `skill.read(name=...)` |
 | **Tool** | Service integrations (browser, sandbox, …) | ❌ Never injected | `cortex.discover` → read schema → call |
 
-**The three Capabilities (always injected, never discoverable — they are the discovery layer):**
+**The five Capabilities (always injected every turn — full schema, no discovery needed):**
 - `memory.search` — recall from long-term memory (LTM)
+- `web.search` — search the web via SearXNG (step 1 of 2-turn web workflow)
+- `web.fetch` — fetch a URL and return clean Markdown (step 2 of 2-turn web workflow)
 - `cortex.discover` — search the action catalog for tools and skill summaries
 - `skill.read` — load a skill's full body or deep-dive reference on demand
+
+`memory.search`, `web.search`, and `web.fetch` are sourced from the ActionCatalog (service.json). `cortex.discover` and `skill.read` are internal Cortex tools injected via hardcoded builders.
 
 **Skills** appear as one-line summaries in the top-k action search results. The LLM reads the summary and calls `skill.read` to get the full body. Skills never auto-inject their full content.
 
@@ -680,7 +684,7 @@ Key patterns:
 3. ~~**Cortex Phase 3**~~ ✅ — memory retrieval + episode writes; STM eviction, diary writes
 4. ~~**Cortex Phase 4**~~ ✅ — prompt system: MiniJinja embedded templates
 5. ~~**Tower middleware (full)**~~ ✅ — `GuardLayer`, `SttLayer`, `TtsLayer` in `openagent`; Python middleware deleted; dispatch loop added
-6. ~~**Cortex Phase 5**~~ ✅ — action search: `ActionCatalog` keyword-ranked top-k per step; three Capabilities always pinned (`memory.search`, `cortex.discover`, `skill.read`); skills injected as summary-only; tools not injected (LLM discovers via `cortex.discover`)
+6. ~~**Cortex Phase 5**~~ ✅ — action search: `ActionCatalog` keyword-ranked top-k per step; five Capabilities always pinned (`memory.search`, `web.search`, `web.fetch`, `cortex.discover`, `skill.read`); skills injected as summary-only; other tools not injected (LLM discovers via `cortex.discover`)
 7. ~~**Provider fallback chain**~~ ✅ — `dispatch_with_fallback()` in `llm.rs`; `fallbacks: Vec<FallbackProvider>` in config
 8. ~~**Rate limiting middleware**~~ ✅ — `ConcurrencyLimitLayer` (max 50) as outermost Tower layer in `openagent`
 9. ~~**Web UI diary + chat refactor**~~ ✅ — `/diary` read-only past session browser; `/chat` simplified to live web session only
