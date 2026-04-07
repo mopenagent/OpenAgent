@@ -45,24 +45,10 @@ pub async fn health(State(state): State<AppState>) -> impl IntoResponse {
     let self_pid = std::process::id();
     let self_rss = rss_mb(self_pid).await;
 
-    // Per-service info — gather RSS concurrently
-    let service_futs: Vec<_> = live
+    let services: Vec<Value> = live
         .iter()
-        .map(|svc| {
-            let name = svc.name.clone();
-            let pid = svc.pid;
-            async move {
-                let rss = if let Some(p) = pid { rss_mb(p).await } else { None };
-                json!({
-                    "name": name,
-                    "pid": pid,
-                    "rss_mb": rss.map(|v| (v * 10.0).round() / 10.0),
-                    "status": "running",
-                })
-            }
-        })
+        .map(|svc| json!({"name": svc.name, "address": svc.address, "status": "connected"}))
         .collect();
-    let services: Vec<Value> = futures_util::future::join_all(service_futs).await;
 
     Json(json!({
         "status": "ok",
@@ -227,37 +213,23 @@ async fn service_control(state: &AppState, tool: &str, params: Value) -> impl In
             let live = state.manager.live_services().await;
             let services: Vec<Value> = live
                 .iter()
-                .map(|s| json!({"name": s.name, "pid": s.pid, "status": "running"}))
+                .map(|s| json!({"name": s.name, "address": s.address, "status": "connected"}))
                 .collect();
             (StatusCode::OK, Json(json!({"services": services, "count": services.len()}))).into_response()
         }
 
-        "service.restart" => {
-            let svc_name = match params.get("name").and_then(Value::as_str) {
-                Some(n) if !n.is_empty() => n.to_string(),
-                _ => return (StatusCode::BAD_REQUEST, Json(json!({"error": "name required"}))).into_response(),
-            };
-
-            let live = state.manager.live_services().await;
-            match live.iter().find(|s| s.name == svc_name) {
-                None => {
-                    (StatusCode::NOT_FOUND, Json(json!({"error": format!("service not found: {svc_name}")}))).into_response()
-                }
-                Some(svc) => {
-                    let pid = match svc.pid {
-                        Some(p) => p,
-                        None => return (StatusCode::OK, Json(json!({"ok": false, "error": "no pid — service may be starting"}))).into_response(),
-                    };
-                    // SIGTERM — the run_service_loop health check detects the exit and restarts.
-                    let killed = std::process::Command::new("kill")
-                        .args(["-TERM", &pid.to_string()])
-                        .status()
-                        .map(|s| s.success())
-                        .unwrap_or(false);
-                    info!(service = %svc_name, pid, "service.restart.requested");
-                    (StatusCode::OK, Json(json!({"ok": killed, "action": "restart", "service": svc_name, "pid": pid}))).into_response()
-                }
-            }
+        "service.restart" | "service.start" | "service.stop" => {
+            // openagent no longer manages service lifecycles.
+            // Use: systemctl restart openagent-<name>  (production)
+            //      ./services.sh restart <name>         (dev)
+            let svc_name = params.get("name").and_then(Value::as_str).unwrap_or("?");
+            (StatusCode::OK, Json(json!({
+                "ok": false,
+                "error": format!(
+                    "openagent does not manage service processes. \
+                     Use: systemctl restart openagent-{svc_name}"
+                )
+            }))).into_response()
         }
 
         _ => (StatusCode::NOT_FOUND, Json(json!({"error": format!("unknown service tool: {tool}")}))).into_response(),

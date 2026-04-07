@@ -60,6 +60,8 @@ services:
     environment:
       OPENAGENT_API_URL: "http://host.docker.internal:8080"
       OTEL_EXPORTER_OTLP_ENDPOINT: "http://jaeger:4318"
+      # MCP tester connects directly to service TCP ports on the host
+      OPENAGENT_SERVICES_HOST: "host.docker.internal"
     env_file:
       - path: .env
         required: false

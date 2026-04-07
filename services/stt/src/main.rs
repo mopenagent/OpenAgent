@@ -4,7 +4,6 @@
 //!
 //! # Environment variables
 //!
-//! - `OPENAGENT_SOCKET_PATH` — Unix socket (default: `data/sockets/stt.sock`)
 //! - `OPENAGENT_STT_MODEL`   — GGML model path (default: `data/models/whisper-ggml-small.bin`)
 //! - `OPENAGENT_LOGS_DIR`    — Directory for OTLP log/trace files (default: `logs`)
 //!
@@ -41,7 +40,6 @@ use std::{
 use tracing::{info, warn};
 use whisper_rs::{WhisperContext, WhisperContextParameters};
 
-const DEFAULT_SOCKET_PATH: &str = "data/sockets/stt.sock";
 const DEFAULT_MODEL_PATH: &str = "data/models/whisper-ggml-small.bin";
 const DEFAULT_LOGS_DIR: &str = "logs";
 
@@ -52,9 +50,6 @@ async fn main() -> anyhow::Result<()> {
     let _otel_guard = setup_otel("stt", &logs_dir)
         .inspect_err(|e| eprintln!("{{\"level\":\"WARN\",\"message\":\"otel init failed\",\"error\":\"{e}\"}}"))
         .ok();
-
-    let socket_path =
-        std::env::var("OPENAGENT_SOCKET_PATH").unwrap_or_else(|_| DEFAULT_SOCKET_PATH.to_string());
     let model_path =
         std::env::var("OPENAGENT_STT_MODEL").unwrap_or_else(|_| DEFAULT_MODEL_PATH.to_string());
 
@@ -66,7 +61,7 @@ async fn main() -> anyhow::Result<()> {
         warn!("ffmpeg not found on PATH — stt.transcribe will fail until installed");
     }
 
-    info!(socket = %socket_path, model = %model_path, "stt.start");
+    info!(addr = "0.0.0.0:9008", model = %model_path, "stt.start");
 
     // Load Whisper model once and keep warm (~244 MB RSS for small).
     let ctx = WhisperContext::new_with_params(&model_path, WhisperContextParameters::default())
@@ -79,6 +74,6 @@ async fn main() -> anyhow::Result<()> {
     let mut server = McpLiteServer::new(tools::make_tools(), "ready");
     tools::register_handlers(&mut server, ctx, tel);
 
-    server.serve(&socket_path).await?;
+    server.serve_auto("0.0.0.0:9008").await?;
     Ok(())
 }

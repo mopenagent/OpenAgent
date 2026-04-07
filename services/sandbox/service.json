@@ -1,68 +1,69 @@
 {
-    "name": "sandbox",
-    "description": "Secure code execution and shell commands via microsandbox (VM-level OCI isolation). Supersedes the Go shell service.",
-    "version": "0.2.0",
-    "binary": {
-        "linux/arm64": "bin/sandbox-linux-arm64",
-        "linux/amd64": "bin/sandbox-linux-amd64",
-        "darwin/arm64": "bin/sandbox-darwin-arm64",
-        "darwin/amd64": "bin/sandbox-darwin-amd64"
-    },
-    "socket": "data/sockets/sandbox.sock",
-    "health": {
-        "interval_ms": 5000,
-        "timeout_ms": 1000,
-        "restart_backoff_ms": [
-            1000,
-            2000,
-            5000,
-            10000,
-            30000
-        ]
-    },
-    "tools": [
-        {
-            "name": "sandbox.execute",
-            "description": "Execute Python or Node.js code in a secure OCI sandbox (VM-level isolation via microsandbox). Use for data processing, calculations, API calls, or scripting. Each call starts a fresh sandbox \u2014 state is not preserved between calls.",
-            "params": {
-                "type": "object",
-                "properties": {
-                    "language": {
-                        "type": "string",
-                        "enum": [
-                            "python",
-                            "node"
-                        ],
-                        "description": "Runtime: 'python' (Python 3) or 'node' (Node.js)"
-                    },
-                    "code": {
-                        "type": "string",
-                        "description": "Code to execute"
-                    }
-                },
-                "required": [
-                    "language",
-                    "code"
-                ]
-            }
+  "name": "sandbox",
+  "address": "0.0.0.0:9007",
+  "description": "Secure code execution and shell commands via microsandbox (VM-level OCI isolation). Supersedes the Go shell service.",
+  "version": "0.2.0",
+  "binary": {
+    "linux/arm64": "bin/sandbox-linux-arm64",
+    "linux/amd64": "bin/sandbox-linux-amd64",
+    "darwin/arm64": "bin/sandbox-darwin-arm64",
+    "darwin/amd64": "bin/sandbox-darwin-amd64"
+  },
+  "socket": "data/sockets/sandbox.sock",
+  "health": {
+    "interval_ms": 5000,
+    "timeout_ms": 1000,
+    "restart_backoff_ms": [
+      1000,
+      2000,
+      5000,
+      10000,
+      30000
+    ]
+  },
+  "tools": [
+    {
+      "name": "sandbox.execute",
+      "description": "Execute Python or Node.js code in a secure OCI sandbox (VM-level isolation via microsandbox). Use for data processing, calculations, API calls, or scripting. Each call starts a fresh sandbox \u2014 state is not preserved between calls.",
+      "params": {
+        "type": "object",
+        "properties": {
+          "language": {
+            "type": "string",
+            "enum": [
+              "python",
+              "node"
+            ],
+            "description": "Runtime: 'python' (Python 3) or 'node' (Node.js)"
+          },
+          "code": {
+            "type": "string",
+            "description": "Code to execute"
+          }
         },
-        {
-            "name": "sandbox.shell",
-            "description": "Run a shell command in a secure OCI sandbox (VM-level isolation via microsandbox). Safe alternative to direct host execution. Use for file operations, package inspection, or running binaries.",
-            "params": {
-                "type": "object",
-                "properties": {
-                    "command": {
-                        "type": "string",
-                        "description": "Shell command to execute (bash/sh). Example: 'ls -la /tmp && echo done'"
-                    }
-                },
-                "required": [
-                    "command"
-                ]
-            }
-        }
-    ],
-    "events": [],
-    "runtime": "rust"
+        "required": [
+          "language",
+          "code"
+        ]
+      }
+    },
+    {
+      "name": "sandbox.shell",
+      "description": "Run a shell command in a secure OCI sandbox (VM-level isolation via microsandbox). Safe alternative to direct host execution. Use for file operations, package inspection, or running binaries.",
+      "params": {
+        "type": "object",
+        "properties": {
+          "command": {
+            "type": "string",
+            "description": "Shell command to execute (bash/sh). Example: 'ls -la /tmp && echo done'"
+          }
+        },
+        "required": [
+          "command"
+        ]
+      }
+    }
+  ],
+  "events": [],
+  "runtime": "rust"
 }

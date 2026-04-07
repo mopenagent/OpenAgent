@@ -5,7 +5,6 @@ use serde_json::{json, Value};
 use std::env;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-pub const DEFAULT_SOCKET_PATH: &str = "data/sockets/sandbox.sock";
 pub const DEFAULT_MSB_URL: &str = "http://127.0.0.1:5555";
 pub const DEFAULT_MEMORY_MB: u64 = 512;
 const NAMESPACE: &str = "default";

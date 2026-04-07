@@ -1,47 +1,67 @@
 {
-    "name": "browser",
-    "description": "Web access — two tools, two turns. Turn 1: web.search returns a JSON list of {url,title,snippet} — the LLM picks the best URL. Turn 2: web.fetch fetches that URL and returns clean Markdown content for the LLM to read. No JavaScript execution; if content is sparse the LLM should escalate to a remote browser via cortex.discover.",
-    "version": "0.3.0",
-    "binary": {
-        "linux/arm64": "bin/browser-linux-arm64",
-        "linux/amd64": "bin/browser-linux-amd64",
-        "darwin/arm64": "bin/browser-darwin-arm64",
-        "darwin/amd64": "bin/browser-darwin-amd64"
-    },
-    "socket": "data/sockets/browser.sock",
-    "health": {
-        "interval_ms": 5000,
-        "timeout_ms": 2000,
-        "restart_backoff_ms": [1000, 2000, 5000, 10000, 30000]
-    },
-    "env": {
-        "SEARXNG_URL": "http://100.96.81.109:8888"
-    },
-    "tools": [
-        {
-            "name": "web.search",
-            "description": "STEP 1 of 2. Search the web via SearXNG. Returns a JSON array of {url, title, snippet}. Inspect the results and pick the most relevant URL, then call web.fetch with that URL. Results cached 5 min.",
-            "params": {
-                "type": "object",
-                "properties": {
-                    "query":       { "type": "string",  "description": "Search query" },
-                    "max_results": { "type": "integer", "description": "Max results (default 5, max 10)" }
-                },
-                "required": ["query"]
-            }
+  "name": "browser",
+  "address": "0.0.0.0:9001",
+  "description": "Web access \u2014 two tools, two turns. Turn 1: web.search returns a JSON list of {url,title,snippet} \u2014 the LLM picks the best URL. Turn 2: web.fetch fetches that URL and returns clean Markdown content for the LLM to read. No JavaScript execution; if content is sparse the LLM should escalate to a remote browser via cortex.discover.",
+  "version": "0.3.0",
+  "binary": {
+    "linux/arm64": "bin/browser-linux-arm64",
+    "linux/amd64": "bin/browser-linux-amd64",
+    "darwin/arm64": "bin/browser-darwin-arm64",
+    "darwin/amd64": "bin/browser-darwin-amd64"
+  },
+  "socket": "data/sockets/browser.sock",
+  "health": {
+    "interval_ms": 5000,
+    "timeout_ms": 2000,
+    "restart_backoff_ms": [
+      1000,
+      2000,
+      5000,
+      10000,
+      30000
+    ]
+  },
+  "env": {
+    "SEARXNG_URL": "http://100.96.81.109:8888"
+  },
+  "tools": [
+    {
+      "name": "web.search",
+      "description": "STEP 1 of 2. Search the web via SearXNG. Returns a JSON array of {url, title, snippet}. Inspect the results and pick the most relevant URL, then call web.fetch with that URL. Results cached 5 min.",
+      "params": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "Search query"
+          },
+          "max_results": {
+            "type": "integer",
+            "description": "Max results (default 5, max 10)"
+          }
         },
-        {
-            "name": "web.fetch",
-            "description": "STEP 2 of 2. Fetch a URL and return its content as clean Markdown. Call this after web.search with the URL you chose. No JavaScript — if the returned content is sparse or empty the page requires a real browser; use cortex.discover to find a remote browser tool. Results cached 1 hr.",
-            "params": {
-                "type": "object",
-                "properties": {
-                    "url": { "type": "string", "description": "URL to fetch (from web.search results or a known URL)" }
-                },
-                "required": ["url"]
-            }
-        }
-    ],
-    "events": [],
-    "runtime": "rust"
+        "required": [
+          "query"
+        ]
+      }
+    },
+    {
+      "name": "web.fetch",
+      "description": "STEP 2 of 2. Fetch a URL and return its content as clean Markdown. Call this after web.search with the URL you chose. No JavaScript \u2014 if the returned content is sparse or empty the page requires a real browser; use cortex.discover to find a remote browser tool. Results cached 1 hr.",
+      "params": {
+        "type": "object",
+        "properties": {
+          "url": {
+            "type": "string",
+            "description": "URL to fetch (from web.search results or a known URL)"
+          }
+        },
+        "required": [
+          "url"
+        ]
+      }
+    }
+  ],
+  "events": [],
+  "runtime": "rust"
 }

@@ -17,8 +17,6 @@ pub const EMBED_DIM: usize = 384;
 pub const TOP_K: usize = 5;
 /// LanceDB directory — relative to project root (resolved at process CWD).
 pub const DEFAULT_MEMORY_PATH: &str = "data/memory";
-/// Unix socket path — relative to project root.
-pub const DEFAULT_SOCKET_PATH: &str = "data/sockets/memory.sock";
 /// FastEmbed model cache — relative to project root.
 pub const DEFAULT_EMBED_CACHE: &str = "data/models";
 /// Default logs directory — relative to project root.

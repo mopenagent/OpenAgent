@@ -51,10 +51,7 @@ async fn main() -> anyhow::Result<()> {
         .inspect_err(|e| eprintln!("{{\"level\":\"WARN\",\"msg\":\"otel init failed\",\"error\":\"{e}\"}}"))
         .ok();
 
-    let socket_path = std::env::var("OPENAGENT_SOCKET_PATH")
-        .unwrap_or_else(|_| "data/sockets/channels.sock".to_string());
-
-    info!(socket = %socket_path, "channels.start");
+    info!(addr = "0.0.0.0:9002", "channels.start");
 
     // 3. Load config
     let config_path = std::env::var("OPENAGENT_CHANNELS_CONFIG")
@@ -219,7 +216,7 @@ async fn main() -> anyhow::Result<()> {
     ));
 
     // 8. Serve
-    if let Err(e) = server.serve(&socket_path).await {
+    if let Err(e) = server.serve_auto("0.0.0.0:9002").await {
         error!(error = %e, "channels.serve.exit");
     }
 

@@ -39,17 +39,22 @@ pub struct ServiceManifest {
     pub name: String,
     pub version: Option<String>,
     pub binary: BinaryMap,
+    /// TCP bind address for this service (e.g. `"0.0.0.0:9001"`).
+    /// Required for TCP transport. The service binary is spawned with
+    /// `OPENAGENT_TCP_ADDRESS=<address>` so it knows which port to bind.
+    pub address: String,
+    /// Legacy UDS socket path — kept for parsing compatibility but not used.
+    #[serde(default)]
     pub socket: String,
     /// Set to false to prevent the service from being started at all.
-    /// Useful for optional services whose binary is not yet built (e.g. tts).
     #[serde(default = "default_true")]
     pub enabled: bool,
-    /// Optional env vars to set on the child process (from `service.json` `env` block).
+    /// Optional env vars injected from `service.json` `env` block.
     #[serde(default)]
     pub env: HashMap<String, String>,
     #[serde(default)]
     pub health: HealthConfig,
-    /// Absolute path to the directory containing `service.json`. Filled in by `discover()`.
+    /// Absolute path to the project root. Filled in by `discover()`.
     #[serde(skip)]
     pub root: PathBuf,
 }
@@ -66,9 +71,15 @@ impl ServiceManifest {
         Some(self.root.join(rel))
     }
 
-    /// Resolve the socket path relative to `root`.
-    pub fn socket_path(&self) -> PathBuf {
-        self.root.join(&self.socket)
+    /// Return the TCP address the service should bind on (e.g. `"0.0.0.0:9001"`).
+    pub fn tcp_addr(&self) -> &str {
+        &self.address
+    }
+
+    /// Loopback address for the client to connect to (replaces the old socket path).
+    pub fn connect_addr(&self) -> String {
+        // Replace 0.0.0.0 with 127.0.0.1 for loopback connections from openagent.
+        self.address.replace("0.0.0.0", "127.0.0.1")
     }
 }
 

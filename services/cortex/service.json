@@ -1,5 +1,6 @@
 {
   "name": "cortex",
+  "address": "0.0.0.0:9003",
   "description": "Cortex cognitive control-plane service. Phase 0 captures the service boundary and transport contract without taking over LLM execution yet.",
   "version": "0.1.0",
   "binary": {
@@ -12,7 +13,13 @@
   "health": {
     "interval_ms": 5000,
     "timeout_ms": 1000,
-    "restart_backoff_ms": [1000, 2000, 5000, 10000, 30000]
+    "restart_backoff_ms": [
+      1000,
+      2000,
+      5000,
+      10000,
+      30000
+    ]
   },
   "tools": [
     {
@@ -47,7 +54,10 @@
             "description": "Optional user key for research context injection. Defaults to session_id when omitted."
           }
         },
-        "required": ["session_id", "user_input"]
+        "required": [
+          "session_id",
+          "user_input"
+        ]
       }
     }
   ],

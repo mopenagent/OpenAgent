@@ -1,5 +1,6 @@
 {
   "name": "validator",
+  "address": "0.0.0.0:9010",
   "description": "Repair malformed JSON from LLM output into compact canonical JSON. Targets common LLM mistakes like trailing commas, single quotes, unquoted keys, comments, wrappers, and incomplete brackets.",
   "version": "0.1.0",
   "binary": {
@@ -12,7 +13,13 @@
   "health": {
     "interval_ms": 5000,
     "timeout_ms": 2000,
-    "restart_backoff_ms": [1000, 2000, 5000, 10000, 30000]
+    "restart_backoff_ms": [
+      1000,
+      2000,
+      5000,
+      10000,
+      30000
+    ]
   },
   "tools": [
     {
@@ -27,11 +34,17 @@
           },
           "mode": {
             "type": "string",
-            "enum": ["auto", "json_object", "json_array"],
+            "enum": [
+              "auto",
+              "json_object",
+              "json_array"
+            ],
             "description": "Expected repaired JSON top-level shape. Use auto by default."
           }
         },
-        "required": ["text"]
+        "required": [
+          "text"
+        ]
       }
     }
   ],

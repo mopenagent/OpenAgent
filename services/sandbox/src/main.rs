@@ -8,7 +8,6 @@
 //!   sandbox.shell    — run a shell command via sandbox.command.run
 //!
 //! Environment variables:
-//!   OPENAGENT_SOCKET_PATH — Unix socket path  (default: data/sockets/sandbox.sock)
 //!   OPENAGENT_LOGS_DIR    — traces + metrics  (default: logs)
 //!   MSB_SERVER_URL        — microsandbox URL  (default: http://127.0.0.1:5555)
 //!   MSB_API_KEY           — API key (required; run: msb server keygen)
@@ -27,7 +26,6 @@ mod tools;
 use anyhow::Result;
 use metrics::SandboxTelemetry;
 use mimalloc::MiMalloc;
-use msb::DEFAULT_SOCKET_PATH;
 use sdk_rust::{setup_otel, McpLiteServer};
 use std::env;
 use std::sync::Arc;
@@ -49,13 +47,10 @@ async fn main() -> Result<()> {
         .ok();
     let tel = Arc::new(SandboxTelemetry::new(&logs_dir)?);
 
-    let socket_path =
-        env::var("OPENAGENT_SOCKET_PATH").unwrap_or_else(|_| DEFAULT_SOCKET_PATH.to_string());
-
     let mut server = McpLiteServer::new(tools::make_tools(), "ready");
     tools::register_handlers(&mut server, Arc::clone(&tel));
 
-    info!(socket = %socket_path, "sandbox.start");
-    server.serve(&socket_path).await?;
+    info!(addr = "0.0.0.0:9007", "sandbox.start");
+    server.serve_auto("0.0.0.0:9007").await?;
     Ok(())
 }

@@ -13,7 +13,6 @@ use uuid::Uuid;
 
 // ── Default paths ──────────────────────────────────────────────────────────────
 
-pub const DEFAULT_SOCKET_PATH: &str = "data/sockets/research.sock";
 pub const DEFAULT_DB_PATH: &str = "data/research.db";
 pub const DEFAULT_RESEARCH_DIR: &str = "data/research";
 pub const DEFAULT_LOGS_DIR: &str = "logs";

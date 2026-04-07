@@ -3,7 +3,6 @@
 use anyhow::Result;
 use serde_json::Value;
 
-pub const DEFAULT_SOCKET_PATH: &str = "data/sockets/tts.sock";
 pub const DEFAULT_MODEL_PATH: &str = "data/models/kokoro-v1.0.onnx";
 pub const DEFAULT_VOICES_PATH: &str = "data/models/voices-v1.0.bin";
 pub const DEFAULT_ARTIFACTS_DIR: &str = "data/artifacts/tts";

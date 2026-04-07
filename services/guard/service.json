@@ -1,145 +1,162 @@
 {
-    "name": "guard",
-    "description": "Security guard service \u2014 Phase 1: user whitelist (allow/deny by platform + channel). Phase 2+: credential scrubbing, prompt injection detection, rate limiting.",
-    "version": "0.1.0",
-    "binary": {
-        "linux/arm64": "bin/guard-linux-arm64",
-        "linux/amd64": "bin/guard-linux-amd64",
-        "darwin/arm64": "bin/guard-darwin-arm64",
-        "darwin/amd64": "bin/guard-darwin-amd64"
-    },
-    "socket": "data/sockets/guard.sock",
-    "env": {
-        "GUARD_DB_PATH": "data/guard.db"
-    },
-    "health": {
-        "interval_ms": 5000,
-        "timeout_ms": 1000,
-        "restart_backoff_ms": [
-            1000,
-            2000,
-            5000,
-            10000,
-            30000
+  "name": "guard",
+  "address": "0.0.0.0:9004",
+  "description": "Security guard service \u2014 Phase 1: user whitelist (allow/deny by platform + channel). Phase 2+: credential scrubbing, prompt injection detection, rate limiting.",
+  "version": "0.1.0",
+  "binary": {
+    "linux/arm64": "bin/guard-linux-arm64",
+    "linux/amd64": "bin/guard-linux-amd64",
+    "darwin/arm64": "bin/guard-darwin-arm64",
+    "darwin/amd64": "bin/guard-darwin-amd64"
+  },
+  "socket": "data/sockets/guard.sock",
+  "env": {
+    "GUARD_DB_PATH": "data/guard.db"
+  },
+  "health": {
+    "interval_ms": 5000,
+    "timeout_ms": 1000,
+    "restart_backoff_ms": [
+      1000,
+      2000,
+      5000,
+      10000,
+      30000
+    ]
+  },
+  "tools": [
+    {
+      "name": "guard.check",
+      "description": "Check whether a sender is allowed to interact with the agent. Returns allowed=true/false, reason ('allowed'|'blocked'|'unknown'|'platform_bypass'), and contact name. Call before routing any inbound message to Cortex.",
+      "params": {
+        "type": "object",
+        "properties": {
+          "platform": {
+            "type": "string",
+            "description": "Platform identifier (e.g. telegram, discord, slack, whatsapp)."
+          },
+          "channel_id": {
+            "type": "string",
+            "description": "Platform-specific sender/channel identifier."
+          }
+        },
+        "required": [
+          "platform",
+          "channel_id"
         ]
+      }
     },
-    "tools": [
-        {
-            "name": "guard.check",
-            "description": "Check whether a sender is allowed to interact with the agent. Returns allowed=true/false, reason ('allowed'|'blocked'|'unknown'|'platform_bypass'), and contact name. Call before routing any inbound message to Cortex.",
-            "params": {
-                "type": "object",
-                "properties": {
-                    "platform": {
-                        "type": "string",
-                        "description": "Platform identifier (e.g. telegram, discord, slack, whatsapp)."
-                    },
-                    "channel_id": {
-                        "type": "string",
-                        "description": "Platform-specific sender/channel identifier."
-                    }
-                },
-                "required": ["platform", "channel_id"]
-            }
+    {
+      "name": "guard.allow",
+      "description": "Allow a contact to interact with the agent (sets status=allowed). Idempotent \u2014 calling again updates name/note. Also accepts 'label' for backward compatibility.",
+      "params": {
+        "type": "object",
+        "properties": {
+          "platform": {
+            "type": "string",
+            "description": "Platform identifier."
+          },
+          "channel_id": {
+            "type": "string",
+            "description": "Platform-specific sender/channel identifier."
+          },
+          "name": {
+            "type": "string",
+            "description": "Optional human-readable name for this contact."
+          },
+          "note": {
+            "type": "string",
+            "description": "Optional admin note."
+          }
         },
-        {
-            "name": "guard.allow",
-            "description": "Allow a contact to interact with the agent (sets status=allowed). Idempotent — calling again updates name/note. Also accepts 'label' for backward compatibility.",
-            "params": {
-                "type": "object",
-                "properties": {
-                    "platform": {
-                        "type": "string",
-                        "description": "Platform identifier."
-                    },
-                    "channel_id": {
-                        "type": "string",
-                        "description": "Platform-specific sender/channel identifier."
-                    },
-                    "name": {
-                        "type": "string",
-                        "description": "Optional human-readable name for this contact."
-                    },
-                    "note": {
-                        "type": "string",
-                        "description": "Optional admin note."
-                    }
-                },
-                "required": ["platform", "channel_id"]
-            }
+        "required": [
+          "platform",
+          "channel_id"
+        ]
+      }
+    },
+    {
+      "name": "guard.block",
+      "description": "Block a contact (sets status=blocked). Future messages from this contact will be rejected with reason=blocked.",
+      "params": {
+        "type": "object",
+        "properties": {
+          "platform": {
+            "type": "string",
+            "description": "Platform identifier."
+          },
+          "channel_id": {
+            "type": "string",
+            "description": "Platform-specific sender/channel identifier."
+          },
+          "note": {
+            "type": "string",
+            "description": "Optional reason for blocking."
+          }
         },
-        {
-            "name": "guard.block",
-            "description": "Block a contact (sets status=blocked). Future messages from this contact will be rejected with reason=blocked.",
-            "params": {
-                "type": "object",
-                "properties": {
-                    "platform": {
-                        "type": "string",
-                        "description": "Platform identifier."
-                    },
-                    "channel_id": {
-                        "type": "string",
-                        "description": "Platform-specific sender/channel identifier."
-                    },
-                    "note": {
-                        "type": "string",
-                        "description": "Optional reason for blocking."
-                    }
-                },
-                "required": ["platform", "channel_id"]
-            }
+        "required": [
+          "platform",
+          "channel_id"
+        ]
+      }
+    },
+    {
+      "name": "guard.name",
+      "description": "Set or update the human-readable name for an existing contact. Returns ok=false if the contact is not yet in the guard table.",
+      "params": {
+        "type": "object",
+        "properties": {
+          "platform": {
+            "type": "string",
+            "description": "Platform identifier."
+          },
+          "channel_id": {
+            "type": "string",
+            "description": "Platform-specific sender/channel identifier."
+          },
+          "name": {
+            "type": "string",
+            "description": "Human-readable display name."
+          }
         },
-        {
-            "name": "guard.name",
-            "description": "Set or update the human-readable name for an existing contact. Returns ok=false if the contact is not yet in the guard table.",
-            "params": {
-                "type": "object",
-                "properties": {
-                    "platform": {
-                        "type": "string",
-                        "description": "Platform identifier."
-                    },
-                    "channel_id": {
-                        "type": "string",
-                        "description": "Platform-specific sender/channel identifier."
-                    },
-                    "name": {
-                        "type": "string",
-                        "description": "Human-readable display name."
-                    }
-                },
-                "required": ["platform", "channel_id", "name"]
-            }
+        "required": [
+          "platform",
+          "channel_id",
+          "name"
+        ]
+      }
+    },
+    {
+      "name": "guard.remove",
+      "description": "Remove a contact from the guard table entirely. Returns ok=false if the entry did not exist.",
+      "params": {
+        "type": "object",
+        "properties": {
+          "platform": {
+            "type": "string",
+            "description": "Platform identifier."
+          },
+          "channel_id": {
+            "type": "string",
+            "description": "Platform-specific sender/channel identifier."
+          }
         },
-        {
-            "name": "guard.remove",
-            "description": "Remove a contact from the guard table entirely. Returns ok=false if the entry did not exist.",
-            "params": {
-                "type": "object",
-                "properties": {
-                    "platform": {
-                        "type": "string",
-                        "description": "Platform identifier."
-                    },
-                    "channel_id": {
-                        "type": "string",
-                        "description": "Platform-specific sender/channel identifier."
-                    }
-                },
-                "required": ["platform", "channel_id"]
-            }
-        },
-        {
-            "name": "guard.list",
-            "description": "List all contacts in the guard table (allowed, blocked, and unknown), ordered by most recently seen.",
-            "params": {
-                "type": "object",
-                "properties": {},
-                "required": []
-            }
-        }
-    ],
-    "events": [],
-    "runtime": "rust"
+        "required": [
+          "platform",
+          "channel_id"
+        ]
+      }
+    },
+    {
+      "name": "guard.list",
+      "description": "List all contacts in the guard table (allowed, blocked, and unknown), ordered by most recently seen.",
+      "params": {
+        "type": "object",
+        "properties": {},
+        "required": []
+      }
+    }
+  ],
+  "events": [],
+  "runtime": "rust"
 }

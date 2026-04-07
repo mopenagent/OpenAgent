@@ -16,7 +16,6 @@ use std::sync::{Arc, Mutex};
 use std::time::Instant;
 use tracing::{error, info, info_span};
 
-const DEFAULT_SOCKET_PATH: &str = "data/sockets/guard.sock";
 const DEFAULT_LOGS_DIR: &str = "logs";
 const DEFAULT_DB_PATH: &str = "data/guard.db";
 
@@ -29,9 +28,6 @@ async fn main() -> Result<()> {
             |e| eprintln!("{{\"level\":\"WARN\",\"message\":\"otel init failed\",\"error\":\"{e}\"}}"),
         )
         .ok();
-
-    let socket_path =
-        env::var("OPENAGENT_SOCKET_PATH").unwrap_or_else(|_| DEFAULT_SOCKET_PATH.to_string());
     let db_path = env::var("GUARD_DB_PATH").unwrap_or_else(|_| DEFAULT_DB_PATH.to_string());
 
     // Open (or create) the SQLite database. Wrap in Arc<Mutex> for shared use
@@ -387,7 +383,7 @@ async fn main() -> Result<()> {
         });
     }
 
-    info!(socket = %socket_path, db = %db_path, "guard.start");
-    server.serve(&socket_path).await?;
+    info!(addr = "0.0.0.0:9004", db = %db_path, "guard.start");
+    server.serve_auto("0.0.0.0:9004").await?;
     Ok(())
 }

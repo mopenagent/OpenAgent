@@ -9,7 +9,6 @@
 //!   Logs    → structured tracing events bridged to OTEL spans
 //!
 //! Environment variables (all paths relative to the process working directory = project root):
-//!   OPENAGENT_SOCKET_PATH      — Unix socket        (default: data/sockets/memory.sock)
 //!   OPENAGENT_MEMORY_PATH      — LanceDB storage    (default: data/memory)
 //!   OPENAGENT_LOGS_DIR         — traces + metrics   (default: logs)
 //!   OPENAGENT_EMBED_CACHE_PATH — FastEmbed cache    (default: data/models)
@@ -29,8 +28,7 @@ mod tools;
 
 use anyhow::Result;
 use db::{
-    ensure_table, DEFAULT_EMBED_CACHE, DEFAULT_LOGS_DIR, DEFAULT_MEMORY_PATH,
-    DEFAULT_SOCKET_PATH, DIARY_TABLE, KNOWLEDGE_TABLE, MEMORY_TABLE,
+    ensure_table, DEFAULT_EMBED_CACHE, DEFAULT_LOGS_DIR, DEFAULT_MEMORY_PATH, DIARY_TABLE, KNOWLEDGE_TABLE, MEMORY_TABLE,
 };
 use fastembed::{EmbeddingModel, InitOptions, TextEmbedding};
 use metrics::MemoryTelemetry;
@@ -57,8 +55,6 @@ async fn main() -> Result<()> {
 
     let memory_path =
         env::var("OPENAGENT_MEMORY_PATH").unwrap_or_else(|_| DEFAULT_MEMORY_PATH.to_string());
-    let socket_path =
-        env::var("OPENAGENT_SOCKET_PATH").unwrap_or_else(|_| DEFAULT_SOCKET_PATH.to_string());
     let embed_cache =
         env::var("OPENAGENT_EMBED_CACHE_PATH").unwrap_or_else(|_| DEFAULT_EMBED_CACHE.to_string());
     let embed_offline = env::var("OPENAGENT_EMBED_OFFLINE")
@@ -114,7 +110,7 @@ async fn main() -> Result<()> {
     let mut server = McpLiteServer::new(tools::make_tools(), "ready");
     tools::register_handlers(&mut server, Arc::clone(&db), Arc::clone(&model), Arc::clone(&tel));
 
-    info!(socket = %socket_path, "memory service ready");
-    server.serve(&socket_path).await?;
+    info!(addr = "0.0.0.0:9005", "memory service ready");
+    server.serve_auto("0.0.0.0:9005").await?;
     Ok(())
 }

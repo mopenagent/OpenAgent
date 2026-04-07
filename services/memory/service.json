@@ -1,120 +1,121 @@
 {
-    "name": "memory",
-    "description": "Agentic Memory \u2014 LanceDB + FastEmbed. LTS stores summaries, STS stores full conversation chains. Local embeddings (BAAI/bge-small-en-v1.5), no external API calls.",
-    "version": "0.1.0",
-    "binary": {
-        "linux/arm64": "bin/memory-linux-arm64",
-        "linux/amd64": "bin/memory-linux-amd64",
-        "darwin/arm64": "bin/memory-darwin-arm64",
-        "darwin/amd64": "bin/memory-darwin-amd64"
-    },
-    "socket": "data/sockets/memory.sock",
-    "health": {
-        "interval_ms": 5000,
-        "timeout_ms": 2000,
-        "restart_backoff_ms": [
-            1000,
-            2000,
-            5000,
-            10000,
-            30000
-        ],
-        "startup_timeout_ms": 60000
-    },
-    "tools": [
-        {
-            "name": "memory.index",
-            "description": "Index a trace (content + metadata) into LTS (summaries) or STS (full conversation chain). Generates local embedding and inserts into LanceDB.",
-            "params": {
-                "type": "object",
-                "properties": {
-                    "content": {
-                        "type": "string",
-                        "description": "Content to embed and store"
-                    },
-                    "metadata": {
-                        "type": "object",
-                        "description": "Optional metadata (e.g. session_id, source)"
-                    },
-                    "store": {
-                        "type": "string",
-                        "enum": [
-                            "ltm",
-                            "stm"
-                        ],
-                        "description": "Store: ltm (long-term memory) or stm (short-term memory)"
-                    }
-                },
-                "required": [
-                    "content",
-                    "store"
-                ]
-            }
-        },
-        {
-            "name": "memory.search",
-            "description": "Semantic search over LTS and/or STS. Returns top 5 results as JSON. Uses local embedding.",
-            "params": {
-                "type": "object",
-                "properties": {
-                    "query": {
-                        "type": "string",
-                        "description": "Query string for semantic search"
-                    },
-                    "store": {
-                        "type": "string",
-                        "enum": [
-                            "ltm",
-                            "stm",
-                            "all"
-                        ],
-                        "description": "Store to search (default: all)"
-                    }
-                },
-                "required": [
-                    "query"
-                ]
-            }
-        },
-        {
-            "name": "memory.delete",
-            "description": "Delete a specific document by id, or purge all documents from a store.",
-            "params": {
-                "type": "object",
-                "properties": {
-                    "store": {
-                        "type": "string",
-                        "enum": [
-                            "ltm",
-                            "stm"
-                        ],
-                        "description": "Store to delete from"
-                    },
-                    "id": {
-                        "type": "string",
-                        "description": "Document id to delete. Omit to purge the entire store."
-                    }
-                },
-                "required": [
-                    "store"
-                ]
-            }
-        },
-        {
-            "name": "memory.prune",
-            "description": "Remove stale documents from the STS store older than max_age_secs (default 86400 = 24 h). Returns count of pruned rows.",
-            "params": {
-                "type": "object",
-                "properties": {
-                    "max_age_secs": {
-                        "type": "integer",
-                        "description": "Age threshold in seconds. Rows older than this are deleted. Defaults to 86400 (24 h)."
-                    }
-                },
-                "required": []
-            }
-        }
+  "name": "memory",
+  "address": "0.0.0.0:9005",
+  "description": "Agentic Memory \u2014 LanceDB + FastEmbed. LTS stores summaries, STS stores full conversation chains. Local embeddings (BAAI/bge-small-en-v1.5), no external API calls.",
+  "version": "0.1.0",
+  "binary": {
+    "linux/arm64": "bin/memory-linux-arm64",
+    "linux/amd64": "bin/memory-linux-amd64",
+    "darwin/arm64": "bin/memory-darwin-arm64",
+    "darwin/amd64": "bin/memory-darwin-amd64"
+  },
+  "socket": "data/sockets/memory.sock",
+  "health": {
+    "interval_ms": 5000,
+    "timeout_ms": 2000,
+    "restart_backoff_ms": [
+      1000,
+      2000,
+      5000,
+      10000,
+      30000
     ],
-    "events": [],
-    "runtime": "rust"
+    "startup_timeout_ms": 60000
+  },
+  "tools": [
+    {
+      "name": "memory.index",
+      "description": "Index a trace (content + metadata) into LTS (summaries) or STS (full conversation chain). Generates local embedding and inserts into LanceDB.",
+      "params": {
+        "type": "object",
+        "properties": {
+          "content": {
+            "type": "string",
+            "description": "Content to embed and store"
+          },
+          "metadata": {
+            "type": "object",
+            "description": "Optional metadata (e.g. session_id, source)"
+          },
+          "store": {
+            "type": "string",
+            "enum": [
+              "ltm",
+              "stm"
+            ],
+            "description": "Store: ltm (long-term memory) or stm (short-term memory)"
+          }
+        },
+        "required": [
+          "content",
+          "store"
+        ]
+      }
+    },
+    {
+      "name": "memory.search",
+      "description": "Semantic search over LTS and/or STS. Returns top 5 results as JSON. Uses local embedding.",
+      "params": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "Query string for semantic search"
+          },
+          "store": {
+            "type": "string",
+            "enum": [
+              "ltm",
+              "stm",
+              "all"
+            ],
+            "description": "Store to search (default: all)"
+          }
+        },
+        "required": [
+          "query"
+        ]
+      }
+    },
+    {
+      "name": "memory.delete",
+      "description": "Delete a specific document by id, or purge all documents from a store.",
+      "params": {
+        "type": "object",
+        "properties": {
+          "store": {
+            "type": "string",
+            "enum": [
+              "ltm",
+              "stm"
+            ],
+            "description": "Store to delete from"
+          },
+          "id": {
+            "type": "string",
+            "description": "Document id to delete. Omit to purge the entire store."
+          }
+        },
+        "required": [
+          "store"
+        ]
+      }
+    },
+    {
+      "name": "memory.prune",
+      "description": "Remove stale documents from the STS store older than max_age_secs (default 86400 = 24 h). Returns count of pruned rows.",
+      "params": {
+        "type": "object",
+        "properties": {
+          "max_age_secs": {
+            "type": "integer",
+            "description": "Age threshold in seconds. Rows older than this are deleted. Defaults to 86400 (24 h)."
+          }
+        },
+        "required": []
+      }
+    }
+  ],
+  "events": [],
+  "runtime": "rust"
 }

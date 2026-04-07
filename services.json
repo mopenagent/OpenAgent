@@ -1,0 +1,16 @@
+{
+  "_comment": "Static TCP port map for all OpenAgent services. Each service binds on 0.0.0.0:<port>. openagent reads the address field from services/<name>/service.json at startup.",
+  "services": {
+    "browser":   { "port": 9001, "address": "0.0.0.0:9001" },
+    "channels":  { "port": 9002, "address": "0.0.0.0:9002" },
+    "cortex":    { "port": 9003, "address": "0.0.0.0:9003" },
+    "guard":     { "port": 9004, "address": "0.0.0.0:9004" },
+    "memory":    { "port": 9005, "address": "0.0.0.0:9005" },
+    "research":  { "port": 9006, "address": "0.0.0.0:9006" },
+    "sandbox":   { "port": 9007, "address": "0.0.0.0:9007" },
+    "stt":       { "port": 9008, "address": "0.0.0.0:9008" },
+    "tts":       { "port": 9009, "address": "0.0.0.0:9009" },
+    "validator": { "port": 9010, "address": "0.0.0.0:9010" },
+    "whatsapp":  { "port": 9011, "address": "0.0.0.0:9011" }
+  }
+}

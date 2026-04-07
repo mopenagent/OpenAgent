@@ -102,10 +102,14 @@ pub async fn handle_fetch(
     tel: Arc<BrowserTelemetry>,
     cache: Arc<Mutex<Cache>>,
 ) -> Result<String> {
-    let url = params["url"]
+    let raw_url = params["url"]
         .as_str()
-        .ok_or_else(|| anyhow::anyhow!("missing 'url' param"))?
-        .to_string();
+        .ok_or_else(|| anyhow::anyhow!("missing 'url' param"))?;
+    let url = if raw_url.starts_with("http://") || raw_url.starts_with("https://") {
+        raw_url.to_string()
+    } else {
+        format!("https://{raw_url}")
+    };
 
     // Baggage — create the span while the context guard is alive so the remote
     // parent trace ID is baked into the span. Drop the guard immediately after.

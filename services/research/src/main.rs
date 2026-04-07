@@ -9,7 +9,6 @@
 //!   Logs    → structured tracing events bridged to OTEL spans
 //!
 //! Environment variables (all paths relative to the process working directory = project root):
-//!   OPENAGENT_SOCKET_PATH      — Unix socket        (default: data/sockets/research.sock)
 //!   OPENAGENT_RESEARCH_DB      — SQLite database    (default: data/research.db)
 //!   OPENAGENT_RESEARCH_DIR     — Snapshot directory (default: data/research)
 //!   OPENAGENT_LOGS_DIR         — traces + metrics   (default: logs)
@@ -21,7 +20,7 @@ mod snapshot;
 mod tools;
 
 use anyhow::Result;
-use db::{DEFAULT_DB_PATH, DEFAULT_LOGS_DIR, DEFAULT_RESEARCH_DIR, DEFAULT_SOCKET_PATH};
+use db::{DEFAULT_DB_PATH, DEFAULT_LOGS_DIR, DEFAULT_RESEARCH_DIR};
 use metrics::ResearchTelemetry;
 use sdk_rust::{setup_otel, McpLiteServer};
 use std::env;
@@ -44,8 +43,6 @@ async fn main() -> Result<()> {
         env::var("OPENAGENT_RESEARCH_DB").unwrap_or_else(|_| DEFAULT_DB_PATH.to_string());
     let research_dir_str =
         env::var("OPENAGENT_RESEARCH_DIR").unwrap_or_else(|_| DEFAULT_RESEARCH_DIR.to_string());
-    let socket_path =
-        env::var("OPENAGENT_SOCKET_PATH").unwrap_or_else(|_| DEFAULT_SOCKET_PATH.to_string());
 
     let db_path = Path::new(&db_path_str);
     let research_dir = Path::new(&research_dir_str);
@@ -68,7 +65,7 @@ async fn main() -> Result<()> {
     let mut server = McpLiteServer::new(tools::make_tools(), "ready");
     tools::register_handlers(&mut server, Arc::clone(&store), Arc::clone(&research_dir_arc), Arc::clone(&tel));
 
-    info!(socket = %socket_path, "research service ready");
-    server.serve(&socket_path).await?;
+    info!(addr = "0.0.0.0:9006", "research service ready");
+    server.serve_auto("0.0.0.0:9006").await?;
     Ok(())
 }

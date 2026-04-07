@@ -1,22 +1,21 @@
 use crate::error::Result;
 use crate::types::{Frame, OutboundEvent};
-use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
-use tokio::net::unix::{OwnedReadHalf, OwnedWriteHalf};
+use tokio::io::{AsyncBufReadExt, AsyncRead, AsyncWrite, AsyncWriteExt, BufReader};
 
-/// Reads newline-delimited JSON frames from a Unix socket read-half.
+/// Reads newline-delimited JSON frames from any async reader (Unix socket or TCP).
 #[derive(Debug)]
-pub struct Decoder {
-    reader: BufReader<OwnedReadHalf>,
+pub struct Decoder<R: AsyncRead + Unpin> {
+    reader: BufReader<R>,
 }
 
-impl Decoder {
-    pub fn new(read_half: OwnedReadHalf) -> Self {
+impl<R: AsyncRead + Unpin> Decoder<R> {
+    pub fn new(read_half: R) -> Self {
         Self {
             reader: BufReader::new(read_half),
         }
     }
 
-    /// Read the next MCP-lite frame from the socket.
+    /// Read the next MCP-lite frame.
     ///
     /// Returns `Ok(None)` on EOF (connection closed cleanly).
     ///
@@ -42,14 +41,14 @@ impl Decoder {
     }
 }
 
-/// Writes newline-delimited JSON frames to a Unix socket write-half.
+/// Writes newline-delimited JSON frames to any async writer (Unix socket or TCP).
 #[derive(Debug)]
-pub struct Encoder {
-    writer: OwnedWriteHalf,
+pub struct Encoder<W: AsyncWrite + Unpin> {
+    writer: W,
 }
 
-impl Encoder {
-    pub fn new(write_half: OwnedWriteHalf) -> Self {
+impl<W: AsyncWrite + Unpin> Encoder<W> {
+    pub fn new(write_half: W) -> Self {
         Self { writer: write_half }
     }
 

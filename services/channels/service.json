@@ -1,6 +1,7 @@
 {
   "name": "channels",
-  "description": "Omnibus channels daemon — wraps zeroclaw platform connectors (Discord, Telegram, Slack, IRC, Mattermost, Signal, iMessage) behind a unified MCP-lite interface. Inbound messages are pushed as message.received events. Outbound operations (send, draft, react, typing) are dispatched via tool calls.",
+  "address": "0.0.0.0:9002",
+  "description": "Omnibus channels daemon \u2014 wraps zeroclaw platform connectors (Discord, Telegram, Slack, IRC, Mattermost, Signal, iMessage) behind a unified MCP-lite interface. Inbound messages are pushed as message.received events. Outbound operations (send, draft, react, typing) are dispatched via tool calls.",
   "version": "0.2.0",
   "binary": {
     "linux/arm64": "bin/channels-linux-arm64",
@@ -12,7 +13,13 @@
   "health": {
     "interval_ms": 5000,
     "timeout_ms": 2000,
-    "restart_backoff_ms": [1000, 2000, 5000, 10000, 30000]
+    "restart_backoff_ms": [
+      1000,
+      2000,
+      5000,
+      10000,
+      30000
+    ]
   },
   "tools": [
     {
@@ -21,10 +28,19 @@
       "params": {
         "type": "object",
         "properties": {
-          "address": { "type": "string", "description": "ChannelAddress URI" },
-          "content": { "type": "string", "description": "Message text" }
+          "address": {
+            "type": "string",
+            "description": "ChannelAddress URI"
+          },
+          "content": {
+            "type": "string",
+            "description": "Message text"
+          }
         },
-        "required": ["address", "content"]
+        "required": [
+          "address",
+          "content"
+        ]
       }
     },
     {
@@ -33,11 +49,21 @@
       "params": {
         "type": "object",
         "properties": {
-          "address":    { "type": "string" },
-          "message_id": { "type": "string" },
-          "content":    { "type": "string" }
+          "address": {
+            "type": "string"
+          },
+          "message_id": {
+            "type": "string"
+          },
+          "content": {
+            "type": "string"
+          }
         },
-        "required": ["address", "message_id", "content"]
+        "required": [
+          "address",
+          "message_id",
+          "content"
+        ]
       }
     },
     {
@@ -46,11 +72,21 @@
       "params": {
         "type": "object",
         "properties": {
-          "address":    { "type": "string" },
-          "message_id": { "type": "string" },
-          "content":    { "type": "string" }
+          "address": {
+            "type": "string"
+          },
+          "message_id": {
+            "type": "string"
+          },
+          "content": {
+            "type": "string"
+          }
         },
-        "required": ["address", "message_id", "content"]
+        "required": [
+          "address",
+          "message_id",
+          "content"
+        ]
       }
     },
     {
@@ -59,10 +95,17 @@
       "params": {
         "type": "object",
         "properties": {
-          "address":    { "type": "string" },
-          "message_id": { "type": "string" }
+          "address": {
+            "type": "string"
+          },
+          "message_id": {
+            "type": "string"
+          }
         },
-        "required": ["address", "message_id"]
+        "required": [
+          "address",
+          "message_id"
+        ]
       }
     },
     {
@@ -71,11 +114,22 @@
       "params": {
         "type": "object",
         "properties": {
-          "address":    { "type": "string" },
-          "message_id": { "type": "string" },
-          "emoji":      { "type": "string", "description": "Unicode emoji, e.g. \"👀\"" }
+          "address": {
+            "type": "string"
+          },
+          "message_id": {
+            "type": "string"
+          },
+          "emoji": {
+            "type": "string",
+            "description": "Unicode emoji, e.g. \"\ud83d\udc40\""
+          }
         },
-        "required": ["address", "message_id", "emoji"]
+        "required": [
+          "address",
+          "message_id",
+          "emoji"
+        ]
       }
     },
     {
@@ -84,9 +138,13 @@
       "params": {
         "type": "object",
         "properties": {
-          "address": { "type": "string" }
+          "address": {
+            "type": "string"
+          }
         },
-        "required": ["address"]
+        "required": [
+          "address"
+        ]
       }
     },
     {
@@ -95,9 +153,13 @@
       "params": {
         "type": "object",
         "properties": {
-          "address": { "type": "string" }
+          "address": {
+            "type": "string"
+          }
         },
-        "required": ["address"]
+        "required": [
+          "address"
+        ]
       }
     },
     {
@@ -110,7 +172,10 @@
       }
     }
   ],
-  "events": ["message.received", "channel.status"],
+  "events": [
+    "message.received",
+    "channel.status"
+  ],
   "runtime": "rust",
   "config": "config/channels.toml"
 }

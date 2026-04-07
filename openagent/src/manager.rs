@@ -1,14 +1,16 @@
-/// ServiceManager — spawns, monitors, and restarts MCP-lite service daemons.
+/// ServiceManager — connects to and health-monitors MCP-lite service daemons.
 ///
-/// Each managed service runs as a child process. A health loop sends `ping`
-/// every `health.interval_ms`; if no `pong` arrives within `health.timeout_ms`,
-/// the process is killed and restarted with exponential backoff.
+/// openagent does NOT spawn or restart services. That is the job of systemd
+/// (production) or services.sh (dev). This manager:
+///   - Connects to each service over TCP at the address from service.json
+///   - Calls tools.list and registers discovered tools
+///   - Runs a ping health loop; reconnects automatically if a service restarts
+///   - Forwards service events to the dispatch loop
 use anyhow::{anyhow, Result};
 use serde_json::Value;
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
-use tokio::process::Command;
 use tokio::sync::{broadcast, RwLock};
 use tokio::task::JoinHandle;
 use tokio::time::{sleep, Duration};
@@ -16,7 +18,6 @@ use tracing::{debug, error, info, warn};
 
 use crate::manifest::ServiceManifest;
 use crate::mcplite::McpLiteClient;
-use crate::platform::host_platform_key;
 
 /// A registered tool discovered via `tools.list`.
 #[derive(Debug, Clone)]
@@ -25,277 +26,173 @@ pub struct RegisteredTool {
     pub definition: Value,
 }
 
-/// Live state of a running service.
+/// Live state of a connected service.
 #[derive(Debug)]
 struct ServiceState {
     name: String,
     client: Arc<McpLiteClient>,
-    pid: Option<u32>,
 }
 
-/// Public snapshot of a running service — returned by `live_services()`.
+/// Public snapshot of a connected service.
 #[derive(Debug, Clone)]
 pub struct LiveServiceInfo {
     pub name: String,
-    pub pid: Option<u32>,
+    pub address: String,
 }
 
-/// ServiceManager — the central orchestrator.
+/// ServiceManager — connects to externally-managed service daemons.
 #[derive(Debug)]
 pub struct ServiceManager {
-    project_root: PathBuf,
-    /// Per-service env var overrides injected from config (e.g. tokens, DB paths).
-    /// Key: service name (e.g. "cortex"), Value: env var map.
-    service_env: HashMap<String, HashMap<String, String>>,
-    /// Service name → live state (None if not yet started or crashed).
-    services: Arc<RwLock<HashMap<String, ServiceState>>>,
-    /// All tools registered from all services.
+    /// All tools registered from all connected services.
     tools: Arc<RwLock<Vec<RegisteredTool>>>,
+    /// Service name → live connection state.
+    services: Arc<RwLock<HashMap<String, ServiceState>>>,
     /// Broadcast channel for events arriving from any service.
     event_tx: broadcast::Sender<Value>,
-    /// JoinHandles for all spawned service loop tasks — used by stop_all() to abort them.
+    /// JoinHandles for all connection-loop tasks.
     task_handles: Arc<Mutex<Vec<JoinHandle<()>>>>,
 }
 
 impl ServiceManager {
-    pub fn new(
-        project_root: PathBuf,
-        service_env: HashMap<String, HashMap<String, String>>,
-    ) -> Self {
+    pub fn new() -> Self {
         let (event_tx, _) = broadcast::channel(256);
         Self {
-            project_root,
-            service_env,
-            services: Arc::new(RwLock::new(HashMap::new())),
             tools: Arc::new(RwLock::new(Vec::new())),
+            services: Arc::new(RwLock::new(HashMap::new())),
             event_tx,
             task_handles: Arc::new(Mutex::new(Vec::new())),
         }
     }
 
-    /// Subscribe to events pushed by any managed service.
+    /// Subscribe to events pushed by any connected service.
     pub fn subscribe_events(&self) -> broadcast::Receiver<Value> {
         self.event_tx.subscribe()
     }
 
-    /// Return a snapshot of all registered tools.
-    /// Snapshot of all currently running services (name + PID).
+    /// Return a snapshot of all currently connected services.
     pub async fn live_services(&self) -> Vec<LiveServiceInfo> {
         self.services
             .read()
             .await
             .values()
-            .map(|s| LiveServiceInfo { name: s.name.clone(), pid: s.pid })
+            .map(|s| LiveServiceInfo { name: s.name.clone(), address: String::new() })
             .collect()
     }
 
+    /// Return all registered tools.
     pub async fn tools(&self) -> Vec<RegisteredTool> {
         self.tools.read().await.clone()
     }
 
     /// Call a tool on the appropriate service.
     pub async fn call_tool(&self, tool: &str, params: Value, timeout_ms: u64) -> Result<String> {
-        let service_name = tool
+        let prefix = tool
             .split('.')
             .next()
             .ok_or_else(|| anyhow!("invalid tool name: {tool}"))?;
 
-        let state = {
+        let client = {
             let guard = self.services.read().await;
             guard
-                .get(service_name)
+                .get(prefix)
                 .map(|s| Arc::clone(&s.client))
-                .ok_or_else(|| anyhow!("service not running: {service_name}"))?
+                .ok_or_else(|| anyhow!("service not connected: {prefix}"))?
         };
 
-        state.call_tool(tool, params, timeout_ms).await
+        client.call_tool(tool, params, timeout_ms).await
     }
 
-    /// Start all services described by `manifests`, skipping any that are disabled.
+    /// Spawn a connection-loop task for each enabled manifest.
     ///
-    /// A service is skipped if:
-    /// - `manifest.enabled == false` (set in `service.json`)
-    /// - its name appears in `config_disabled` (set in `openagent.toml [services] disabled`)
+    /// Each loop connects to the service TCP address, registers tools, and
+    /// re-connects automatically when the connection drops (the service
+    /// restarted). This is intentionally lightweight — openagent never kills
+    /// or restarts service processes.
     pub async fn start_all(&self, manifests: Vec<ServiceManifest>, config_disabled: &[String]) {
         for manifest in manifests {
             if !manifest.enabled {
-                info!(service = %manifest.name, "service.disabled — skipping (service.json enabled=false)");
+                info!(service = %manifest.name, "service.disabled — skipping");
                 continue;
             }
             if config_disabled.iter().any(|d| d == &manifest.name) {
-                info!(service = %manifest.name, "service.disabled — skipping (openagent.toml services.disabled)");
+                info!(service = %manifest.name, "service.disabled — skipping (config)");
                 continue;
             }
-            let root = self.project_root.clone();
+
             let services = Arc::clone(&self.services);
             let tools = Arc::clone(&self.tools);
             let event_tx = self.event_tx.clone();
-            let extra_env = self
-                .service_env
-                .get(&manifest.name)
-                .cloned()
-                .unwrap_or_default();
+
             let handle = tokio::spawn(async move {
-                run_service_loop(manifest, root, extra_env, services, tools, event_tx).await;
+                connection_loop(manifest, services, tools, event_tx).await;
             });
+
             self.task_handles
                 .lock()
-                .expect("task_handles mutex poisoned")
+                .expect("task_handles poisoned")
                 .push(handle);
         }
     }
 
-    /// Stop all services: abort service loop tasks (which triggers kill_on_drop on each
-    /// child process), then clear live state.
+    /// Abort all connection-loop tasks and clear state.
     pub async fn stop_all(&self) {
         let handles: Vec<JoinHandle<()>> = self
             .task_handles
             .lock()
-            .expect("task_handles mutex poisoned")
+            .expect("task_handles poisoned")
             .drain(..)
             .collect();
 
-        // Abort every service loop task. Aborting drops the task's Future, which drops
-        // `child` (kill_on_drop = true), sending SIGKILL to each child process.
         for h in &handles {
             h.abort();
         }
-        // Wait for all tasks to finish dropping so kills are delivered before we return.
         for h in handles {
-            let _ = h.await; // Returns JoinError::Cancelled — expected, ignore it.
+            let _ = h.await;
         }
 
         self.services.write().await.clear();
-        info!("service_manager.stopped_all");
+        info!("service_manager.disconnected_all");
     }
 }
 
-/// Long-running loop that keeps one service alive: spawn → connect → health → restart.
-async fn run_service_loop(
+/// Long-running loop that keeps one service connection alive.
+///
+/// Waits for the service to become reachable, connects, registers tools,
+/// runs a health loop, and reconnects when the connection drops.
+async fn connection_loop(
     manifest: ServiceManifest,
-    project_root: PathBuf,
-    config_env: HashMap<String, String>,
     services: Arc<RwLock<HashMap<String, ServiceState>>>,
     tools: Arc<RwLock<Vec<RegisteredTool>>>,
     event_tx: broadcast::Sender<Value>,
 ) {
     let name = manifest.name.clone();
-    let platform = host_platform_key();
-    let backoff = &manifest.health.restart_backoff_ms;
-    let mut attempt: usize = 0;
+    let addr = manifest.connect_addr();
+    let health_interval = Duration::from_millis(manifest.health.interval_ms);
+    let timeout_ms = manifest.health.timeout_ms;
 
     loop {
-        // ---- resolve binary -------------------------------------------------
-        let binary = match manifest.binary_path(platform) {
-            Some(p) => p,
-            None => {
-                error!(service = %name, platform, "service.binary.not_found — skipping");
-                return;
-            }
-        };
-
-        if !binary.exists() {
-            warn!(
-                service = %name,
-                path = %binary.display(),
-                "service.binary.missing — run `make local` first; retrying in 10s"
-            );
-            sleep(Duration::from_secs(10)).await;
-            continue;
-        }
-
-        let socket_path = manifest.socket_path();
-
-        // Ensure the socket directory exists.
-        if let Some(dir) = socket_path.parent() {
-            let _ = std::fs::create_dir_all(dir);
-        }
-        // Remove stale socket file if present.
-        let _ = std::fs::remove_file(&socket_path);
-
-        // ---- spawn child ----------------------------------------------------
-        // Merge: manifest env (service.json) ← config env (openagent.toml).
-        // Config env wins so operator overrides take effect.
-        let mut env_extras: Vec<(String, String)> = manifest
-            .env
-            .iter()
-            .map(|(k, v)| (k.clone(), v.clone()))
-            .collect();
-
-        for (k, v) in &config_env {
-            if let Some(entry) = env_extras.iter_mut().find(|(ek, _)| ek == k) {
-                entry.1 = v.clone();
-            } else {
-                env_extras.push((k.clone(), v.clone()));
-            }
-        }
-
-        // Resolve relative data/ paths against project_root.
-        for (_, val) in &mut env_extras {
-            if val.starts_with("data/") {
-                *val = project_root.join(&*val).to_string_lossy().to_string();
-            }
-        }
-
-        let socket_str = socket_path.to_string_lossy().to_string();
-
-        let child = Command::new(&binary)
-            // stdin  → /dev/null: prevents child from racing on parent's stdin fd
-            //          (would cause console read_line to get spurious EOF).
-            // stdout → /dev/null: service logs go to their own OTEL files;
-            //          suppress here so they don't flood the interactive console.
-            // stderr → /dev/null: same reason — services write structured logs
-            //          to files, not to the terminal.
-            .stdin(std::process::Stdio::null())
-            .stdout(std::process::Stdio::null())
-            .stderr(std::process::Stdio::null())
-            // Put each child in its own process group so terminal Ctrl-C (SIGINT
-            // to the foreground group) only hits openagent.  openagent then calls
-            // stop_all() which aborts the task and kill_on_drop delivers SIGKILL.
-            // Without this, children receive SIGINT at the same instant as the
-            // parent, causing a restart race before stop_all() can run.
-            .process_group(0)
-            .env("OPENAGENT_SOCKET_PATH", &socket_str)
-            .env("OPENAGENT_LOGS_DIR", project_root.join("logs").to_string_lossy().as_ref())
-            .envs(env_extras)
-            .kill_on_drop(true)
-            .spawn();
-
-        let mut child = match child {
-            Ok(c) => c,
-            Err(e) => {
-                error!(service = %name, error = %e, "service.spawn.failed");
-                backoff_sleep(backoff, &mut attempt).await;
-                continue;
-            }
-        };
-
-        info!(service = %name, pid = ?child.id(), binary = %binary.display(), "service.spawned");
-
-        // ---- wait for socket ------------------------------------------------
-        if let Err(e) = wait_for_socket(&socket_path, manifest.health.startup_timeout_ms).await {
-            error!(service = %name, error = %e, "service.socket.timeout");
-            let _ = child.kill().await;
-            backoff_sleep(backoff, &mut attempt).await;
+        // ---- wait for TCP port to accept connections ------------------------
+        info!(service = %name, addr = %addr, "service.connecting");
+        if let Err(e) = wait_for_tcp(&addr, manifest.health.startup_timeout_ms).await {
+            warn!(service = %name, addr = %addr, error = %e, "service.unreachable — retrying in 5s");
+            sleep(Duration::from_secs(5)).await;
             continue;
         }
 
         // ---- connect --------------------------------------------------------
-        let client = match McpLiteClient::connect(&socket_str).await {
+        let client = match McpLiteClient::connect(&addr).await {
             Ok(c) => Arc::new(c),
             Err(e) => {
-                error!(service = %name, error = %e, "service.connect.failed");
-                let _ = child.kill().await;
-                backoff_sleep(backoff, &mut attempt).await;
+                error!(service = %name, addr = %addr, error = %e, "service.connect.failed");
+                sleep(Duration::from_secs(2)).await;
                 continue;
             }
         };
 
         // ---- tools.list -----------------------------------------------------
-        match client.tools_list(manifest.health.timeout_ms * 5).await {
+        match client.tools_list(timeout_ms * 5).await {
             Ok(tool_defs) => {
                 let mut t = tools.write().await;
-                // Remove any stale entries from a previous run of this service.
                 t.retain(|rt| rt.service != name);
                 for def in &tool_defs {
                     t.push(RegisteredTool {
@@ -303,7 +200,7 @@ async fn run_service_loop(
                         definition: def.clone(),
                     });
                 }
-                info!(service = %name, count = tool_defs.len(), "service.tools.registered");
+                info!(service = %name, addr = %addr, count = tool_defs.len(), "service.connected");
             }
             Err(e) => {
                 warn!(service = %name, error = %e, "service.tools_list.failed");
@@ -313,86 +210,51 @@ async fn run_service_loop(
         // ---- forward events -------------------------------------------------
         {
             let mut event_rx = client.subscribe_events();
-            let event_tx2 = event_tx.clone();
+            let tx = event_tx.clone();
             tokio::spawn(async move {
                 while let Ok(evt) = event_rx.recv().await {
-                    let _ = event_tx2.send(evt);
+                    let _ = tx.send(evt);
                 }
             });
         }
 
         // ---- register live state --------------------------------------------
-        let child_pid = child.id();
         services.write().await.insert(
             name.clone(),
-            ServiceState {
-                name: name.clone(),
-                client: Arc::clone(&client),
-                pid: child_pid,
-            },
+            ServiceState { name: name.clone(), client: Arc::clone(&client) },
         );
-        attempt = 0; // reset backoff on successful start
 
         // ---- health loop ----------------------------------------------------
-        let interval = Duration::from_millis(manifest.health.interval_ms);
-        let timeout_ms = manifest.health.timeout_ms;
-
         loop {
-            sleep(interval).await;
-
-            // Check if child process has exited.
-            match child.try_wait() {
-                Ok(Some(status)) => {
-                    error!(service = %name, ?status, "service.exited");
-                    break;
-                }
-                Err(e) => {
-                    error!(service = %name, error = %e, "service.wait.error");
-                    break;
-                }
-                Ok(None) => {} // still running
-            }
+            sleep(health_interval).await;
 
             if !client.ping(timeout_ms).await {
-                error!(service = %name, "service.ping.timeout — restarting");
-                let _ = child.kill().await;
+                error!(service = %name, addr = %addr, "service.ping.timeout — reconnecting");
                 break;
             }
-
             debug!(service = %name, "service.health.ok");
         }
 
-        // Remove from live state before restarting.
+        // Remove from live state; tools remain stale until we reconnect.
         services.write().await.remove(&name);
-        // Remove tools so they're not callable while service is down.
         tools.write().await.retain(|rt| rt.service != name);
 
-        backoff_sleep(backoff, &mut attempt).await;
+        info!(service = %name, addr = %addr, "service.disconnected — reconnecting in 2s");
+        sleep(Duration::from_secs(2)).await;
     }
 }
 
-/// Wait up to `timeout_ms` for the socket file to appear.
-async fn wait_for_socket(path: &std::path::Path, timeout_ms: u64) -> Result<()> {
+/// Poll `addr` every 200ms until TCP accepts a connection or timeout expires.
+async fn wait_for_tcp(addr: &str, timeout_ms: u64) -> Result<()> {
     let deadline = Duration::from_millis(timeout_ms);
     let start = tokio::time::Instant::now();
     loop {
-        if path.exists() {
+        if tokio::net::TcpStream::connect(addr).await.is_ok() {
             return Ok(());
         }
         if start.elapsed() >= deadline {
-            return Err(anyhow!("socket {} did not appear within {timeout_ms}ms", path.display()));
+            return Err(anyhow!("TCP {addr} not reachable within {timeout_ms}ms"));
         }
-        sleep(Duration::from_millis(100)).await;
+        sleep(Duration::from_millis(200)).await;
     }
-}
-
-/// Sleep for the next backoff duration; increments attempt (capped at last entry).
-async fn backoff_sleep(backoff: &[u64], attempt: &mut usize) {
-    let ms = backoff
-        .get(*attempt)
-        .or_else(|| backoff.last())
-        .copied()
-        .unwrap_or(5000);
-    *attempt = (*attempt + 1).min(backoff.len().saturating_sub(1) + 1);
-    sleep(Duration::from_millis(ms)).await;
 }

@@ -2,9 +2,18 @@
 # run.sh — start the OpenAgent Rust runtime
 #
 # The Rust binary (openagent) is the sole control plane process.  It:
-#   - spawns and monitors all MCP-lite services (cortex, channels, guard, …)
+#   - spawns and monitors all MCP-lite services over TCP (see services.json)
 #   - runs the dispatch loop (channels → cortex → channel.send)
 #   - serves the Axum control plane API on TCP :8080
+#
+# Service TCP port map (authoritative source: services/<name>/service.json):
+#   browser   :9001    channels  :9002    cortex    :9003
+#   guard     :9004    memory    :9005    research  :9006
+#   sandbox   :9007    stt       :9008    tts       :9009
+#   validator :9010    whatsapp  :9011
+#
+# To run on a separate machine: set OPENAGENT_TCP_ADDRESS=<host>:<port> per
+# service in .env, or update the "address" field in services/<name>/service.json.
 #
 # The Python web UI runs separately via Docker:
 #   docker compose up -d       # starts jaeger + web UI
@@ -55,7 +64,7 @@ if [ -f "$ROOT/.env" ]; then
   echo "  Loaded .env"
 fi
 
-mkdir -p "$ROOT/logs" "$ROOT/data/sockets" "$ROOT/data/artifacts" "$ROOT/data/run"
+mkdir -p "$ROOT/logs" "$ROOT/data/artifacts" "$ROOT/data/run"
 
 # Clear logs from previous run so each session starts fresh.
 rm -f "$ROOT/logs"/*.jsonl "$ROOT/logs"/*.log "$ROOT/logs"/*.log.*

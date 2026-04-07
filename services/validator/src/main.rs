@@ -15,7 +15,6 @@ use std::env;
 use std::time::Instant;
 use tracing::{error, info, info_span};
 
-const DEFAULT_SOCKET_PATH: &str = "data/sockets/validator.sock";
 const DEFAULT_LOGS_DIR: &str = "logs";
 
 #[tokio::main]
@@ -24,9 +23,6 @@ async fn main() -> Result<()> {
     let _otel_guard = setup_otel("validator", &logs_dir)
         .inspect_err(|e| eprintln!("{{\"level\":\"WARN\",\"message\":\"otel init failed\",\"error\":\"{e}\"}}"))
         .ok();
-
-    let socket_path = env::var("OPENAGENT_SOCKET_PATH")
-        .unwrap_or_else(|_| DEFAULT_SOCKET_PATH.to_string());
 
     let telemetry = ValidatorTelemetry::new(&logs_dir)?;
     let mut server = McpLiteServer::new(tools::make_tools(), "ready");
@@ -150,7 +146,7 @@ async fn main() -> Result<()> {
         }
     });
 
-    info!(socket = %socket_path, backend = "llm_json", "validator.start");
-    server.serve(&socket_path).await?;
+    info!(addr = "0.0.0.0:9010", backend = "llm_json", "validator.start");
+    server.serve_auto("0.0.0.0:9010").await?;
     Ok(())
 }

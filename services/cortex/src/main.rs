@@ -25,13 +25,10 @@ use tool_router::ToolRouter;
 use tracing::info;
 
 const DEFAULT_LOGS_DIR: &str = "logs";
-const DEFAULT_SOCKET_PATH: &str = "data/sockets/cortex.sock";
 
 #[tokio::main]
 async fn main() -> Result<()> {
     let logs_dir = env::var("OPENAGENT_LOGS_DIR").unwrap_or_else(|_| DEFAULT_LOGS_DIR.to_string());
-    let socket_path =
-        env::var("OPENAGENT_SOCKET_PATH").unwrap_or_else(|_| DEFAULT_SOCKET_PATH.to_string());
 
     let _otel_guard = setup_otel("cortex", &logs_dir)
         .inspect_err(|e| {
@@ -64,7 +61,7 @@ async fn main() -> Result<()> {
     let mut server = McpLiteServer::new(tools::make_tools(), "phase1");
     tools::register_handlers(&mut server, ctx);
 
-    info!(socket = %socket_path, phase = "phase1", "cortex.start");
-    server.serve(&socket_path).await?;
+    info!(addr = "0.0.0.0:9003", phase = "phase1", "cortex.start");
+    server.serve_auto("0.0.0.0:9003").await?;
     Ok(())
 }

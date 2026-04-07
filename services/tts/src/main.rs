@@ -4,7 +4,6 @@
 //!
 //! # Environment variables
 //!
-//! - `OPENAGENT_SOCKET_PATH`   — Unix socket (default: `data/sockets/tts.sock`)
 //! - `OPENAGENT_TTS_MODEL`     — ONNX model path (default: `data/models/kokoro-v1.0.onnx`)
 //! - `OPENAGENT_TTS_VOICES`    — Voices data path (default: `data/models/voices-v1.0.bin`)
 //! - `OPENAGENT_ARTIFACTS_DIR` — Output dir for WAV files (default: `data/artifacts/tts`)
@@ -22,7 +21,7 @@ mod tools;
 use anyhow::{Context as _, Result};
 use metrics::TtsTelemetry;
 use params::{
-    DEFAULT_ARTIFACTS_DIR, DEFAULT_LOGS_DIR, DEFAULT_MODEL_PATH, DEFAULT_SOCKET_PATH,
+    DEFAULT_ARTIFACTS_DIR, DEFAULT_LOGS_DIR, DEFAULT_MODEL_PATH,
     DEFAULT_VOICES_PATH,
 };
 use sdk_rust::{setup_otel, McpLiteServer};
@@ -37,9 +36,6 @@ async fn main() -> Result<()> {
     let _otel_guard = setup_otel("tts", &logs_dir)
         .inspect_err(|e| eprintln!("{{\"level\":\"WARN\",\"message\":\"otel init failed\",\"error\":\"{e}\"}}"))
         .ok();
-
-    let socket_path =
-        env::var("OPENAGENT_SOCKET_PATH").unwrap_or_else(|_| DEFAULT_SOCKET_PATH.to_string());
     let model_path =
         env::var("OPENAGENT_TTS_MODEL").unwrap_or_else(|_| DEFAULT_MODEL_PATH.to_string());
     let voices_path =
@@ -51,7 +47,7 @@ async fn main() -> Result<()> {
 
     let tel = Arc::new(TtsTelemetry::new(&logs_dir).context("failed to init tts telemetry")?);
 
-    info!(socket = %socket_path, model = %model_path, voices = %voices_path, "tts.start");
+    info!(addr = "0.0.0.0:9009", model = %model_path, voices = %voices_path, "tts.start");
 
     let tts = kokoros::tts::koko::TTSKoko::new(&model_path, &voices_path).await;
     let tts = Arc::new(Mutex::new(tts));
@@ -59,6 +55,6 @@ async fn main() -> Result<()> {
     let mut server = McpLiteServer::new(tools::make_tools(), "ready");
     tools::register_handlers(&mut server, tts, tel, out_dir);
 
-    server.serve(&socket_path).await?;
+    server.serve_auto("0.0.0.0:9009").await?;
     Ok(())
 }

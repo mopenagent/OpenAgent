@@ -240,12 +240,7 @@ async fn cmd_health(manager: &ServiceManager) -> String {
     ];
 
     for svc in &live {
-        let rss = svc.pid
-            .and_then(rss_kb)
-            .map(|kb| format!("{:.1}MB", kb as f64 / 1024.0))
-            .unwrap_or_else(|| "—".into());
-        let pid_str = svc.pid.map(|p| p.to_string()).unwrap_or_else(|| "—".into());
-        lines.push(format!("  {:<22} pid={:<8} rss={}", svc.name, pid_str, rss));
+        lines.push(format!("  {:<22} addr={}  connected", svc.name, svc.address));
     }
 
     lines.join("\n")
@@ -254,38 +249,25 @@ async fn cmd_health(manager: &ServiceManager) -> String {
 async fn cmd_service_list(manager: &ServiceManager) -> String {
     let live = manager.live_services().await;
     if live.is_empty() {
-        return "No services running".into();
+        return "No services connected. Start them with: systemctl start openagent-<name> (or ./services.sh)".into();
     }
-    let mut lines = vec![format!("{:<22} {:>8}  status", "name", "pid")];
+    let mut lines = vec![format!("{:<22}  status", "name")];
     lines.push("-".repeat(38));
     for s in &live {
-        let pid = s.pid.map(|p| p.to_string()).unwrap_or_else(|| "—".into());
-        lines.push(format!("{:<22} {:>8}  running", s.name, pid));
+        lines.push(format!("{:<22}  connected ({})", s.name, s.address));
     }
     lines.join("\n")
 }
 
-async fn cmd_service_restart(manager: &ServiceManager, name: &str) -> String {
-    let live = manager.live_services().await;
-    match live.iter().find(|s| s.name == name) {
-        None => format!("Service not found: {name}"),
-        Some(svc) => match svc.pid {
-            None => format!("{name}: no pid — may be starting"),
-            Some(pid) => {
-                let ok = std::process::Command::new("kill")
-                    .args(["-TERM", &pid.to_string()])
-                    .status()
-                    .map(|s| s.success())
-                    .unwrap_or(false);
-                if ok {
-                    info!(service = name, pid, "console.service.restart");
-                    format!("Sent SIGTERM to {name} (pid {pid}) — will restart automatically")
-                } else {
-                    format!("Failed to signal {name} (pid {pid})")
-                }
-            }
-        },
-    }
+async fn cmd_service_restart(_manager: &ServiceManager, name: &str) -> String {
+    // openagent no longer manages service processes.
+    // Restart via systemd: systemctl restart openagent-<name>
+    // Or via services.sh on dev machines.
+    format!(
+        "{name}: openagent does not manage service processes.\n\
+         To restart: systemctl restart openagent-{name}\n\
+         On dev:     ./services.sh restart {name}"
+    )
 }
 
 async fn cmd_tools(manager: &ServiceManager, filter: &str) -> String {

@@ -81,26 +81,9 @@ async fn main() -> Result<()> {
         "openagent.config.loaded"
     );
 
-    // Build per-service env var overrides from config.
-    // ServiceManager injects these into each service's subprocess environment.
-    let mut service_env: std::collections::HashMap<String, std::collections::HashMap<String, String>> =
-        std::collections::HashMap::new();
-    service_env.insert("cortex".into(), cfg.provider.to_env_vars());
-    service_env.insert("guard".into(), cfg.guard.to_env_vars());
-    if cfg.platforms.discord.enabled {
-        service_env.insert("discord".into(), cfg.platforms.discord_env());
-    }
-    if cfg.platforms.telegram.enabled {
-        service_env.insert("telegram".into(), cfg.platforms.telegram_env());
-    }
-    if cfg.platforms.slack.enabled {
-        service_env.insert("slack".into(), cfg.platforms.slack_env());
-    }
-    if cfg.platforms.whatsapp.enabled {
-        service_env.insert("whatsapp".into(), cfg.platforms.whatsapp_env());
-    }
-
-    let manager = Arc::new(ServiceManager::new(project_root, service_env));
+    // Connect to externally-managed services (systemd / services.sh).
+    // openagent does not spawn or restart services — that is the supervisor's job.
+    let manager = Arc::new(ServiceManager::new());
     manager.start_all(manifests, &cfg.services.disabled).await;
 
     // ---- Dispatch loop — events → cortex → channel.send --------------------

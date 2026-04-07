@@ -1,4 +1,4 @@
-/// Async MCP-lite client over a Unix Domain Socket.
+/// Async MCP-lite client over TCP.
 ///
 /// Sends newline-delimited JSON frames; matches responses by `id`;
 /// routes unsolicited event frames to a broadcast channel.
@@ -7,7 +7,7 @@ use serde_json::{json, Value};
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
-use tokio::net::UnixStream;
+use tokio::net::TcpStream;
 use tokio::sync::{broadcast, oneshot, Mutex};
 use tokio::time::{timeout, Duration};
 use tracing::{debug, error, warn};
@@ -28,11 +28,13 @@ pub struct McpLiteClient {
 }
 
 impl McpLiteClient {
-    /// Connect to `socket_path` and start the background read/write tasks.
-    pub async fn connect(socket_path: &str) -> Result<Self> {
-        let stream = UnixStream::connect(socket_path)
+    /// Connect to `addr` (e.g. `"127.0.0.1:9001"`) and start background read/write tasks.
+    pub async fn connect(addr: &str) -> Result<Self> {
+        let stream = TcpStream::connect(addr)
             .await
-            .with_context(|| format!("connect to {socket_path}"))?;
+            .with_context(|| format!("connect to {addr}"))?;
+        // Disable Nagle — tool calls are small request/response pairs.
+        stream.set_nodelay(true).ok();
 
         let (read_half, mut write_half) = stream.into_split();
         let pending: PendingMap = Arc::new(Mutex::new(HashMap::new()));

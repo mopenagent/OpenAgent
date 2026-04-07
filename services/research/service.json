@@ -1,11 +1,12 @@
 {
   "name": "research",
-  "description": "Research DAG service — persistent cross-session research tracking with task graph and markdown snapshots",
+  "address": "0.0.0.0:9006",
+  "description": "Research DAG service \u2014 persistent cross-session research tracking with task graph and markdown snapshots",
   "version": "0.1.0",
   "runtime": "rust",
   "binary": {
-    "linux/arm64":  "bin/research-linux-arm64",
-    "linux/amd64":  "bin/research-linux-amd64",
+    "linux/arm64": "bin/research-linux-arm64",
+    "linux/amd64": "bin/research-linux-amd64",
     "darwin/arm64": "bin/research-darwin-arm64",
     "darwin/amd64": "bin/research-darwin-amd64"
   },
@@ -13,7 +14,13 @@
   "health": {
     "interval_ms": 5000,
     "timeout_ms": 2000,
-    "restart_backoff_ms": [1000, 2000, 5000, 10000, 30000],
+    "restart_backoff_ms": [
+      1000,
+      2000,
+      5000,
+      10000,
+      30000
+    ],
     "startup_timeout_ms": 15000
   },
   "tools": [
@@ -36,7 +43,10 @@
             "description": "Optional short title for the research (defaults to first 60 chars of goal)"
           }
         },
-        "required": ["user_key", "goal"]
+        "required": [
+          "user_key",
+          "goal"
+        ]
       }
     },
     {
@@ -50,7 +60,9 @@
             "description": "User identifier"
           }
         },
-        "required": ["user_key"]
+        "required": [
+          "user_key"
+        ]
       }
     },
     {
@@ -68,7 +80,10 @@
             "description": "Research ID to switch to"
           }
         },
-        "required": ["user_key", "research_id"]
+        "required": [
+          "user_key",
+          "research_id"
+        ]
       }
     },
     {
@@ -82,7 +97,9 @@
             "description": "User identifier"
           }
         },
-        "required": ["user_key"]
+        "required": [
+          "user_key"
+        ]
       }
     },
     {
@@ -96,7 +113,9 @@
             "description": "User identifier"
           }
         },
-        "required": ["user_key"]
+        "required": [
+          "user_key"
+        ]
       }
     },
     {
@@ -115,7 +134,9 @@
           },
           "depends_on": {
             "type": "array",
-            "items": { "type": "string" },
+            "items": {
+              "type": "string"
+            },
             "description": "Optional list of task IDs this task depends on"
           },
           "parent_id": {
@@ -127,7 +148,10 @@
             "description": "Optional agent name to assign this task to"
           }
         },
-        "required": ["user_key", "description"]
+        "required": [
+          "user_key",
+          "description"
+        ]
       }
     },
     {
@@ -145,7 +169,10 @@
             "description": "Result or output from completing this task"
           }
         },
-        "required": ["task_id", "result"]
+        "required": [
+          "task_id",
+          "result"
+        ]
       }
     },
     {
@@ -163,7 +190,10 @@
             "description": "Reason the task failed"
           }
         },
-        "required": ["task_id", "reason"]
+        "required": [
+          "task_id",
+          "reason"
+        ]
       }
     }
   ],

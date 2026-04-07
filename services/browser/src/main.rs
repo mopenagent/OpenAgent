@@ -5,7 +5,6 @@
 //!   web.fetch   — reqwest + dom_smoothie extraction (cached 1 hr)
 //!
 //! Environment variables:
-//!   OPENAGENT_SOCKET_PATH — Unix socket path  (default: data/sockets/browser.sock)
 //!   OPENAGENT_LOGS_DIR    — OTEL output dir   (default: logs)
 //!   SEARXNG_URL           — SearXNG base URL  (default: http://100.96.81.109:8888)
 
@@ -29,7 +28,6 @@ use tracing::info;
 #[global_allocator]
 static GLOBAL: MiMalloc = MiMalloc;
 
-const DEFAULT_SOCKET_PATH: &str = "data/sockets/browser.sock";
 const DEFAULT_SEARXNG_URL: &str = "http://100.96.81.109:8888";
 
 #[tokio::main]
@@ -47,9 +45,6 @@ async fn main() -> anyhow::Result<()> {
         .ok();
 
     let tel = Arc::new(BrowserTelemetry::new(&logs_dir)?);
-
-    let socket_path =
-        env::var("OPENAGENT_SOCKET_PATH").unwrap_or_else(|_| DEFAULT_SOCKET_PATH.to_string());
     let searxng_url =
         env::var("SEARXNG_URL").unwrap_or_else(|_| DEFAULT_SEARXNG_URL.to_string());
 
@@ -59,7 +54,7 @@ async fn main() -> anyhow::Result<()> {
     let mut server = McpLiteServer::new(tools::make_tools(), "ready");
     tools::register_handlers(&mut server, tel, search_cache, fetch_cache, searxng_url.clone());
 
-    info!(socket = %socket_path, searxng = %searxng_url, "browser.start");
-    server.serve(&socket_path).await?;
+    info!(addr = "0.0.0.0:9001", searxng = %searxng_url, "browser.start");
+    server.serve_auto("0.0.0.0:9001").await?;
     Ok(())
 }
