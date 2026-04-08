@@ -13,7 +13,7 @@
 
 use serde::Deserialize;
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 pub struct IrcConfig {
     #[serde(default)]
     pub enabled: bool,

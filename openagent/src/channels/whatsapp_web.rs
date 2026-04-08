@@ -23,7 +23,7 @@ use super::traits::Channel;
 
 use crate::observability::telemetry::MetricsWriter;
 
-#[derive(Debug, Default, Deserialize)]
+#[derive(Debug, Clone, Default, Deserialize)]
 pub struct WhatsAppWebConfig {
     #[serde(default)]
     pub enabled: bool,

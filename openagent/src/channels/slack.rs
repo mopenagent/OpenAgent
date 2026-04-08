@@ -21,7 +21,7 @@
 
 use serde::Deserialize;
 
-#[derive(Debug, Default, Deserialize)]
+#[derive(Debug, Clone, Default, Deserialize)]
 pub struct SlackConfig {
     #[serde(default)]
     pub enabled: bool,

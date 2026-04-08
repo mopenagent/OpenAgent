@@ -12,16 +12,7 @@ mod platform;
 mod server;
 mod service;
 
-// Merged from ZeroClaw
-pub mod hardware;
-pub mod peripherals;
 pub mod channels;
-pub mod tunnel;
-pub mod gateway;
-pub mod cron;
-pub mod sop;
-pub mod doctor;
-pub mod health;
 
 // Stubs for zeroclaw channel deps (security pairing, provider trait, multimodal)
 pub mod security;
@@ -130,7 +121,12 @@ async fn main() -> Result<()> {
     });
 
     // ---- Build in-process AgentContext (action catalog + tool router + telemetry) ----
-    let action_catalog = Arc::new(ActionCatalog::load(&project_root.join("services")));
+    let action_catalog = Arc::new(
+        ActionCatalog::discover_from_root(&project_root).unwrap_or_else(|e| {
+            tracing::warn!(error = %e, "action_catalog.load.error — using empty catalog");
+            ActionCatalog::empty()
+        })
+    );
     let tool_addresses = action_catalog.tool_address_map();
     let tool_router = Arc::new(ToolRouter::new(tool_addresses, project_root.clone()));
     let agent_tel = Arc::new(

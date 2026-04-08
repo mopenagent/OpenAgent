@@ -41,7 +41,7 @@ use async_trait::async_trait;
 use regex::Regex;
 use uuid::Uuid;
 
-#[derive(Debug, Default, Deserialize)]
+#[derive(Debug, Clone, Default, Deserialize)]
 pub struct WhatsAppConfig {
     #[serde(default)]
     pub enabled: bool,

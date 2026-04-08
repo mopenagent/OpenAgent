@@ -32,7 +32,7 @@
 # ---------------------------------------------------------------------------
 
 GO_SERVICES   := whatsapp
-RUST_SERVICES := sandbox browser memory tts stt validator cortex channels guard research
+RUST_SERVICES := sandbox browser memory tts stt validator
 # openagent is the Rust control plane binary — built separately (not a service)
 OPENAGENT_DIR := openagent
 

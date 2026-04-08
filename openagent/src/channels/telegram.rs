@@ -18,7 +18,7 @@ use serde::Deserialize;
 
 use crate::config::StreamMode;
 
-#[derive(Debug, Default, Deserialize)]
+#[derive(Debug, Clone, Default, Deserialize)]
 pub struct TelegramConfig {
     #[serde(default)]
     pub enabled: bool,

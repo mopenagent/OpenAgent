@@ -429,7 +429,7 @@ func (r *waRuntime) sendTyping(chatID string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("invalid chat_id: %w", err)
 	}
-	if err := r.client.SendChatPresence(jid, types.ChatPresenceComposing, types.ChatPresenceMediaText); err != nil {
+	if err := r.client.SendChatPresence(context.Background(), jid, types.ChatPresenceComposing, types.ChatPresenceMediaText); err != nil {
 		return "", fmt.Errorf("send typing: %w", err)
 	}
 	return marshalJSON(map[string]any{"ok": true})
@@ -512,7 +512,7 @@ func (r *waRuntime) sendMedia(chatID, filePath, mimeType, caption string) (strin
 	}
 
 	// Fill in the upload envelope fields that whatsmeow needs.
-	fillUploadFields(waMsg, &uploaded, mimeType, uint64(len(data)))
+	fillUploadFields(&waMsg, &uploaded, mimeType, uint64(len(data)))
 
 	if _, err = r.client.SendMessage(context.Background(), jid, &waE2E.Message{
 		ImageMessage:    waMsg.image,
@@ -541,7 +541,7 @@ type mediaMsg struct {
 
 // mediaTypeForMIME returns the whatsmeow upload type and a skeleton message
 // proto for the given MIME type.
-func mediaTypeForMIME(mimeType, _ []byte, caption, filePath string) (whatsmeow.MediaType, mediaMsg) {
+func mediaTypeForMIME(mimeType string, _ []byte, caption, filePath string) (whatsmeow.MediaType, mediaMsg) {
 	base := strings.SplitN(mimeType, "/", 2)[0]
 	switch base {
 	case "image":

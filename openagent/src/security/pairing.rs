@@ -31,13 +31,20 @@ impl PairingGuard {
         self.allowed.iter().any(|a| a == sender || a == "*")
     }
 
-    /// Extract a pairing code from a message (stub — always returns None).
-    pub fn pairing_code(_text: &str) -> Option<String> {
+    /// Extract a pairing code from the current state (stub — always returns None).
+    pub fn pairing_code(&self) -> Option<String> {
         None
     }
 
     /// Handle a pairing attempt (stub — always returns None).
     pub fn handle_pairing(&mut self, _sender: &str, _text: &str) -> Option<String> {
         None
+    }
+
+    /// Attempt to pair a sender using a code.
+    /// Returns `Ok(Some(token))` on success, `Ok(None)` if the code didn't match.
+    /// Stub — always returns `Ok(None)`.
+    pub async fn try_pair(&self, _code: &str, _chat_id: &str) -> anyhow::Result<Option<String>> {
+        Ok(None)
     }
 }

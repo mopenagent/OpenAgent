@@ -41,24 +41,21 @@ impl ChannelRegistry {
             };
         }
 
-        register!(cfg.telegram.enabled,    "telegram",    telegram::build(&cfg.telegram,    Arc::clone(&metrics)));
-        register!(cfg.discord.enabled,     "discord",     discord::build(&cfg.discord,      Arc::clone(&metrics)));
-        register!(cfg.slack.enabled,       "slack",       slack::build(&cfg.slack,          Arc::clone(&metrics)));
-        register!(cfg.signal.enabled,      "signal",      signal::build(&cfg.signal,        Arc::clone(&metrics)));
-        register!(cfg.irc.enabled,         "irc",         irc::build(&cfg.irc,              Arc::clone(&metrics)));
-        register!(cfg.mattermost.enabled,  "mattermost",  mattermost::build(&cfg.mattermost,Arc::clone(&metrics)));
-        register!(cfg.imessage.enabled,    "imessage",    imessage::build(&cfg.imessage,    Arc::clone(&metrics)));
-        register!(cfg.cli.enabled,         "cli",         cli::build(                        Arc::clone(&metrics)));
+        register!(cfg.telegram.enabled,    "telegram",    Arc::new(telegram::build(&cfg.telegram))    as Arc<dyn Channel>);
+        register!(cfg.discord.enabled,     "discord",     Arc::new(discord::build(&cfg.discord))      as Arc<dyn Channel>);
+        register!(cfg.slack.enabled,       "slack",       Arc::new(slack::build(&cfg.slack))          as Arc<dyn Channel>);
+        register!(cfg.signal.enabled,      "signal",      Arc::new(signal::build(&cfg.signal))        as Arc<dyn Channel>);
+        register!(cfg.irc.enabled,         "irc",         Arc::new(irc::build(&cfg.irc))              as Arc<dyn Channel>);
+        register!(cfg.mattermost.enabled,  "mattermost",  Arc::new(mattermost::build(&cfg.mattermost)) as Arc<dyn Channel>);
+        register!(cfg.imessage.enabled,    "imessage",    Arc::new(imessage::build(&cfg.imessage))    as Arc<dyn Channel>);
+        register!(cfg.cli.enabled,         "cli",         Arc::new(cli::build(&cfg.cli))              as Arc<dyn Channel>);
 
         // WhatsApp Cloud API — outbound sends work immediately;
         // inbound requires the webhook route at POST /webhook/whatsapp.
-        // The Go service (services/whatsapp/) handles inbound until Meta
-        // Business approval is obtained.
         register!(cfg.whatsapp.enabled, "whatsapp",
-            whatsapp::build(&cfg.whatsapp, Arc::clone(&metrics)));
+            Arc::new(whatsapp::build(&cfg.whatsapp)) as Arc<dyn Channel>);
 
         // WhatsApp Web (wa-rs) — unofficial protocol, QR-code auth.
-        // Requires zeroclaw `whatsapp-web` feature.
         register!(cfg.whatsapp_web.enabled, "whatsapp_web",
             whatsapp_web::build(&cfg.whatsapp_web, Arc::clone(&metrics)));
 

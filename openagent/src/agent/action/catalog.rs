@@ -91,6 +91,12 @@ impl ActionCatalog {
         Ok(Self { entries })
     }
 
+    /// Return an empty catalog (no actions registered).
+    #[must_use]
+    pub fn empty() -> Self {
+        Self { entries: vec![] }
+    }
+
     #[must_use]
     pub fn entries(&self) -> &[ActionEntry] {
         &self.entries

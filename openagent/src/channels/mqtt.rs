@@ -24,7 +24,7 @@
 
 use serde::Deserialize;
 
-#[derive(Debug, Default, Deserialize)]
+#[derive(Debug, Clone, Default, Deserialize)]
 pub struct MqttConfig {
     #[serde(default)]
     pub enabled: bool,

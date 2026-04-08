@@ -16,7 +16,7 @@ use async_trait::async_trait;
 use tokio::io::{self, AsyncBufReadExt, BufReader};
 use uuid::Uuid;
 
-#[derive(Debug, Default, Deserialize)]
+#[derive(Debug, Clone, Default, Deserialize)]
 pub struct CliConfig {
     #[serde(default)]
     pub enabled: bool,

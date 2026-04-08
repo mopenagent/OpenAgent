@@ -25,7 +25,7 @@
 
 use serde::Deserialize;
 
-#[derive(Debug, Default, Deserialize)]
+#[derive(Debug, Clone, Default, Deserialize)]
 pub struct TwitterConfig {
     #[serde(default)]
     pub enabled: bool,

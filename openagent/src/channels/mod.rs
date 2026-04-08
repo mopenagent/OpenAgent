@@ -204,6 +204,14 @@ pub struct ChannelHandle {
     event_tx: broadcast::Sender<Value>,
 }
 
+impl std::fmt::Debug for ChannelHandle {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ChannelHandle")
+            .field("platforms", &self.registry.len())
+            .finish()
+    }
+}
+
 impl ChannelHandle {
     fn new(registry: Arc<ChannelRegistry>, event_tx: broadcast::Sender<Value>) -> Self {
         Self { registry, event_tx }

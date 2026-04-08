@@ -27,7 +27,7 @@ pub use super::irc::IrcConfig;
 pub use super::mattermost::MattermostConfig;
 
 /// Top-level config for the channels module.
-#[derive(Debug, Default, Deserialize)]
+#[derive(Debug, Clone, Default, Deserialize)]
 pub struct ChannelsConfig {
     #[serde(default)]
     pub telegram: TelegramConfig,

@@ -291,7 +291,7 @@ impl DeepgramProvider {
 
         Ok(Self {
             api_key,
-            model: config.model.clone(),
+            model: config.model.clone().unwrap_or_else(|| "nova-2".to_string()),
         })
     }
 }
@@ -501,13 +501,13 @@ impl GoogleSttProvider {
             .api_key
             .as_deref()
             .map(str::trim)
-            .filter(|v| !v.is_empty())
+            .filter(|v: &&str| !v.is_empty())
             .map(ToOwned::to_owned)
             .context("Missing Google STT API key: set [transcription.google].api_key")?;
 
         Ok(Self {
             api_key,
-            language_code: config.language_code.clone(),
+            language_code: config.language_code.clone().unwrap_or_default(),
         })
     }
 }

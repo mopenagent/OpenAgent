@@ -75,7 +75,10 @@ pub struct AssemblyAiSttConfig {
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct GoogleSttConfig {
-    /// Path to Google credentials JSON file.
+    /// Google Cloud API key (alternative to service account credentials).
+    #[serde(default)]
+    pub api_key: Option<String>,
+    /// Path to Google service account credentials JSON file.
     #[serde(default)]
     pub credentials_path: Option<String>,
     #[serde(default)]
