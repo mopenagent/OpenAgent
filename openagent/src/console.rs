@@ -35,7 +35,7 @@ use tokio::sync::Notify;
 use tracing::info;
 
 use crate::guard::GuardDb;
-use crate::manager::ServiceManager;
+use crate::service::ServiceManager;
 
 const HELP: &str = "\
 OpenAgent console commands:

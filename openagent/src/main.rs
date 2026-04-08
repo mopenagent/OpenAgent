@@ -7,16 +7,10 @@ mod config;
 mod console;
 mod dispatch;
 mod guard;
-mod manifest;
-mod manager;
-mod mcplite;
-mod middleware;
 mod observability;
-mod stt;
-mod tts;
 mod platform;
-mod routes;
 mod server;
+mod service;
 
 // Merged from ZeroClaw
 pub mod hardware;
@@ -28,14 +22,12 @@ pub mod cron;
 pub mod sop;
 pub mod doctor;
 pub mod health;
-mod state;
-
 use agent::action::catalog::ActionCatalog;
 use agent::handlers::AgentContext;
 use agent::metrics::AgentTelemetry;
 use agent::tool_router::ToolRouter;
 use anyhow::Result;
-use manager::ServiceManager;
+use service::ServiceManager;
 use std::env;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -69,7 +61,7 @@ async fn main() -> Result<()> {
 
     // ---- discover + start services ------------------------------------------
     let services_dir = project_root.join("services");
-    let manifests = manifest::discover(&services_dir, &project_root)?;
+    let manifests = service::manifest::discover(&services_dir, &project_root)?;
 
     info!(count = manifests.len(), "openagent.manifests.loaded");
     for m in &manifests {

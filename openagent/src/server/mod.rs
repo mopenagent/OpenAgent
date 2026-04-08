@@ -1,3 +1,9 @@
+pub mod middleware;
+pub mod routes;
+pub mod state;
+pub mod stt;
+pub mod tts;
+
 /// Axum HTTP control plane — TCP port 8080.
 ///
 /// Tower middleware stack (outermost → innermost):
@@ -28,13 +34,12 @@ use tracing::info;
 use crate::agent::handlers::AgentContext;
 use crate::config::MiddlewareConfig;
 use crate::guard::GuardDb;
-use crate::manager::ServiceManager;
-use crate::middleware::{agent_middleware, guard_middleware};
-use crate::routes;
-use crate::state::AppState;
-use crate::stt::stt_middleware;
+use crate::service::ServiceManager;
 use crate::observability::telemetry::MetricsWriter;
-use crate::tts::tts_middleware;
+use self::middleware::{agent_middleware, guard_middleware};
+use self::state::AppState;
+use self::stt::stt_middleware;
+use self::tts::tts_middleware;
 
 const DEFAULT_PORT: u16 = 8080;
 

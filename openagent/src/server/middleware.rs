@@ -24,7 +24,7 @@ use tracing::{error, info, warn};
 use crate::agent::handlers::handle_step;
 use crate::guard::scrub;
 use crate::observability::metrics::guard_metric;
-use crate::state::AppState;
+use super::state::AppState;
 
 // ---------------------------------------------------------------------------
 // AgentResult — request extension set by agent_middleware, read by routes::step

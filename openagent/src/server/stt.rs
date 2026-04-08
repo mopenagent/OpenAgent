@@ -21,7 +21,7 @@ use std::time::Instant;
 use tracing::{info, warn};
 
 use crate::observability::metrics::stt_metric;
-use crate::state::AppState;
+use super::state::AppState;
 
 pub async fn stt_middleware(
     State(state): State<AppState>,

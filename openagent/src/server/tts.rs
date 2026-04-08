@@ -22,7 +22,7 @@ use std::time::Instant;
 use tracing::{info, warn};
 
 use crate::observability::metrics::tts_metric;
-use crate::state::AppState;
+use super::state::AppState;
 
 pub async fn tts_middleware(
     State(state): State<AppState>,

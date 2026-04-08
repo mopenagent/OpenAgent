@@ -1,3 +1,6 @@
+pub mod manifest;
+pub mod mcplite;
+
 /// ServiceManager — connects to and health-monitors MCP-lite service daemons.
 ///
 /// openagent does NOT spawn or restart services. That is the job of systemd
@@ -16,8 +19,8 @@ use tokio::task::JoinHandle;
 use tokio::time::{sleep, Duration};
 use tracing::{debug, error, info, warn};
 
-use crate::manifest::ServiceManifest;
-use crate::mcplite::McpLiteClient;
+use self::manifest::ServiceManifest;
+use self::mcplite::McpLiteClient;
 
 /// A registered tool discovered via `tools.list`.
 #[derive(Debug, Clone)]

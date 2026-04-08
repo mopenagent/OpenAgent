@@ -18,7 +18,7 @@ use tracing::{debug, error, info, warn};
 
 use crate::agent::handlers::{handle_step, AgentContext};
 use crate::guard::GuardDb;
-use crate::manager::ServiceManager;
+use crate::service::ServiceManager;
 use crate::guard::scrub;
 
 /// Max concurrent agent.step calls — keeps the Pi from thrashing.
