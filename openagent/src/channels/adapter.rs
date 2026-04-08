@@ -1,19 +1,17 @@
-//! `ZeroClawChannel<T>` — instrumentation adapter wrapping any zeroclaw [`Channel`].
+//! `ZeroClawChannel<T>` — instrumentation adapter wrapping any [`Channel`].
 //!
 //! Adding OTEL spans and metrics here means every platform automatically gets
-//! observability. New zeroclaw connectors require zero changes here.
+//! observability. New channel connectors require zero changes here.
 
 use std::sync::Arc;
 
 use async_trait::async_trait;
 use tokio::sync::mpsc;
 use tracing::{instrument, warn};
-use zeroclaw::channels::traits::ChannelMessage;
-use zeroclaw::channels::{Channel, SendMessage};
-
+use super::traits::{Channel, ChannelMessage, SendMessage};
 use crate::observability::telemetry::{elapsed_ms, MetricsWriter};
 
-/// Wraps a zeroclaw [`Channel`] with OTEL spans and metrics.
+/// Wraps a [`Channel`] with OTEL spans and metrics.
 pub struct ZeroClawChannel<T: Channel> {
     inner: T,
     metrics: Arc<MetricsWriter>,

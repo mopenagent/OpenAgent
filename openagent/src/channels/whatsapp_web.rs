@@ -19,7 +19,7 @@
 use std::sync::Arc;
 
 use serde::Deserialize;
-use zeroclaw::channels::Channel;
+use super::traits::Channel;
 
 use crate::observability::telemetry::MetricsWriter;
 

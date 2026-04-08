@@ -22,6 +22,11 @@ pub mod cron;
 pub mod sop;
 pub mod doctor;
 pub mod health;
+
+// Stubs for zeroclaw channel deps (security pairing, provider trait, multimodal)
+pub mod security;
+pub mod providers;
+pub mod multimodal;
 use agent::action::catalog::ActionCatalog;
 use agent::handlers::AgentContext;
 use agent::metrics::AgentTelemetry;

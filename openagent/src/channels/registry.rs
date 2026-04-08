@@ -10,8 +10,7 @@ use std::sync::Arc;
 use serde_json::Value;
 use tokio::sync::broadcast;
 use tracing::{error, info, warn};
-use zeroclaw::channels::traits::ChannelMessage;
-use zeroclaw::channels::Channel;
+use super::traits::{Channel, ChannelMessage};
 
 use crate::observability::telemetry::MetricsWriter;
 
