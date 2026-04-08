@@ -618,7 +618,56 @@ app/
 - Compiled binaries go in `bin/` (gitignored)
 - External runtime deps (e.g. MSB) must be documented in `service.json` or service README
 
-### Cortex Service — AutoAgents + Tower + Axum
+### Rust Patterns (apply to all Rust code in this repo)
+
+**1. Typestate Pattern — encode validity into the type system**
+
+Never allow invalid state transitions at runtime. Encode states as distinct types so the compiler rejects illegal operations. Example: a hardware actuator should not accept `move()` when in `Error` or `Charging` state — make those states separate types that don't implement the `move` method.
+
+```rust
+struct Ready;
+struct Charging;
+
+struct Actuator<S> { _state: std::marker::PhantomData<S> }
+
+impl Actuator<Ready> {
+    pub fn move_to(&self, x: f32, y: f32, z: f32) -> Result<(), ActuatorError> { ... }
+}
+// Actuator<Charging>::move_to does not exist — invalid call won't compile.
+```
+
+Use this wherever a resource has a lifecycle (connections, hardware sessions, agent states).
+
+**2. Trait-Based Tooling — extensibility without hardcoding**
+
+Tools and actuators must be defined as traits so they can be swapped (real hardware, mock for tests, alternative implementations) without changing call sites.
+
+```rust
+pub trait RobotActuator {
+    fn move_to(&self, x: f32, y: f32, z: f32) -> Result<(), RobotError>;
+}
+// Implement for Unitree G1, a robotic arm, or a test mock — same call site.
+```
+
+Apply this to all service integrations, hardware drivers, and any pluggable component.
+
+**3. Actor Model — concurrency via message passing**
+
+For concurrent workloads (sensor reads, motor commands, LLM streaming), each independent concern is an actor that communicates via bounded `tokio` channels. No shared mutable state between actors — only messages. This prevents data races when e.g. a camera feed is being read while motor commands are being sent.
+
+Use `tokio::sync::mpsc` with an explicit capacity. Never use `unbounded_channel` — an unbounded queue between a fast producer and a slow consumer will silently leak memory until the process hangs.
+
+### Rust Anti-Patterns (never do these)
+
+| Anti-pattern | Why it's banned | What to do instead |
+|---|---|---|
+| `unwrap()` / `expect()` in non-test code | A panic in a service loop is a hard crash — no recovery, no error propagation | Return `Result<_, E>` with `thiserror`-derived error types |
+| `static mut` for shared state | Undefined behaviour under concurrent access | `Arc<Mutex<T>>` or `Arc<RwLock<T>>` for shared state; `Atomic*` types for counters/flags |
+| Blocking inside `async fn` | Starves the tokio executor — all other tasks on that thread freeze | `tokio::task::spawn_blocking` for CPU-heavy or blocking I/O work |
+| `unbounded_channel` | Fast producer + slow consumer = unbounded memory growth | Always set a capacity: `mpsc::channel(N)` or `broadcast::channel(N)` |
+| `clone()` on large buffers in hot paths | Copies data on every iteration | Pass `Arc<T>` or `&T`; only clone at ownership boundaries |
+
+
 
 Cortex is the only service that uses [AutoAgents](https://github.com/liquidos-ai/AutoAgents) as its agent execution framework, `tower` for middleware, and eventually `axum` for the control plane. Other services remain plain `tokio` + `sdk-rust` daemons — do not add any of these to non-Cortex services.
 
