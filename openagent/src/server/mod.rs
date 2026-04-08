@@ -32,6 +32,7 @@ use tower_http::trace::TraceLayer;
 use tracing::info;
 
 use crate::agent::handlers::AgentContext;
+use crate::channels::ChannelHandle;
 use crate::config::MiddlewareConfig;
 use crate::guard::GuardDb;
 use crate::service::ServiceManager;
@@ -57,20 +58,24 @@ const STEP_TIMEOUT_SECS: u64 = 130;
 /// AgentLayer runs the in-process ReAct loop for POST /step; all other routes pass through.
 /// SttLayer and TtsLayer are always registered; they no-op when disabled in config.
 pub fn build_router(
-    manager:   Arc<ServiceManager>,
-    metrics:   MetricsWriter,
-    config:    MiddlewareConfig,
-    guard_db:  GuardDb,
-    agent_ctx: Arc<AgentContext>,
+    manager:        Arc<ServiceManager>,
+    metrics:        MetricsWriter,
+    config:         MiddlewareConfig,
+    guard_db:       GuardDb,
+    agent_ctx:      Arc<AgentContext>,
+    channel_handle: ChannelHandle,
 ) -> Router {
     let max_concurrent = config.rate_limit.max_concurrent;
-    let state = AppState::new(manager, metrics, config, guard_db, agent_ctx);
+    let state = AppState::new(manager, metrics, config, guard_db, agent_ctx, channel_handle);
 
     Router::new()
         .route("/health", get(routes::health))
         .route("/tools", get(routes::list_tools))
         .route("/step", post(routes::step))
         .route("/tool/:name", post(routes::call_tool))
+        // WhatsApp Cloud API webhook — GET verifies challenge, POST receives messages.
+        .route("/webhook/whatsapp", get(routes::whatsapp_webhook_verify))
+        .route("/webhook/whatsapp", post(routes::whatsapp_webhook_receive))
         // TtsLayer — innermost: synthesizes response_text → audio after the handler.
         // No-ops when tts.enabled = false in config/openagent.toml.
         .layer(axum_middleware::from_fn_with_state(
@@ -124,14 +129,15 @@ pub fn build_router(
 
 /// Start the Axum server on `0.0.0.0:{port}`.
 pub async fn start(
-    manager:   Arc<ServiceManager>,
-    metrics:   MetricsWriter,
-    config:    MiddlewareConfig,
-    guard_db:  GuardDb,
-    agent_ctx: Arc<AgentContext>,
-    port:      u16,
+    manager:        Arc<ServiceManager>,
+    metrics:        MetricsWriter,
+    config:         MiddlewareConfig,
+    guard_db:       GuardDb,
+    agent_ctx:      Arc<AgentContext>,
+    channel_handle: ChannelHandle,
+    port:           u16,
 ) -> Result<()> {
-    let app = build_router(manager, metrics, config, guard_db, agent_ctx);
+    let app = build_router(manager, metrics, config, guard_db, agent_ctx, channel_handle);
     let addr = SocketAddr::from(([0, 0, 0, 0], port));
     info!(addr = %addr, "openagent.server.start");
     let listener = tokio::net::TcpListener::bind(addr).await?;
@@ -141,15 +147,16 @@ pub async fn start(
 
 /// Start with the default port (8080), or `OPENAGENT_PORT` env var override.
 pub async fn start_default(
-    manager:   Arc<ServiceManager>,
-    metrics:   MetricsWriter,
-    config:    MiddlewareConfig,
-    guard_db:  GuardDb,
-    agent_ctx: Arc<AgentContext>,
+    manager:        Arc<ServiceManager>,
+    metrics:        MetricsWriter,
+    config:         MiddlewareConfig,
+    guard_db:       GuardDb,
+    agent_ctx:      Arc<AgentContext>,
+    channel_handle: ChannelHandle,
 ) -> Result<()> {
     let port = std::env::var("OPENAGENT_PORT")
         .ok()
         .and_then(|v| v.parse().ok())
         .unwrap_or(DEFAULT_PORT);
-    start(manager, metrics, config, guard_db, agent_ctx, port).await
+    start(manager, metrics, config, guard_db, agent_ctx, channel_handle, port).await
 }

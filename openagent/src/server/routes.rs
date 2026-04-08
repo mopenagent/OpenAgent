@@ -13,6 +13,7 @@ use serde_json::{json, Value};
 use std::time::Instant;
 use tracing::info;
 
+use crate::channels::whatsapp as wa;
 use crate::observability::metrics::{step_metric, tool_metric};
 use super::middleware::AgentResult;
 use super::state::AppState;
@@ -171,6 +172,55 @@ pub async fn call_tool(
                 .into_response()
         }
     }
+}
+
+// ---------------------------------------------------------------------------
+// GET /webhook/whatsapp  — Meta webhook challenge verification
+// POST /webhook/whatsapp — Meta inbound message webhook
+// ---------------------------------------------------------------------------
+//
+// Meta sends a GET with hub.challenge to verify the endpoint.
+// Subsequent POSTs carry message payloads; we parse them and inject
+// message.received events onto the dispatch bus via ChannelHandle.
+//
+// The Go-based services/whatsapp/ (whatsmeow) remains the active inbound
+// handler for the personal WhatsApp number. This endpoint is for the
+// Cloud API number once Meta Business approval is obtained.
+
+#[derive(serde::Deserialize)]
+pub struct WhatsAppChallenge {
+    #[serde(rename = "hub.mode")]
+    pub mode: Option<String>,
+    #[serde(rename = "hub.challenge")]
+    pub challenge: Option<String>,
+    #[serde(rename = "hub.verify_token")]
+    pub verify_token: Option<String>,
+}
+
+pub async fn whatsapp_webhook_verify(
+    State(state): State<AppState>,
+    axum::extract::Query(q): axum::extract::Query<WhatsAppChallenge>,
+) -> impl IntoResponse {
+    let cfg = &state.channel_handle.whatsapp_config();
+    if q.mode.as_deref() == Some("subscribe")
+        && q.verify_token.as_deref() == Some(cfg.verify_token.as_str())
+    {
+        let challenge = q.challenge.unwrap_or_default();
+        info!("whatsapp.webhook.verified");
+        (StatusCode::OK, challenge).into_response()
+    } else {
+        info!("whatsapp.webhook.verify.rejected");
+        StatusCode::FORBIDDEN.into_response()
+    }
+}
+
+pub async fn whatsapp_webhook_receive(
+    State(state): State<AppState>,
+    Json(payload): Json<Value>,
+) -> impl IntoResponse {
+    let injected = state.channel_handle.inject_whatsapp_webhook(&payload);
+    info!(messages = injected, "whatsapp.webhook.received");
+    StatusCode::OK.into_response()
 }
 
 // ---------------------------------------------------------------------------

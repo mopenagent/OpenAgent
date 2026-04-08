@@ -1,10 +1,27 @@
-//! Channels configuration.
+//! Top-level channels configuration — aggregates all per-channel config structs.
 //!
-//! Loads `config/channels.toml` (or the path in `OPENAGENT_CHANNELS_CONFIG`).
-//! Before parsing, every `${VAR}` placeholder is replaced with the
-//! corresponding environment variable.
+//! Loaded from `config/channels.toml` (or `$OPENAGENT_CHANNELS_CONFIG`).
+//! Every `${VAR}` placeholder is replaced with the matching environment variable.
 
 use serde::Deserialize;
+
+// Per-channel config structs live in their own modules; re-exported here
+// so registry.rs can `use crate::channels::config::*` to get everything.
+pub use super::cli::CliConfig;
+pub use super::discord::DiscordConfig;
+pub use super::imessage::IMessageConfig;
+pub use super::mqtt::MqttConfig;
+pub use super::reddit::RedditConfig;
+pub use super::signal::SignalConfig;
+pub use super::slack::SlackConfig;
+pub use super::telegram::TelegramConfig;
+pub use super::twitter::TwitterConfig;
+pub use super::whatsapp::WhatsAppConfig;
+pub use super::whatsapp_web::WhatsAppWebConfig;
+
+// Configs that don't yet have dedicated channel files stay inline here.
+pub use super::irc::IrcConfig;
+pub use super::mattermost::MattermostConfig;
 
 /// Top-level config for the channels module.
 #[derive(Debug, Default, Deserialize)]
@@ -16,104 +33,29 @@ pub struct ChannelsConfig {
     #[serde(default)]
     pub slack: SlackConfig,
     #[serde(default)]
+    pub signal: SignalConfig,
+    #[serde(default)]
+    pub imessage: IMessageConfig,
+    #[serde(default)]
+    pub cli: CliConfig,
+    #[serde(default)]
     pub irc: IrcConfig,
     #[serde(default)]
     pub mattermost: MattermostConfig,
     #[serde(default)]
-    pub signal: SignalConfig,
+    pub whatsapp: WhatsAppConfig,
     #[serde(default)]
-    pub imessage: IMessageConfig,
+    pub whatsapp_web: WhatsAppWebConfig,
+    // Stubs — not yet implemented
+    #[serde(default)]
+    pub mqtt: MqttConfig,
+    #[serde(default)]
+    pub reddit: RedditConfig,
+    #[serde(default)]
+    pub twitter: TwitterConfig,
 }
 
-#[derive(Debug, Default, Deserialize)]
-pub struct TelegramConfig {
-    #[serde(default)]
-    pub enabled: bool,
-    #[serde(default)]
-    pub token: String,
-    #[serde(default)]
-    pub allowed_users: Vec<String>,
-    #[serde(default)]
-    pub mention_only: bool,
-}
-
-#[derive(Debug, Default, Deserialize)]
-pub struct DiscordConfig {
-    #[serde(default)]
-    pub enabled: bool,
-    #[serde(default)]
-    pub token: String,
-    #[serde(default)]
-    pub guild_id: String,
-    #[serde(default)]
-    pub allowed_users: Vec<String>,
-    #[serde(default)]
-    pub listen_to_bots: bool,
-    #[serde(default)]
-    pub mention_only: bool,
-}
-
-#[derive(Debug, Default, Deserialize)]
-pub struct SlackConfig {
-    #[serde(default)]
-    pub enabled: bool,
-    #[serde(default)]
-    pub bot_token: String,
-    #[serde(default)]
-    pub app_token: String,
-    #[serde(default)]
-    pub channel_id: String,
-    #[serde(default)]
-    pub allowed_users: Vec<String>,
-}
-
-#[derive(Debug, Default, Deserialize)]
-pub struct IrcConfig {
-    #[serde(default)]
-    pub enabled: bool,
-    #[serde(default)]
-    pub server: String,
-    #[serde(default = "default_irc_port")]
-    pub port: u16,
-    #[serde(default)]
-    pub nickname: String,
-    #[serde(default)]
-    pub channel: String,
-    #[serde(default)]
-    pub password: String,
-}
-
-fn default_irc_port() -> u16 {
-    6667
-}
-
-#[derive(Debug, Default, Deserialize)]
-pub struct MattermostConfig {
-    #[serde(default)]
-    pub enabled: bool,
-    #[serde(default)]
-    pub url: String,
-    #[serde(default)]
-    pub token: String,
-}
-
-#[derive(Debug, Default, Deserialize)]
-pub struct SignalConfig {
-    #[serde(default)]
-    pub enabled: bool,
-    #[serde(default)]
-    pub cli_url: String,
-    #[serde(default)]
-    pub number: String,
-}
-
-#[derive(Debug, Default, Deserialize)]
-pub struct IMessageConfig {
-    #[serde(default)]
-    pub enabled: bool,
-}
-
-/// Load and return [`ChannelsConfig`].
+/// Load and return [`ChannelsConfig`] from a TOML file.
 pub fn load(path: &str) -> anyhow::Result<ChannelsConfig> {
     let raw = std::fs::read_to_string(path)
         .map_err(|e| anyhow::anyhow!("cannot read channels config {path}: {e}"))?;
@@ -155,10 +97,10 @@ mod tests {
 
     #[test]
     fn interpolate_resolves_set_vars() {
-        std::env::set_var("_TEST_TOKEN_CH", "abc123");
-        let result = interpolate_env("token = \"${_TEST_TOKEN_CH}\"");
+        std::env::set_var("_TEST_TOKEN_CH2", "abc123");
+        let result = interpolate_env("token = \"${_TEST_TOKEN_CH2}\"");
         assert_eq!(result, "token = \"abc123\"");
-        std::env::remove_var("_TEST_TOKEN_CH");
+        std::env::remove_var("_TEST_TOKEN_CH2");
     }
 
     #[test]
@@ -173,5 +115,7 @@ mod tests {
         assert!(!cfg.telegram.enabled);
         assert!(!cfg.discord.enabled);
         assert!(!cfg.slack.enabled);
+        assert!(!cfg.whatsapp.enabled);
+        assert!(!cfg.cli.enabled);
     }
 }

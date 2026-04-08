@@ -1,4 +1,5 @@
 use crate::agent::handlers::AgentContext;
+use crate::channels::ChannelHandle;
 use crate::config::MiddlewareConfig;
 use crate::guard::GuardDb;
 use crate::service::ServiceManager;
@@ -9,24 +10,27 @@ use std::time::Instant;
 /// Shared application state injected into every Axum route and middleware.
 #[derive(Clone, Debug)]
 pub struct AppState {
-    pub manager:    Arc<ServiceManager>,
-    pub metrics:    MetricsWriter,
-    pub config:     MiddlewareConfig,
+    pub manager:      Arc<ServiceManager>,
+    pub metrics:      MetricsWriter,
+    pub config:       MiddlewareConfig,
     /// Inline guard whitelist — direct SQLite, no network hop.
-    pub guard_db:   GuardDb,
+    pub guard_db:     GuardDb,
     /// Process start time — used to compute uptime in /health.
-    pub started_at: Arc<Instant>,
+    pub started_at:   Arc<Instant>,
     /// In-process agent context — AgentLayer and dispatch loop call handle_step directly.
-    pub agent_ctx:  Arc<AgentContext>,
+    pub agent_ctx:    Arc<AgentContext>,
+    /// In-process channel handle — webhook routes inject inbound events here.
+    pub channel_handle: ChannelHandle,
 }
 
 impl AppState {
     pub fn new(
-        manager:   Arc<ServiceManager>,
-        metrics:   MetricsWriter,
-        config:    MiddlewareConfig,
-        guard_db:  GuardDb,
-        agent_ctx: Arc<AgentContext>,
+        manager:        Arc<ServiceManager>,
+        metrics:        MetricsWriter,
+        config:         MiddlewareConfig,
+        guard_db:       GuardDb,
+        agent_ctx:      Arc<AgentContext>,
+        channel_handle: ChannelHandle,
     ) -> Self {
         Self {
             manager,
@@ -35,6 +39,7 @@ impl AppState {
             guard_db,
             started_at: Arc::new(Instant::now()),
             agent_ctx,
+            channel_handle,
         }
     }
 }

@@ -1,4 +1,8 @@
 //! Channel registry — instantiates platforms from config and routes outbound calls.
+//!
+//! Each enabled platform is built via its module's `build()` factory, wrapped
+//! in [`super::adapter::ZeroClawChannel`] for uniform OTEL spans + metrics,
+//! and stored as `Arc<dyn Channel>` keyed by platform name.
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -6,16 +10,15 @@ use std::sync::Arc;
 use serde_json::Value;
 use tokio::sync::broadcast;
 use tracing::{error, info, warn};
-use zeroclaw::channels::irc::IrcChannelConfig;
 use zeroclaw::channels::traits::ChannelMessage;
 use zeroclaw::channels::Channel;
 
 use crate::observability::telemetry::MetricsWriter;
 
-use super::adapter::ZeroClawChannel;
 use super::config::ChannelsConfig;
+use super::{cli, discord, imessage, irc, mattermost, signal, slack, telegram, whatsapp, whatsapp_web};
 
-/// Stores enabled channels keyed by platform name (e.g. "telegram").
+/// Stores enabled channels keyed by platform name (e.g. `"telegram"`).
 pub struct ChannelRegistry {
     channels: HashMap<String, Arc<dyn Channel>>,
 }
@@ -26,132 +29,42 @@ impl ChannelRegistry {
         Self { channels: HashMap::new() }
     }
 
-    /// Instantiate enabled channels from config.
+    /// Instantiate all enabled channels from config.
     pub fn build(cfg: &ChannelsConfig, metrics: Arc<MetricsWriter>) -> anyhow::Result<Self> {
         let mut channels: HashMap<String, Arc<dyn Channel>> = HashMap::new();
 
-        if cfg.telegram.enabled {
-            let ch = zeroclaw::channels::TelegramChannel::new(
-                cfg.telegram.token.clone(),
-                cfg.telegram.allowed_users.clone(),
-                cfg.telegram.mention_only,
-            );
-            channels.insert(
-                "telegram".into(),
-                Arc::new(ZeroClawChannel::new(ch, Arc::clone(&metrics))),
-            );
-            info!("channels.registry: telegram enabled");
-        }
-
-        if cfg.discord.enabled {
-            let guild_id = if cfg.discord.guild_id.is_empty() {
-                None
-            } else {
-                Some(cfg.discord.guild_id.clone())
+        macro_rules! register {
+            ($enabled:expr, $name:literal, $build:expr) => {
+                if $enabled {
+                    channels.insert($name.into(), $build);
+                    info!("channels.registry: {} enabled", $name);
+                }
             };
-            let ch = zeroclaw::channels::DiscordChannel::new(
-                cfg.discord.token.clone(),
-                guild_id,
-                cfg.discord.allowed_users.clone(),
-                cfg.discord.listen_to_bots,
-                cfg.discord.mention_only,
-            );
-            channels.insert(
-                "discord".into(),
-                Arc::new(ZeroClawChannel::new(ch, Arc::clone(&metrics))),
-            );
-            info!("channels.registry: discord enabled");
         }
 
-        if cfg.slack.enabled {
-            let app_token = if cfg.slack.app_token.is_empty() {
-                None
-            } else {
-                Some(cfg.slack.app_token.clone())
-            };
-            let channel_id = if cfg.slack.channel_id.is_empty() {
-                None
-            } else {
-                Some(cfg.slack.channel_id.clone())
-            };
-            let ch = zeroclaw::channels::SlackChannel::new(
-                cfg.slack.bot_token.clone(),
-                app_token,
-                channel_id,
-                vec![],
-                cfg.slack.allowed_users.clone(),
-            );
-            channels.insert(
-                "slack".into(),
-                Arc::new(ZeroClawChannel::new(ch, Arc::clone(&metrics))),
-            );
-            info!("channels.registry: slack enabled");
-        }
+        register!(cfg.telegram.enabled,    "telegram",    telegram::build(&cfg.telegram,    Arc::clone(&metrics)));
+        register!(cfg.discord.enabled,     "discord",     discord::build(&cfg.discord,      Arc::clone(&metrics)));
+        register!(cfg.slack.enabled,       "slack",       slack::build(&cfg.slack,          Arc::clone(&metrics)));
+        register!(cfg.signal.enabled,      "signal",      signal::build(&cfg.signal,        Arc::clone(&metrics)));
+        register!(cfg.irc.enabled,         "irc",         irc::build(&cfg.irc,              Arc::clone(&metrics)));
+        register!(cfg.mattermost.enabled,  "mattermost",  mattermost::build(&cfg.mattermost,Arc::clone(&metrics)));
+        register!(cfg.imessage.enabled,    "imessage",    imessage::build(&cfg.imessage,    Arc::clone(&metrics)));
+        register!(cfg.cli.enabled,         "cli",         cli::build(                        Arc::clone(&metrics)));
 
-        if cfg.irc.enabled {
-            let ch = zeroclaw::channels::IrcChannel::new(IrcChannelConfig {
-                server: cfg.irc.server.clone(),
-                port: cfg.irc.port,
-                nickname: cfg.irc.nickname.clone(),
-                username: None,
-                channels: vec![cfg.irc.channel.clone()],
-                allowed_users: vec![],
-                server_password: if cfg.irc.password.is_empty() {
-                    None
-                } else {
-                    Some(cfg.irc.password.clone())
-                },
-                nickserv_password: None,
-                sasl_password: None,
-                verify_tls: true,
-            });
-            channels.insert(
-                "irc".into(),
-                Arc::new(ZeroClawChannel::new(ch, Arc::clone(&metrics))),
-            );
-            info!("channels.registry: irc enabled");
-        }
+        // WhatsApp Cloud API — outbound sends work immediately;
+        // inbound requires the webhook route at POST /webhook/whatsapp.
+        // The Go service (services/whatsapp/) handles inbound until Meta
+        // Business approval is obtained.
+        register!(cfg.whatsapp.enabled, "whatsapp",
+            whatsapp::build(&cfg.whatsapp, Arc::clone(&metrics)));
 
-        if cfg.mattermost.enabled {
-            let ch = zeroclaw::channels::MattermostChannel::new(
-                cfg.mattermost.url.clone(),
-                cfg.mattermost.token.clone(),
-                None,
-                vec![],
-                false,
-                false,
-            );
-            channels.insert(
-                "mattermost".into(),
-                Arc::new(ZeroClawChannel::new(ch, Arc::clone(&metrics))),
-            );
-            info!("channels.registry: mattermost enabled");
-        }
+        // WhatsApp Web (wa-rs) — unofficial protocol, QR-code auth.
+        // Requires zeroclaw `whatsapp-web` feature.
+        register!(cfg.whatsapp_web.enabled, "whatsapp_web",
+            whatsapp_web::build(&cfg.whatsapp_web, Arc::clone(&metrics)));
 
-        if cfg.signal.enabled {
-            let ch = zeroclaw::channels::SignalChannel::new(
-                cfg.signal.cli_url.clone(),
-                cfg.signal.number.clone(),
-                None,
-                vec![],
-                false,
-                false,
-            );
-            channels.insert(
-                "signal".into(),
-                Arc::new(ZeroClawChannel::new(ch, Arc::clone(&metrics))),
-            );
-            info!("channels.registry: signal enabled");
-        }
-
-        if cfg.imessage.enabled {
-            let ch = zeroclaw::channels::IMessageChannel::new(vec![]);
-            channels.insert(
-                "imessage".into(),
-                Arc::new(ZeroClawChannel::new(ch, Arc::clone(&metrics))),
-            );
-            info!("channels.registry: imessage enabled");
-        }
+        // Stubs not yet implemented (reddit, twitter, mqtt) are intentionally
+        // omitted from the registry — they have no Channel impl yet.
 
         Ok(Self { channels })
     }
@@ -199,7 +112,7 @@ impl ChannelRegistry {
 
                     while let Some(msg) = rx.recv().await {
                         let event = serde_json::json!({
-                            "type": "event",
+                            "type":  "event",
                             "event": "message.received",
                             "data": {
                                 "id":           msg.id,

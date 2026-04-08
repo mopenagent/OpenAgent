@@ -159,8 +159,9 @@ async fn main() -> Result<()> {
     let server_cfg     = cfg.middleware.clone();
     let server_guard   = guard_db.clone();
     let server_ctx     = Arc::clone(&agent_ctx);
+    let server_ch      = channel_handle.clone();
     tokio::spawn(async move {
-        if let Err(e) = server::start_default(server_manager, server_metrics, server_cfg, server_guard, server_ctx).await {
+        if let Err(e) = server::start_default(server_manager, server_metrics, server_cfg, server_guard, server_ctx, server_ch).await {
             tracing::error!(error = %e, "openagent.server.error");
         }
     });
