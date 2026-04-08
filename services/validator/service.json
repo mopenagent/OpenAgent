@@ -1,6 +1,6 @@
 {
   "name": "validator",
-  "address": "0.0.0.0:9010",
+  "address": "0.0.0.0:9005",
   "description": "Repair malformed JSON from LLM output into compact canonical JSON. Targets common LLM mistakes like trailing commas, single quotes, unquoted keys, comments, wrappers, and incomplete brackets.",
   "version": "0.1.0",
   "binary": {

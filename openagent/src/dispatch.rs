@@ -219,12 +219,24 @@ async fn handle_message(
     let content = scrub::process(&content, &ctx);
 
     // Fire typing_start best-effort (don't block on it).
+    // WhatsApp uses the Go service tool; all other platforms use the in-process ChannelHandle.
     {
-        let ch = channel_handle.clone();
-        let addr = channel.clone();
-        tokio::spawn(async move {
-            let _ = ch.typing_start(&addr).await;
-        });
+        let platform = platform_from_channel(&channel);
+        if platform == "whatsapp" {
+            let mgr = Arc::clone(&manager);
+            let chat_id = channel.trim_start_matches("whatsapp://").to_string();
+            tokio::spawn(async move {
+                let _ = mgr
+                    .call_tool("whatsapp.typing_start", json!({"chat_id": chat_id}), SEND_TIMEOUT_MS)
+                    .await;
+            });
+        } else {
+            let ch = channel_handle.clone();
+            let addr = channel.clone();
+            tokio::spawn(async move {
+                let _ = ch.typing_start(&addr).await;
+            });
+        }
     }
 
     // Call handle_step in-process (no TCP hop — agent logic lives here now).

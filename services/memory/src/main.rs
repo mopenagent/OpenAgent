@@ -110,7 +110,7 @@ async fn main() -> Result<()> {
     let mut server = McpLiteServer::new(tools::make_tools(), "ready");
     tools::register_handlers(&mut server, Arc::clone(&db), Arc::clone(&model), Arc::clone(&tel));
 
-    info!(addr = "0.0.0.0:9005", "memory service ready");
-    server.serve_auto("0.0.0.0:9005").await?;
+    info!(addr = "0.0.0.0:9000", "memory service ready");
+    server.serve_auto("0.0.0.0:9000").await?;
     Ok(())
 }

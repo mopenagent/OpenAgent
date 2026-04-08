@@ -174,7 +174,7 @@ mod tests {
     #[test]
     fn tool_registered_returns_true_for_known_tools() {
         let mut map = HashMap::new();
-        map.insert("memory.search".to_string(), "0.0.0.0:9005".to_string());
+        map.insert("memory.search".to_string(), "0.0.0.0:9000".to_string());
         let r = make_router(map);
         assert!(r.tool_registered("memory.search"));
         assert!(r.tool_registered("skill.read"));

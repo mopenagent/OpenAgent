@@ -1,8 +1,8 @@
 {
   "name": "whatsapp",
-  "address": "0.0.0.0:9011",
-  "description": "WhatsApp MCP-lite service scaffold.",
-  "version": "0.1.0",
+  "address": "0.0.0.0:9010",
+  "description": "WhatsApp via whatsmeow (unofficial Web protocol). QR-code pairing, send text/media, typing indicator.",
+  "version": "0.2.0",
   "binary": {
     "linux/arm64": "bin/whatsapp-linux-arm64",
     "linux/amd64": "bin/whatsapp-linux-amd64",
@@ -13,30 +13,18 @@
   "health": {
     "interval_ms": 5000,
     "timeout_ms": 1000,
-    "restart_backoff_ms": [
-      1000,
-      2000,
-      5000,
-      10000,
-      30000
-    ]
+    "restart_backoff_ms": [1000, 2000, 5000, 10000, 30000]
   },
   "tools": [
     {
       "name": "whatsapp.status",
-      "description": "Return current service status.",
-      "params": {
-        "type": "object",
-        "properties": {}
-      }
+      "description": "Return current WhatsApp service status (running, connected, last_error).",
+      "params": { "type": "object", "properties": {} }
     },
     {
       "name": "whatsapp.link_state",
-      "description": "Return current WhatsApp link state metadata.",
-      "params": {
-        "type": "object",
-        "properties": {}
-      }
+      "description": "Return current WhatsApp link state and session metadata.",
+      "params": { "type": "object", "properties": {} }
     },
     {
       "name": "whatsapp.send_text",
@@ -44,25 +32,41 @@
       "params": {
         "type": "object",
         "properties": {
-          "chat_id": {
-            "type": "string",
-            "description": "Destination chat ID/JID."
-          },
-          "text": {
-            "type": "string",
-            "description": "Message text."
-          }
+          "chat_id": { "type": "string", "description": "Destination JID (e.g. 15551234567@s.whatsapp.net)." },
+          "text":    { "type": "string", "description": "Message text." }
         },
-        "required": [
-          "chat_id",
-          "text"
-        ]
+        "required": ["chat_id", "text"]
+      }
+    },
+    {
+      "name": "whatsapp.typing_start",
+      "description": "Send a composing (typing) presence indicator. Clears automatically after ~10 s.",
+      "params": {
+        "type": "object",
+        "properties": {
+          "chat_id": { "type": "string", "description": "Destination JID." }
+        },
+        "required": ["chat_id"]
+      }
+    },
+    {
+      "name": "whatsapp.send_media",
+      "description": "Upload and send a local file (image, video, audio, or document) to a WhatsApp chat.",
+      "params": {
+        "type": "object",
+        "properties": {
+          "chat_id":   { "type": "string", "description": "Destination JID." },
+          "file_path": { "type": "string", "description": "Absolute path to the file." },
+          "mime_type": { "type": "string", "description": "MIME type. Auto-detected from extension if omitted." },
+          "caption":   { "type": "string", "description": "Optional caption shown under the media." }
+        },
+        "required": ["chat_id", "file_path"]
       }
     }
   ],
   "events": [
+    "message.received",
     "whatsapp.qr",
-    "whatsapp.message.received",
     "whatsapp.call.received",
     "whatsapp.connection.status"
   ],

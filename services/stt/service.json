@@ -1,6 +1,6 @@
 {
   "name": "stt",
-  "address": "0.0.0.0:9008",
+  "address": "0.0.0.0:9003",
   "description": "Whisper STT via whisper-rs (whisper.cpp). Transcribes audio files on disk to text. Model: whisper-ggml-small (~244 MB RSS warmed). Requires ffmpeg at runtime for audio decoding.",
   "version": "0.1.0",
   "binary": {

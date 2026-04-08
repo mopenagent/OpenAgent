@@ -61,7 +61,7 @@ async fn main() -> anyhow::Result<()> {
         warn!("ffmpeg not found on PATH — stt.transcribe will fail until installed");
     }
 
-    info!(addr = "0.0.0.0:9008", model = %model_path, "stt.start");
+    info!(addr = "0.0.0.0:9003", model = %model_path, "stt.start");
 
     // Load Whisper model once and keep warm (~244 MB RSS for small).
     let ctx = WhisperContext::new_with_params(&model_path, WhisperContextParameters::default())
@@ -74,6 +74,6 @@ async fn main() -> anyhow::Result<()> {
     let mut server = McpLiteServer::new(tools::make_tools(), "ready");
     tools::register_handlers(&mut server, ctx, tel);
 
-    server.serve_auto("0.0.0.0:9008").await?;
+    server.serve_auto("0.0.0.0:9003").await?;
     Ok(())
 }

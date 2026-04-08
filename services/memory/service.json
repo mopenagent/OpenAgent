@@ -1,6 +1,6 @@
 {
   "name": "memory",
-  "address": "0.0.0.0:9005",
+  "address": "0.0.0.0:9000",
   "description": "Agentic Memory \u2014 LanceDB + FastEmbed. LTS stores summaries, STS stores full conversation chains. Local embeddings (BAAI/bge-small-en-v1.5), no external API calls.",
   "version": "0.1.0",
   "binary": {

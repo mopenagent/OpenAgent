@@ -50,7 +50,7 @@ async fn main() -> Result<()> {
     let mut server = McpLiteServer::new(tools::make_tools(), "ready");
     tools::register_handlers(&mut server, Arc::clone(&tel));
 
-    info!(addr = "0.0.0.0:9007", "sandbox.start");
-    server.serve_auto("0.0.0.0:9007").await?;
+    info!(addr = "0.0.0.0:9002", "sandbox.start");
+    server.serve_auto("0.0.0.0:9002").await?;
     Ok(())
 }

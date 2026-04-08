@@ -38,6 +38,46 @@ func buildServer(rt *waRuntime) *mcplite.Server {
 				"required": []string{"chat_id", "text"},
 			},
 		},
+		{
+			Name:        "whatsapp.typing_start",
+			Description: "Send a typing (composing) presence indicator to a WhatsApp chat. Clears automatically after ~10 s.",
+			Params: map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"chat_id": map[string]any{
+						"type":        "string",
+						"description": "Destination chat ID/JID.",
+					},
+				},
+				"required": []string{"chat_id"},
+			},
+		},
+		{
+			Name:        "whatsapp.send_media",
+			Description: "Upload and send a local file (image, video, audio, or document) to a WhatsApp chat.",
+			Params: map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"chat_id": map[string]any{
+						"type":        "string",
+						"description": "Destination chat ID/JID.",
+					},
+					"file_path": map[string]any{
+						"type":        "string",
+						"description": "Absolute path to the file to send.",
+					},
+					"mime_type": map[string]any{
+						"type":        "string",
+						"description": "MIME type (e.g. image/jpeg). Auto-detected from extension if omitted.",
+					},
+					"caption": map[string]any{
+						"type":        "string",
+						"description": "Optional caption shown under the media.",
+					},
+				},
+				"required": []string{"chat_id", "file_path"},
+			},
+		},
 	}
 
 	server := mcplite.NewServer(tools, "ready")
@@ -52,6 +92,19 @@ func buildServer(rt *waRuntime) *mcplite.Server {
 		chatID, _ := params["chat_id"].(string)
 		text, _ := params["text"].(string)
 		return rt.sendText(chatID, text)
+	})
+
+	server.RegisterToolHandler("whatsapp.typing_start", func(_ context.Context, params map[string]any) (string, error) {
+		chatID, _ := params["chat_id"].(string)
+		return rt.sendTyping(chatID)
+	})
+
+	server.RegisterToolHandler("whatsapp.send_media", func(_ context.Context, params map[string]any) (string, error) {
+		chatID, _ := params["chat_id"].(string)
+		filePath, _ := params["file_path"].(string)
+		mimeType, _ := params["mime_type"].(string)
+		caption, _ := params["caption"].(string)
+		return rt.sendMedia(chatID, filePath, mimeType, caption)
 	})
 
 	return server

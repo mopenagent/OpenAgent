@@ -1,6 +1,6 @@
 {
   "name": "tts",
-  "address": "0.0.0.0:9009",
+  "address": "0.0.0.0:9004",
   "description": "Kokoro TTS via Kokoros \u2014 local, fast, no API key. Supports streaming-style playback via synthesize_bytes. Model: Kokoro-82M (~400 MB RSS warmed). Models stored in data/models/.",
   "version": "0.1.0",
   "binary": {

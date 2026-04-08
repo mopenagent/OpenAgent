@@ -146,7 +146,7 @@ async fn main() -> Result<()> {
         }
     });
 
-    info!(addr = "0.0.0.0:9010", backend = "llm_json", "validator.start");
-    server.serve_auto("0.0.0.0:9010").await?;
+    info!(addr = "0.0.0.0:9005", backend = "llm_json", "validator.start");
+    server.serve_auto("0.0.0.0:9005").await?;
     Ok(())
 }

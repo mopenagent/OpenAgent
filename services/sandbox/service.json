@@ -1,6 +1,6 @@
 {
   "name": "sandbox",
-  "address": "0.0.0.0:9007",
+  "address": "0.0.0.0:9002",
   "description": "Secure code execution and shell commands via microsandbox (VM-level OCI isolation). Supersedes the Go shell service.",
   "version": "0.2.0",
   "binary": {

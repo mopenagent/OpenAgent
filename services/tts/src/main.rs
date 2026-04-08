@@ -47,7 +47,7 @@ async fn main() -> Result<()> {
 
     let tel = Arc::new(TtsTelemetry::new(&logs_dir).context("failed to init tts telemetry")?);
 
-    info!(addr = "0.0.0.0:9009", model = %model_path, voices = %voices_path, "tts.start");
+    info!(addr = "0.0.0.0:9004", model = %model_path, voices = %voices_path, "tts.start");
 
     let tts = kokoros::tts::koko::TTSKoko::new(&model_path, &voices_path).await;
     let tts = Arc::new(Mutex::new(tts));
@@ -55,6 +55,6 @@ async fn main() -> Result<()> {
     let mut server = McpLiteServer::new(tools::make_tools(), "ready");
     tools::register_handlers(&mut server, tts, tel, out_dir);
 
-    server.serve_auto("0.0.0.0:9009").await?;
+    server.serve_auto("0.0.0.0:9004").await?;
     Ok(())
 }

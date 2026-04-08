@@ -3,8 +3,10 @@ package main
 import (
 	"context"
 	"fmt"
+	"mime"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -411,6 +413,28 @@ func (r *waRuntime) linkState() map[string]any {
 	}
 }
 
+// sendTyping sends a composing presence indicator to a chat.
+// WhatsApp clears the typing indicator automatically after ~10 s.
+func (r *waRuntime) sendTyping(chatID string) (string, error) {
+	if !r.started.Load() || r.client == nil {
+		return "", fmt.Errorf("whatsapp runtime not started")
+	}
+	if !r.connected.Load() {
+		return "", fmt.Errorf("whatsapp not connected")
+	}
+	if chatID == "" {
+		return "", fmt.Errorf("chat_id is required")
+	}
+	jid, err := types.ParseJID(chatID)
+	if err != nil {
+		return "", fmt.Errorf("invalid chat_id: %w", err)
+	}
+	if err := r.client.SendChatPresence(jid, types.ChatPresenceComposing, types.ChatPresenceMediaText); err != nil {
+		return "", fmt.Errorf("send typing: %w", err)
+	}
+	return marshalJSON(map[string]any{"ok": true})
+}
+
 func (r *waRuntime) sendText(chatID, text string) (string, error) {
 	if !r.started.Load() || r.client == nil {
 		return "", fmt.Errorf("whatsapp runtime not started")
@@ -436,4 +460,155 @@ func (r *waRuntime) sendText(chatID, text string) (string, error) {
 	}
 
 	return marshalJSON(map[string]any{"ok": true, "chat_id": chatID})
+}
+
+// sendMedia uploads a local file and sends it as an image, video, audio, or
+// document message depending on MIME type.
+//
+// Parameters:
+//
+//	chatID   — destination JID (e.g. "919876543210@s.whatsapp.net")
+//	filePath — absolute path to a local file
+//	mimeType — MIME type string; empty = detected from file extension
+//	caption  — optional caption (shown under images / videos / documents)
+func (r *waRuntime) sendMedia(chatID, filePath, mimeType, caption string) (string, error) {
+	if !r.started.Load() || r.client == nil {
+		return "", fmt.Errorf("whatsapp runtime not started")
+	}
+	if !r.connected.Load() {
+		return "", fmt.Errorf("whatsapp not connected — scan QR first")
+	}
+	if chatID == "" {
+		return "", fmt.Errorf("chat_id is required")
+	}
+	if filePath == "" {
+		return "", fmt.Errorf("file_path is required")
+	}
+
+	data, err := os.ReadFile(filePath)
+	if err != nil {
+		return "", fmt.Errorf("read file: %w", err)
+	}
+
+	// Detect MIME type from extension if not provided.
+	if mimeType == "" {
+		mimeType = mime.TypeByExtension(strings.ToLower(filepath.Ext(filePath)))
+		if mimeType == "" {
+			mimeType = "application/octet-stream"
+		}
+	}
+
+	jid, err := types.ParseJID(chatID)
+	if err != nil {
+		return "", fmt.Errorf("invalid chat_id: %w", err)
+	}
+
+	// Choose whatsmeow media type from MIME prefix.
+	mediaType, waMsg := mediaTypeForMIME(mimeType, data, caption, filePath)
+
+	uploaded, err := r.client.Upload(context.Background(), data, mediaType)
+	if err != nil {
+		return "", fmt.Errorf("upload media: %w", err)
+	}
+
+	// Fill in the upload envelope fields that whatsmeow needs.
+	fillUploadFields(waMsg, &uploaded, mimeType, uint64(len(data)))
+
+	if _, err = r.client.SendMessage(context.Background(), jid, &waE2E.Message{
+		ImageMessage:    waMsg.image,
+		VideoMessage:    waMsg.video,
+		AudioMessage:    waMsg.audio,
+		DocumentMessage: waMsg.document,
+	}); err != nil {
+		return "", fmt.Errorf("send media: %w", err)
+	}
+
+	return marshalJSON(map[string]any{
+		"ok":        true,
+		"chat_id":   chatID,
+		"file_path": filePath,
+		"mime_type": mimeType,
+	})
+}
+
+// mediaMsg holds exactly one of the four whatsmeow media message types.
+type mediaMsg struct {
+	image    *waE2E.ImageMessage
+	video    *waE2E.VideoMessage
+	audio    *waE2E.AudioMessage
+	document *waE2E.DocumentMessage
+}
+
+// mediaTypeForMIME returns the whatsmeow upload type and a skeleton message
+// proto for the given MIME type.
+func mediaTypeForMIME(mimeType, _ []byte, caption, filePath string) (whatsmeow.MediaType, mediaMsg) {
+	base := strings.SplitN(mimeType, "/", 2)[0]
+	switch base {
+	case "image":
+		return whatsmeow.MediaImage, mediaMsg{
+			image: &waE2E.ImageMessage{
+				Mimetype: proto.String(mimeType),
+				Caption:  proto.String(caption),
+			},
+		}
+	case "video":
+		return whatsmeow.MediaVideo, mediaMsg{
+			video: &waE2E.VideoMessage{
+				Mimetype: proto.String(mimeType),
+				Caption:  proto.String(caption),
+			},
+		}
+	case "audio":
+		return whatsmeow.MediaAudio, mediaMsg{
+			audio: &waE2E.AudioMessage{
+				Mimetype: proto.String(mimeType),
+				PTT:      proto.Bool(false),
+			},
+		}
+	default:
+		// Documents — includes PDF, ZIP, etc.
+		filename := filepath.Base(filePath)
+		return whatsmeow.MediaDocument, mediaMsg{
+			document: &waE2E.DocumentMessage{
+				Mimetype: proto.String(mimeType),
+				Caption:  proto.String(caption),
+				FileName: proto.String(filename),
+			},
+		}
+	}
+}
+
+// fillUploadFields copies the upload response envelope fields into the
+// appropriate message proto.
+func fillUploadFields(m *mediaMsg, u *whatsmeow.UploadResponse, _ string, fileLen uint64) {
+	switch {
+	case m.image != nil:
+		m.image.URL = proto.String(u.URL)
+		m.image.DirectPath = proto.String(u.DirectPath)
+		m.image.MediaKey = u.MediaKey
+		m.image.FileEncSHA256 = u.FileEncSHA256
+		m.image.FileSHA256 = u.FileSHA256
+		m.image.FileLength = proto.Uint64(fileLen)
+	case m.video != nil:
+		m.video.URL = proto.String(u.URL)
+		m.video.DirectPath = proto.String(u.DirectPath)
+		m.video.MediaKey = u.MediaKey
+		m.video.FileEncSHA256 = u.FileEncSHA256
+		m.video.FileSHA256 = u.FileSHA256
+		m.video.FileLength = proto.Uint64(fileLen)
+	case m.audio != nil:
+		m.audio.URL = proto.String(u.URL)
+		m.audio.DirectPath = proto.String(u.DirectPath)
+		m.audio.MediaKey = u.MediaKey
+		m.audio.FileEncSHA256 = u.FileEncSHA256
+		m.audio.FileSHA256 = u.FileSHA256
+		m.audio.FileLength = proto.Uint64(fileLen)
+	case m.document != nil:
+		m.document.URL = proto.String(u.URL)
+		m.document.DirectPath = proto.String(u.DirectPath)
+		m.document.MediaKey = u.MediaKey
+		m.document.FileEncSHA256 = u.FileEncSHA256
+		m.document.FileSHA256 = u.FileSHA256
+		m.document.FileLength = proto.Uint64(fileLen)
+	}
 }
