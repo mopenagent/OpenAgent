@@ -9,7 +9,7 @@
 - **Cortex (the growing Brain)** — Rust service that owns the full ReAct loop, tool routing, memory, and action search. `openagent` (Rust binary) wraps it with Tower middleware and exposes Axum on :8080 for external callers.
 - **Go** — Only WhatsApp (`services/whatsapp/`) remains in Go (whatsmeow). No new Go services.
 
-All services communicate via **MCP-lite wire protocol** (tagged JSON frames over Unix Domain Sockets). Services run as persistent daemons; the agent's `ServiceManager` owns the full lifecycle: spawn, health-check, restart, graceful shutdown.
+All services communicate via **MCP-lite wire protocol** (tagged JSON frames over TCP). Services run as persistent daemons started by `services.sh` (dev) or systemd (production); `ServiceManager` in `openagent` connects to them, registers their tools, and health-monitors them.
 
 Primary deployment target: **Raspberry Pi / low-power hardware** (Rust compiles to arm64; Python core stays lean while it lasts).
 
@@ -23,9 +23,15 @@ This is an evolution, not a rewrite. Each phase is independently shippable. Pyth
 | **Phase 2** ✅ | Rust `openagent` binary is the control plane. Cortex owns full ReAct loop + tool routing + memory. Tower middleware (Guard, STT, TTS) and dispatch loop live in `openagent`. Python middleware deleted. | Web UI only (optional Docker container) | Full Tower stack in `openagent` (GuardLayer → SttLayer → TtsLayer) |
 | **Phase 3 (now)** ✅ | `openagent` Axum serves control plane API on :8080. Platform connectors (channels service) connect directly. Python web UI is a separate container. | Retired as control plane; web UI only | Axum in `openagent` is the control plane |
 
-**Permanent protocol decision:** MCP-lite JSON over Unix Domain Sockets is the permanent internal protocol between `openagent` and all services (including Cortex). Axum is external-facing only — it speaks JSON to clients on :8080. There is no "Phase 4 Axum over UDS" endgame — that is cancelled. Services never change their protocol.
+**Permanent protocol decision:** MCP-lite JSON over TCP is the permanent internal protocol between `openagent` and all services. Axum is external-facing only — it speaks JSON to clients on :8080. Services never change their protocol because the control plane is being replaced above them.
 
-**Key constraint:** The MCP-lite UDS socket contract is stable and permanent. Services never change their protocol because the control plane is being replaced above them.
+## Instruction Scope
+
+Project-specific Claude guidance belongs in this file at the repository root. Treat `CLAUDE.md` as the canonical source for OpenAgent architecture, workflow, coding standards, and decision history.
+
+Use `.claude/settings.local.json` only for machine-local permission overrides or temporary tooling allowances needed during development on this checkout. Do not treat it as durable project guidance.
+
+Keep `~/.claude/settings.json` generic or empty. Do not place OpenAgent-specific architecture rules, coding conventions, or workflow policy in home-level Claude settings; those belong in this repository so they version with the codebase.
 
 ## Communication Protocol (Rule #1)
 Whenever the user sends an input where their intention needs clarification or the context needs expansion, **do not assume the correct path.** Ask clarifying questions **one by one** (1-by-1) and provide possible **options/paths** for the user to choose from. Apply this explicitly in every conversation.
@@ -79,9 +85,10 @@ make local
 make local    # Current host
 make all      # All targets (Pi, etc.)
 
-# Build WhatsApp (Go) — only Go service
-cd services/whatsapp && go build -o bin/whatsapp .
-cd services/whatsapp && GOOS=linux GOARCH=arm64 go build -o bin/whatsapp-linux-arm64 .
+# Build WhatsApp (Go) — only Go service (outputs to project-root bin/)
+make whatsapp
+# or manually:
+cd services/whatsapp && GOOS=darwin GOARCH=arm64 go build -ldflags="-s -w" -o ../../bin/whatsapp-darwin-arm64 .
 
 # Start microsandbox server (required at runtime for sandbox service)
 msb server start --dev
@@ -108,16 +115,18 @@ openagent/              # Core Python — orchestration, discovery, interfaces
 services/                   # Rust (primary) or Go (WhatsApp only) service daemons
   <name>/                   # Rust: Cargo.toml, src/main.rs; Go: main.go, go.mod
     service.json            # Service manifest — schema-first declaration
-    bin/                    # Compiled binaries (gitignored)
   sandbox/                  # Rust — VM-isolated code/shell execution
-  discord/                  # Rust — Discord connector
-  telegram/                 # Rust — Telegram (teloxide, Bot API)
-  slack/                    # Rust — Slack (slack-morphism)
   whatsapp/                 # Go — WhatsApp (whatsmeow; only Go service retained)
   stt/                      # Rust — Speech-to-text
   tts/                      # Rust — Text-to-speech
-  browser/                  # Rust — Headless browser automation
+  browser/                  # Rust — Headless browser/web service
   memory/                   # Rust — Vector memory
+  validator/                # Rust — Tool output validator
+  sdk-rust/                 # Rust — Shared MCP-lite server library (used by all Rust services)
+  sdk-go/                   # Go — Shared MCP-lite library (used by WhatsApp)
+
+bin/                        # Cross-compiled service binaries (gitignored)
+  <name>-<os>-<arch>        # e.g. browser-darwin-arm64, whatsapp-linux-arm64
 
 app/                        # Minimalist web UI (FastAPI + HTMX, no auth — POC only)
   main.py                   # FastAPI app, mounts routes and static files
@@ -130,11 +139,10 @@ app/                        # Minimalist web UI (FastAPI + HTMX, no auth — POC
 data/                       # Runtime storage (gitignored)
   openagent.db              # SQLite session history, settings, whitelist
   memory/                   # LanceDB vector store
-  sockets/                  # Unix domain socket files — <name>.sock
   artifacts/                # Media, downloads, outputs
 
 config/
-  openagent.yaml            # Primary config file
+  openagent.toml            # Primary config file (provider, agents, channels, middleware)
 
 skills/                     # Domain knowledge for the agent (human-authored, agent-enriched)
   <name>/
@@ -164,12 +172,12 @@ inspire/                    # Reference implementations (gitignored)
                     │               │ ServiceManager│          │
                     │               └──────┬───────┘          │
                     └──────────────────────┼──────────────────┘
-                                           │ JSON/UDS
+                                           │ JSON/TCP
                     ┌──────────────────────┼──────────────────┐
                     │    Rust/Go Services Layer │              │
                     │   ┌──────────────────▼──────────────┐   │
                     │   │  services/<name>/ (Rust or Go)  │   │
-                    │   │  UDS daemon, MCP-lite protocol  │   │
+                    │   │  TCP daemon, MCP-lite protocol  │   │
                     │   └─────────────────────────────────┘   │
                     └─────────────────────────────────────────┘
 ```
@@ -202,17 +210,21 @@ InboundMessage (from platform extension)
 
 ### Services Layer — Rust (primary) and Go (WhatsApp only)
 
-Services are **long-lived daemon processes** managed by `ServiceManager`. One socket per service handles both directions. **Rust-first** — all new services are Rust. Only WhatsApp remains in Go.
+Services are **long-lived daemon processes** started by `services.sh` (dev) or systemd (production). `ServiceManager` in `openagent` connects to them over TCP — it does **not** spawn or restart them. **Rust-first** — all new services are Rust. Only WhatsApp remains in Go.
 
 **ServiceManager responsibilities:**
 1. Read `service.json` manifests from `services/*/service.json` on startup
-2. Detect platform (`GOOS`/`GOARCH` or Rust target), select correct binary
-3. Spawn binary (`asyncio.create_subprocess_exec`)
-4. Connect async Unix socket client (`data/sockets/<name>.sock`)
-5. Send `{"id":"...","type":"tools.list"}` — register returned tools into agent loop
-6. Run health-check loop (ping/pong every 5s); restart on timeout (exponential backoff)
-7. Subscribe to event frames — route inbound events to message bus
-8. Expose `start(name)`, `stop(name)`, `restart(name)`, `status(name)` API
+2. For each enabled service, spawn a `connection_loop` task that connects over TCP to `address` from the manifest
+3. Send `{"id":"...","type":"tools.list"}` — register returned tools into agent loop
+4. Run health-check loop (ping/pong every 5s); reconnect automatically if the service restarts
+5. Subscribe to event frames — route inbound events to the dispatch loop
+
+**Starting services (dev):**
+```bash
+./services.sh start        # start all services
+./services.sh start browser  # start one
+./services.sh status       # check running state
+```
 
 **Rust service structure (primary):**
 ```
@@ -220,19 +232,28 @@ services/<name>/
   Cargo.toml     # package + dependencies (sdk-rust, tokio, serde_json)
   src/main.rs    # McpLiteServer + tool handlers
   service.json   # manifest
-  bin/           # cross-compiled binaries (gitignored)
+```
+
+**Binaries live in the project-root `bin/` directory (not inside the service dir):**
+```
+bin/
+  browser-darwin-arm64
+  browser-linux-arm64
+  ...
 ```
 
 **Rust service internals (main.rs pattern):**
 ```rust
-// 1. Build McpLiteServer from sdk-rust (reads OPENAGENT_SOCKET_PATH)
-// 2. Register tool handlers (closures or fns)
-// 3. server.run() — owns accept loop, dispatches tools.list / tool.call / ping
-// 4. Handlers call MsbClient (sync minreq HTTP) — one sandbox per invocation
-//    start → execute/run → stop
-// 5. Return tool result string to server; server sends tool.result frame
-// 6. SIGTERM handled by tokio runtime shutdown
+// 1. Load .env (dotenvy, best-effort)
+// 2. Init OTEL: sdk_rust::setup_otel("service-name", logs_dir)
+// 3. Build McpLiteServer from sdk-rust
+// 4. Register tool handlers (closures or fns)
+// 5. server.serve_auto("0.0.0.0:<port>").await
+//    — reads OPENAGENT_TCP_ADDRESS env var; falls back to the hardcoded default
+// 6. SIGTERM handled automatically by tokio runtime shutdown
 ```
+
+**Transport:** `serve_auto(default_addr)` in sdk-rust reads `OPENAGENT_TCP_ADDRESS` from env. `services.sh` sets this before spawning each binary.
 
 **Rust sandbox: microsandbox (MSB) dependency**
 
@@ -263,7 +284,7 @@ MSB JSON-RPC 2.0 methods used (POST `/api/v1/rpc`, Bearer auth):
 
 ### MCP-lite Wire Protocol
 
-One Unix socket per service. Newline-delimited JSON frames in both directions.
+One TCP connection per service (loopback). Newline-delimited JSON frames in both directions.
 
 **Agent → Service (requests):**
 ```json
@@ -288,7 +309,7 @@ One Unix socket per service. Newline-delimited JSON frames in both directions.
 
 **Why not full MCP (JSON-RPC 2.0)?** Full MCP adds capability negotiation, resources, prompts, sampling, SSE transport — 80% of which we don't need. MCP-lite borrows MCP's vocabulary (`tools.list`, `tool.call`) so developers familiar with MCP read the protocol instantly, but strips it to only what runs deterministically on a Pi.
 
-**Future path:** If ecosystem compatibility is needed, a thin MCP-to-MCP-lite bridge can be added without changing any service internals.
+**Why TCP instead of UDS?** TCP works transparently across localhost, LAN, and Docker networks without socket-file lifecycle management. `TCP_NODELAY` is set on every connection to eliminate Nagle latency (~40 ms on loopback). All services bind on `0.0.0.0:<port>` so the port can be forwarded or firewall-restricted without changing service code.
 
 ### Service Manifest (`service.json`)
 
@@ -299,12 +320,12 @@ Schema-first: the manifest is the only contract between Python core and the serv
   "name": "my-service",
   "description": "What this service does for the agent",
   "version": "0.1.0",
+  "address": "0.0.0.0:9006",
   "binary": {
     "linux/arm64":  "bin/my-service-linux-arm64",
     "linux/amd64":  "bin/my-service-linux-amd64",
     "darwin/arm64": "bin/my-service-darwin-arm64"
   },
-  "socket": "data/sockets/my-service.sock",
   "health": {
     "interval_ms": 5000,
     "timeout_ms": 1000,
@@ -326,6 +347,19 @@ Schema-first: the manifest is the only contract between Python core and the serv
   "events": ["message.received", "connection.status"]
 }
 ```
+
+**Port allocation:**
+| Service  | Port |
+|----------|------|
+| memory   | 9000 |
+| browser  | 9001 |
+| sandbox  | 9002 |
+| stt      | 9003 |
+| tts      | 9004 |
+| validator| 9005 |
+| whatsapp | 9010 |
+
+Assign the next available port to new services. Never reuse a port.
 
 ### Python Extensions = platform Integrations Only
 
@@ -353,36 +387,51 @@ Multiple configurable providers per agent. Follow Nanobot's `ProviderSpec` regis
 
 ### Configuration
 
-**YAML config file** (`config/openagent.yaml`) + **env var overrides** (prefix: `OPENAGENT_`). Follow Nanobot's config schema with Pydantic models.
+**TOML config file** (`config/openagent.toml`) + **env var overrides** (prefix: `OPENAGENT_`). All `${VAR}` tokens in the TOML are resolved from the environment at load time.
 
-```yaml
-providers:
-  fast:
-    base_url: http://localhost:11434/v1
-    model: qwen2.5:7b
-    api_key: ollama
-  strong:
-    base_url: http://localhost:11434/v1
-    model: qwen2.5:14b
-    api_key: ollama
+```toml
+[provider]
+kind     = "openai_compat"
+base_url = "http://localhost:1234/v1"
+api_key  = ""
+model    = "qwen/qwen3.5-9b"
+timeout  = 300.0
 
-agents:
-  supervisor:
-    model: strong
-    system_prompt: "..."
-    max_iterations: 40
-  worker-search:
-    model: fast
-    system_prompt: "..."
+[[agents]]
+name           = "AgentM"
+system_prompt  = "..."
+max_iterations = 40
 
-memory:
-  sqlite_path: data/sessions.db
-  lancedb_path: data/memory/
-  memory_window: 50
+[session]
+backend = "sqlite"
+db_path = "data/openagent.db"
 
-services:
-  discovery: auto          # auto-discover from services/*/service.json
-  socket_dir: data/sockets/
+[channels.telegram]
+enabled = false
+token   = "${TELEGRAM_BOT_TOKEN}"
+
+[channels.discord]
+enabled = true
+token   = "${DISCORD_BOT_TOKEN}"
+
+[channels.slack]
+enabled   = true
+bot_token = "${SLACK_BOT_TOKEN}"
+app_token = "${SLACK_APP_TOKEN}"
+
+[guard]
+enabled = true
+db_path = "data/openagent.db"
+
+[middleware.stt]
+enabled = false
+
+[middleware.tts]
+enabled = false
+voice   = "af_sarah"
+
+[services]
+disabled = []   # service names to skip even if binary exists
 ```
 
 ### Memory & Storage

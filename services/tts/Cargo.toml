@@ -9,7 +9,7 @@ sdk-rust        = { path = "../sdk-rust" }
 base64          = "0.22"
 mimalloc        = { version = "0.1", default-features = false }
 uuid            = { version = "1", features = ["v4"] }
-tokio           = { version = "1.42", features = ["rt-multi-thread", "macros", "fs", "io-util"] }
+tokio           = { version = "1.42", features = ["rt-multi-thread", "macros", "sync", "net"] }
 serde_json      = "1.0"
 anyhow          = "1.0"
 tracing         = "0.1"
@@ -60,3 +60,15 @@ unused_result_ok                   = "warn"
 
 # Allow: structured logging uses literal strings with template syntax
 literal_string_with_formatting_args = "allow"
+
+[profile.release]
+opt-level     = 3
+lto           = "fat"
+codegen-units = 1
+panic         = "abort"
+strip         = true
+
+[profile.bench]
+inherits = "release"
+debug    = true
+strip    = false

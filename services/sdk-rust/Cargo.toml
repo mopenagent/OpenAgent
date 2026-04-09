@@ -68,3 +68,15 @@ unnecessary_safety_doc             = "warn"
 unneeded_field_pattern             = "warn"
 unused_result_ok                   = "warn"
 literal_string_with_formatting_args = "allow"
+
+[profile.release]
+opt-level     = 3
+lto           = "fat"
+codegen-units = 1
+panic         = "abort"
+strip         = true
+
+[profile.bench]
+inherits = "release"
+debug    = true
+strip    = false
