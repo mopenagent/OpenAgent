@@ -9,22 +9,33 @@
     "darwin/arm64": "bin/whatsapp-darwin-arm64",
     "darwin/amd64": "bin/whatsapp-darwin-amd64"
   },
-  "socket": "data/sockets/whatsapp.sock",
   "health": {
     "interval_ms": 5000,
     "timeout_ms": 1000,
-    "restart_backoff_ms": [1000, 2000, 5000, 10000, 30000]
+    "restart_backoff_ms": [
+      1000,
+      2000,
+      5000,
+      10000,
+      30000
+    ]
   },
   "tools": [
     {
       "name": "whatsapp.status",
       "description": "Return current WhatsApp service status (running, connected, last_error).",
-      "params": { "type": "object", "properties": {} }
+      "params": {
+        "type": "object",
+        "properties": {}
+      }
     },
     {
       "name": "whatsapp.link_state",
       "description": "Return current WhatsApp link state and session metadata.",
-      "params": { "type": "object", "properties": {} }
+      "params": {
+        "type": "object",
+        "properties": {}
+      }
     },
     {
       "name": "whatsapp.send_text",
@@ -32,10 +43,19 @@
       "params": {
         "type": "object",
         "properties": {
-          "chat_id": { "type": "string", "description": "Destination JID (e.g. 15551234567@s.whatsapp.net)." },
-          "text":    { "type": "string", "description": "Message text." }
+          "chat_id": {
+            "type": "string",
+            "description": "Destination JID (e.g. 15551234567@s.whatsapp.net)."
+          },
+          "text": {
+            "type": "string",
+            "description": "Message text."
+          }
         },
-        "required": ["chat_id", "text"]
+        "required": [
+          "chat_id",
+          "text"
+        ]
       }
     },
     {
@@ -44,9 +64,14 @@
       "params": {
         "type": "object",
         "properties": {
-          "chat_id": { "type": "string", "description": "Destination JID." }
+          "chat_id": {
+            "type": "string",
+            "description": "Destination JID."
+          }
         },
-        "required": ["chat_id"]
+        "required": [
+          "chat_id"
+        ]
       }
     },
     {
@@ -55,12 +80,27 @@
       "params": {
         "type": "object",
         "properties": {
-          "chat_id":   { "type": "string", "description": "Destination JID." },
-          "file_path": { "type": "string", "description": "Absolute path to the file." },
-          "mime_type": { "type": "string", "description": "MIME type. Auto-detected from extension if omitted." },
-          "caption":   { "type": "string", "description": "Optional caption shown under the media." }
+          "chat_id": {
+            "type": "string",
+            "description": "Destination JID."
+          },
+          "file_path": {
+            "type": "string",
+            "description": "Absolute path to the file."
+          },
+          "mime_type": {
+            "type": "string",
+            "description": "MIME type. Auto-detected from extension if omitted."
+          },
+          "caption": {
+            "type": "string",
+            "description": "Optional caption shown under the media."
+          }
         },
-        "required": ["chat_id", "file_path"]
+        "required": [
+          "chat_id",
+          "file_path"
+        ]
       }
     }
   ],

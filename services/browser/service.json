@@ -1,7 +1,7 @@
 {
   "name": "browser",
   "address": "0.0.0.0:9001",
-  "description": "Web access \u2014 two tools, two turns. Turn 1: web.search returns a JSON list of {url,title,snippet} \u2014 the LLM picks the best URL. Turn 2: web.fetch fetches that URL and returns clean Markdown content for the LLM to read. No JavaScript execution; if content is sparse the LLM should escalate to a remote browser via agent.discover.",
+  "description": "Web access — two tools, two turns. Turn 1: web.search returns a JSON list of {url,title,snippet} — the LLM picks the best URL. Turn 2: web.fetch fetches that URL and returns clean Markdown content for the LLM to read. No JavaScript execution; if content is sparse the LLM should escalate to a remote browser via agent.discover.",
   "version": "0.3.0",
   "binary": {
     "linux/arm64": "bin/browser-linux-arm64",
@@ -9,7 +9,6 @@
     "darwin/arm64": "bin/browser-darwin-arm64",
     "darwin/amd64": "bin/browser-darwin-amd64"
   },
-  "socket": "data/sockets/browser.sock",
   "health": {
     "interval_ms": 5000,
     "timeout_ms": 2000,
@@ -47,7 +46,7 @@
     },
     {
       "name": "web.fetch",
-      "description": "STEP 2 of 2. Fetch a URL and return its content as clean Markdown. Call this after web.search with the URL you chose. No JavaScript \u2014 if the returned content is sparse or empty the page requires a real browser; use agent.discover to find a remote browser tool. Results cached 1 hr.",
+      "description": "STEP 2 of 2. Fetch a URL and return its content as clean Markdown. Call this after web.search with the URL you chose. No JavaScript — if the returned content is sparse or empty the page requires a real browser; use agent.discover to find a remote browser tool. Results cached 1 hr.",
       "params": {
         "type": "object",
         "properties": {

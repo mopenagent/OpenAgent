@@ -9,7 +9,6 @@
     "darwin/arm64": "bin/sandbox-darwin-arm64",
     "darwin/amd64": "bin/sandbox-darwin-amd64"
   },
-  "socket": "data/sockets/sandbox.sock",
   "health": {
     "interval_ms": 5000,
     "timeout_ms": 1000,
@@ -24,7 +23,7 @@
   "tools": [
     {
       "name": "sandbox.execute",
-      "description": "Execute Python or Node.js code in a secure OCI sandbox (VM-level isolation via microsandbox). Use for data processing, calculations, API calls, or scripting. Each call starts a fresh sandbox \u2014 state is not preserved between calls.",
+      "description": "Execute Python or Node.js code in a secure OCI sandbox (VM-level isolation via microsandbox). Use for data processing, calculations, API calls, or scripting. Each call starts a fresh sandbox — state is not preserved between calls.",
       "params": {
         "type": "object",
         "properties": {

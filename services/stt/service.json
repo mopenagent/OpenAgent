@@ -8,7 +8,6 @@
     "linux/amd64": "bin/stt-linux-amd64",
     "darwin/arm64": "bin/stt-darwin-arm64"
   },
-  "socket": "data/sockets/stt.sock",
   "health": {
     "interval_ms": 5000,
     "timeout_ms": 3000,

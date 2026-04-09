@@ -9,7 +9,6 @@
     "darwin/arm64": "bin/validator-darwin-arm64",
     "darwin/amd64": "bin/validator-darwin-amd64"
   },
-  "socket": "data/sockets/validator.sock",
   "health": {
     "interval_ms": 5000,
     "timeout_ms": 2000,
