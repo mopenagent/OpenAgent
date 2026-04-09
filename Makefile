@@ -126,14 +126,14 @@ else
 	fi
 endif
 else
-	cd services/$(1) && cargo build --release
+	cd services/$(1) && cargo build --release $(if $(filter $(1),memory),-j2,)
 	cp services/$(1)/target/release/$(1) $(BIN)/$(1)-$(HOST_SUFFIX)
 endif
 	@if command -v cross >/dev/null 2>&1; then \
-	  cd services/$(1) && cross build --release --target aarch64-unknown-linux-musl && \
+	  cd services/$(1) && cross build --release $(if $(filter $(1),memory),-j2,) --target aarch64-unknown-linux-musl && \
 	  cp services/$(1)/target/aarch64-unknown-linux-musl/release/$(1) \
 	     $(BIN)/$(1)-linux-arm64; \
-	  cd services/$(1) && cross build --release --target x86_64-unknown-linux-musl && \
+	  cd services/$(1) && cross build --release $(if $(filter $(1),memory),-j2,) --target x86_64-unknown-linux-musl && \
 	  cp services/$(1)/target/x86_64-unknown-linux-musl/release/$(1) \
 	     $(BIN)/$(1)-linux-amd64; \
 	else \
@@ -171,10 +171,17 @@ ifeq ($(HOST_OS),darwin)
 else
 	@for svc in $(RUST_SERVICES); do \
 	  echo "  → $$svc"; \
-	  (cd services/$$svc && \
-	    cargo build --release && \
-	    cp target/release/$$svc \
-	       ../../$(BIN)/$$svc-$(HOST_SUFFIX)) || exit 1; \
+	  if [ "$$svc" = "memory" ]; then \
+	    (cd services/$$svc && \
+	      cargo build --release -j2 && \
+	      cp target/release/$$svc \
+	         ../../$(BIN)/$$svc-$(HOST_SUFFIX)) || exit 1; \
+	  else \
+	    (cd services/$$svc && \
+	      cargo build --release && \
+	      cp target/release/$$svc \
+	         ../../$(BIN)/$$svc-$(HOST_SUFFIX)) || exit 1; \
+	  fi; \
 	done
 endif
 	@echo "Done — binaries in $(BIN)/*-$(HOST_SUFFIX)"
