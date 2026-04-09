@@ -137,6 +137,7 @@ pub trait TranscriptionProvider: Send + Sync {
 // ── GroqProvider ────────────────────────────────────────────────
 
 /// Groq Whisper API provider (default, backward-compatible with existing config).
+#[derive(Debug)]
 pub struct GroqProvider {
     api_url: String,
     model: String,
@@ -216,6 +217,7 @@ impl TranscriptionProvider for GroqProvider {
 // ── OpenAiWhisperProvider ───────────────────────────────────────
 
 /// OpenAI Whisper API provider.
+#[derive(Debug)]
 pub struct OpenAiWhisperProvider {
     api_key: String,
     model: String,
@@ -274,6 +276,7 @@ impl TranscriptionProvider for OpenAiWhisperProvider {
 // ── DeepgramProvider ────────────────────────────────────────────
 
 /// Deepgram STT API provider.
+#[derive(Debug)]
 pub struct DeepgramProvider {
     api_key: String,
     model: String,
@@ -348,6 +351,7 @@ impl TranscriptionProvider for DeepgramProvider {
 // ── AssemblyAiProvider ──────────────────────────────────────────
 
 /// AssemblyAI STT API provider.
+#[derive(Debug)]
 pub struct AssemblyAiProvider {
     api_key: String,
 }
@@ -490,6 +494,7 @@ impl TranscriptionProvider for AssemblyAiProvider {
 // ── GoogleSttProvider ───────────────────────────────────────────
 
 /// Google Cloud Speech-to-Text API provider.
+#[derive(Debug)]
 pub struct GoogleSttProvider {
     api_key: String,
     language_code: String,
@@ -600,6 +605,7 @@ impl TranscriptionProvider for GoogleSttProvider {
 /// HTTP endpoint (e.g. `http://localhost:8000` or a private network host). The endpoint
 /// must return `{"text": "..."}`. No cloud API key required. Size limit is
 /// configurable — not constrained by the 25 MB cloud API cap.
+#[derive(Debug)]
 pub struct LocalWhisperProvider {
     url: String,
     bearer_token: String,
@@ -720,6 +726,15 @@ async fn parse_whisper_response(resp: reqwest::Response) -> Result<String> {
 pub struct TranscriptionManager {
     providers: HashMap<String, Box<dyn TranscriptionProvider>>,
     default_provider: String,
+}
+
+impl std::fmt::Debug for TranscriptionManager {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("TranscriptionManager")
+            .field("providers", &self.providers.keys().collect::<Vec<_>>())
+            .field("default_provider", &self.default_provider)
+            .finish()
+    }
 }
 
 impl TranscriptionManager {

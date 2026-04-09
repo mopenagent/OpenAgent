@@ -104,6 +104,7 @@ static MSG_SEQ: AtomicU64 = AtomicU64::new(0);
 /// Connects to an IRC server using TLS, joins configured channels,
 /// and forwards PRIVMSG messages to the `ZeroClaw` message bus.
 /// Supports both channel messages and private messages (DMs).
+#[derive(Debug)]
 pub struct IrcChannel {
     server: String,
     port: u16,
@@ -306,6 +307,7 @@ fn split_message(message: &str, max_bytes: usize) -> Vec<String> {
 }
 
 /// Configuration for constructing an `IrcChannel`.
+#[derive(Debug)]
 pub struct IrcChannelConfig {
     pub server: String,
     pub port: u16,

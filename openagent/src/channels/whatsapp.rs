@@ -127,6 +127,7 @@ fn ensure_https(url: &str) -> anyhow::Result<()> {
 ///
 /// This Cloud API channel is automatically selected when `phone_number_id` is set in the config.
 /// Use `WhatsAppWebChannel` (with `session_path`) for native Web mode.
+#[derive(Debug)]
 pub struct WhatsAppChannel {
     access_token: String,
     endpoint_id: String,

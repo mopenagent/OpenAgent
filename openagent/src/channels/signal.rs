@@ -73,7 +73,7 @@ enum RecipientTarget {
 /// Connects to a running `signal-cli daemon --http <host:port>`.
 /// Listens via SSE at `/api/v1/events` and sends via JSON-RPC at
 /// `/api/v1/rpc`.
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct SignalChannel {
     http_url: String,
     account: String,

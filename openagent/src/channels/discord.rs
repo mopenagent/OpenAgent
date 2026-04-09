@@ -80,6 +80,7 @@ use tokio_tungstenite::tungstenite::Message;
 use uuid::Uuid;
 
 /// Discord channel — connects via Gateway WebSocket for real-time messages
+#[derive(Debug)]
 pub struct DiscordChannel {
     bot_token: String,
     guild_id: Option<String>,

@@ -43,7 +43,7 @@ pub struct AgentResult(pub Value);
 /// unchanged.  On error, returns HTTP 500 immediately — TtsLayer never runs.
 pub async fn agent_middleware(
     State(state): State<AppState>,
-    mut req: Request<Body>,
+    req: Request<Body>,
     next: Next,
 ) -> Response {
     // Only intercept POST /step — all other routes pass through unchanged.

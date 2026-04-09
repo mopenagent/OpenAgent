@@ -26,6 +26,7 @@ fn now_secs() -> u64 {
 /// Create one per channel, call [`touch`](Self::touch) on every received
 /// message or event, and [`start`](Self::start) with a callback that triggers
 /// reconnection.
+#[derive(Debug)]
 pub struct StallWatchdog {
     /// Unix timestamp (seconds) of the last received event.
     last_event: Arc<AtomicU64>,

@@ -32,6 +32,23 @@ use tracing::info;
 
 #[tokio::main]
 async fn main() -> Result<()> {
+    // ---- project root -------------------------------------------------------
+    let project_root = env::var("OPENAGENT_ROOT")
+        .map(PathBuf::from)
+        .unwrap_or_else(|_| env::current_dir().expect("cannot determine current directory"));
+
+    // ---- load config early (needed for debug flag before OTEL init) ---------
+    let cfg = config::load(&project_root).unwrap_or_else(|e| {
+        eprintln!("config.load.error (using defaults): {e}");
+        config::OpenAgentConfig::default()
+    });
+
+    // ---- apply debug flag — sets RUST_LOG if not already set ----------------
+    if cfg.debug && env::var("RUST_LOG").is_err() {
+        // SAFETY: single-threaded at this point, before tokio spawns any tasks.
+        unsafe { std::env::set_var("RUST_LOG", "debug"); }
+    }
+
     // ---- OTEL (traces + logs + metrics) ------------------------------------
     let logs_dir = env::var("OPENAGENT_LOGS_DIR").unwrap_or_else(|_| "/var/log/openagent".to_string());
     let _otel_guard = observability::otel::setup_otel("openagent", &logs_dir)
@@ -43,11 +60,6 @@ async fn main() -> Result<()> {
             eprintln!("metrics writer init failed: {e}");
             panic!("cannot open metrics log dir");
         });
-
-    // ---- project root -------------------------------------------------------
-    let project_root = env::var("OPENAGENT_ROOT")
-        .map(PathBuf::from)
-        .unwrap_or_else(|_| env::current_dir().expect("cannot determine current directory"));
 
     info!(
         root = %project_root.display(),
@@ -68,11 +80,6 @@ async fn main() -> Result<()> {
         );
     }
 
-    // ---- load config --------------------------------------------------------
-    let cfg = config::load(&project_root).unwrap_or_else(|e| {
-        tracing::warn!(error = %e, "config.load.error — using defaults");
-        config::OpenAgentConfig::default()
-    });
     info!(
         provider_kind     = %cfg.provider.kind,
         provider_model    = %cfg.provider.model,

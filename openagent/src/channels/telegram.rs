@@ -59,14 +59,12 @@ use super::traits::{Channel, ChannelMessage, SendMessage};
 use crate::security::pairing::PairingGuard;
 use anyhow::Context;
 use async_trait::async_trait;
-use directories::UserDirs;
 use parking_lot::Mutex;
 use reqwest::multipart::{Form, Part};
 use std::fmt::Write as _;
 use std::path::Path;
 use std::sync::{Arc, RwLock};
 use std::time::Duration;
-use tokio::fs;
 
 /// Telegram's maximum message length for text messages
 const TELEGRAM_MAX_MESSAGE_LENGTH: usize = 4096;
@@ -371,6 +369,7 @@ fn parse_attachment_markers(message: &str) -> (String, Vec<TelegramAttachment>) 
 const TELEGRAM_MAX_FILE_DOWNLOAD_BYTES: u64 = 20 * 1024 * 1024;
 
 /// Telegram channel — long-polls the Bot API for updates
+#[derive(Debug)]
 pub struct TelegramChannel {
     bot_token: String,
     allowed_users: Arc<RwLock<Vec<String>>>,

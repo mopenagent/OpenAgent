@@ -38,11 +38,13 @@ pub trait Provider: Send + Sync {
 pub mod compatible {
     use super::{ChatMessage, Provider};
 
+    #[derive(Debug)]
     pub enum AuthStyle {
         Bearer,
     }
 
     /// Minimal OpenAI-compatible provider stub.
+    #[derive(Debug)]
     pub struct OpenAiCompatibleProvider {
         pub base_url: String,
         pub api_key: String,

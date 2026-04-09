@@ -13,7 +13,6 @@ use serde_json::{json, Value};
 use std::time::Instant;
 use tracing::info;
 
-use crate::channels::whatsapp as wa;
 use crate::observability::metrics::{step_metric, tool_metric};
 use super::middleware::AgentResult;
 use super::state::AppState;

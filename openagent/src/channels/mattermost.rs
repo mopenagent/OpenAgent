@@ -55,6 +55,7 @@ const MAX_MATTERMOST_AUDIO_BYTES: u64 = 25 * 1024 * 1024;
 
 /// Mattermost channel — polls channel posts via REST API v4.
 /// Mattermost is API-compatible with many Slack patterns but uses a dedicated v4 structure.
+#[derive(Debug)]
 pub struct MattermostChannel {
     base_url: String, // e.g., https://mm.example.com
     bot_token: String,

@@ -20,7 +20,7 @@ pub use channel_types::{
     apply_channel_proxy_to_builder, build_channel_proxy_client,
     build_channel_proxy_client_with_timeouts, build_runtime_proxy_client,
     ws_connect_with_proxy, AssemblyAiSttConfig, DeepgramSttConfig, GoogleSttConfig,
-    LocalWhisperConfig, OpenAiSttConfig, ProxiedWsStream, StreamMode, TranscriptionConfig,
+    LocalWhisperConfig, OpenAiSttConfig, StreamMode, TranscriptionConfig,
 };
 
 use anyhow::Result;
@@ -266,6 +266,10 @@ pub struct ServicesConfig {
 
 #[derive(Debug, Clone, Deserialize, Default)]
 pub struct OpenAgentConfig {
+    /// Enable debug-level log output. When `true` the log filter is set to
+    /// `debug` unless `RUST_LOG` overrides it. Defaults to `false` (info).
+    #[serde(default)]
+    pub debug: bool,
     #[serde(default)]
     pub provider: ProviderConfig,
     #[serde(default)]

@@ -28,6 +28,7 @@ pub fn build(_cfg: &CliConfig) -> CliChannel {
 }
 
 /// CLI channel — stdin/stdout, always available, zero deps
+#[derive(Debug)]
 pub struct CliChannel;
 
 impl CliChannel {

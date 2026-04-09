@@ -89,7 +89,7 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use tokio::io::AsyncWriteExt;
 use tokio_tungstenite::tungstenite::Message as WsMessage;
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 struct CachedSlackDisplayName {
     display_name: String,
     expires_at: Instant,
@@ -97,6 +97,7 @@ struct CachedSlackDisplayName {
 
 /// Slack channel — polls conversations.history via Web API
 #[allow(clippy::struct_excessive_bools)]
+#[derive(Debug)]
 pub struct SlackChannel {
     bot_token: String,
     app_token: Option<String>,

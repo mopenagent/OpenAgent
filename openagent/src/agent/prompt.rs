@@ -59,6 +59,7 @@ pub fn render_skill_context(system_prompt: &str, skill_context: &str) -> Result<
 }
 
 /// Input for `render_diary_entry`.
+#[derive(Debug)]
 pub struct DiaryEntryContext<'a> {
     pub session_id:    &'a str,
     pub timestamp:     u64,

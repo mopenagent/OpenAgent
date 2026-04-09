@@ -97,7 +97,7 @@ fn resolve_message_content(rowid: i64, text: Option<String>, body: Option<Vec<u8
 
 /// iMessage channel using macOS `AppleScript` bridge.
 /// Polls the Messages database for new messages and sends replies via `osascript`.
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct IMessageChannel {
     allowed_contacts: Vec<String>,
     poll_interval_secs: u64,

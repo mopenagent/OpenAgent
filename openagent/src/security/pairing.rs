@@ -9,6 +9,7 @@
 //! if `allowed_users` is empty the guard is disabled and every sender passes.
 
 /// Pairing guard — validates senders against an allowlist.
+#[derive(Debug)]
 pub struct PairingGuard {
     enabled: bool,
     allowed: Vec<String>,

@@ -22,6 +22,14 @@ pub struct ChannelRegistry {
     channels: HashMap<String, Arc<dyn Channel>>,
 }
 
+impl std::fmt::Debug for ChannelRegistry {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ChannelRegistry")
+            .field("channels", &self.channels.keys().collect::<Vec<_>>())
+            .finish()
+    }
+}
+
 impl ChannelRegistry {
     /// Return an empty registry (no platforms enabled).
     pub fn empty() -> Self {

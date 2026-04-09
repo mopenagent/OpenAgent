@@ -17,6 +17,14 @@ pub struct ZeroClawChannel<T: Channel> {
     metrics: Arc<MetricsWriter>,
 }
 
+impl<T: Channel + std::fmt::Debug> std::fmt::Debug for ZeroClawChannel<T> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ZeroClawChannel")
+            .field("inner", &self.inner)
+            .finish_non_exhaustive()
+    }
+}
+
 impl<T: Channel> ZeroClawChannel<T> {
     pub fn new(inner: T, metrics: Arc<MetricsWriter>) -> Self {
         Self { inner, metrics }

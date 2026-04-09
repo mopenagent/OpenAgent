@@ -17,7 +17,6 @@ import (
 	"net"
 	"os"
 	"os/signal"
-	"path/filepath"
 	"strings"
 	"sync"
 	"syscall"
@@ -27,7 +26,7 @@ import (
 )
 
 const (
-	defaultSocketPath   = "data/sockets/whatsapp.sock"
+	defaultTCPAddr      = "0.0.0.0:9010"
 	defaultDataDir      = "data"
 	defaultArtifactsDir = "data/artifacts"
 )
@@ -43,14 +42,14 @@ func run() error {
 	defer cancel()
 
 	// OTEL tracing — writes to logs/whatsapp-traces-YYYY-MM-DD.jsonl
-	logsDir := firstNonEmpty(os.Getenv("OPENAGENT_LOGS_DIR"), "logs")
+	logsDir := firstNonEmpty(os.Getenv("OPENAGENT_LOGS_DIR"), "/var/log/openagent")
 	if otelShutdown, err := mcplite.SetupOTEL("whatsapp", logsDir); err != nil {
 		log.Printf(`{"level":"WARN","message":"otel init failed","error":%q}`, err.Error())
 	} else {
 		defer func() { _ = otelShutdown(context.Background()) }()
 	}
 
-	socketPath := firstNonEmpty(os.Getenv("OPENAGENT_SOCKET_PATH"), defaultSocketPath)
+	tcpAddr := firstNonEmpty(os.Getenv("OPENAGENT_TCP_ADDRESS"), defaultTCPAddr)
 	dataDir := firstNonEmpty(
 		os.Getenv("WHATSAPP_DATA_DIR"),
 		os.Getenv("OPENAGENT_WHATSAPP_DATA_DIR"),
@@ -67,25 +66,15 @@ func run() error {
 	}
 	defer rt.stop()
 
-	if err := os.MkdirAll(filepath.Dir(socketPath), 0o755); err != nil {
-		return errors.New("create socket directory: " + err.Error())
-	}
-	if err := os.Remove(socketPath); err != nil && !errors.Is(err, os.ErrNotExist) {
-		return errors.New("remove stale socket: " + err.Error())
-	}
-
-	listener, err := net.Listen("unix", socketPath)
+	listener, err := net.Listen("tcp", tcpAddr)
 	if err != nil {
-		return errors.New("listen on socket: " + err.Error())
+		return errors.New("listen on TCP: " + err.Error())
 	}
-	defer func() {
-		_ = listener.Close()
-		_ = os.Remove(socketPath)
-	}()
+	defer func() { _ = listener.Close() }()
 
 	mcplite.LogEvent("INFO", "service listening", map[string]any{
-		"service":     "whatsapp",
-		"socket_path": socketPath,
+		"service": "whatsapp",
+		"addr":    tcpAddr,
 	})
 
 	server := buildServer(rt)

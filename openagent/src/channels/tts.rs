@@ -8,6 +8,7 @@ use anyhow::Result;
 use crate::config::TtsConfig;
 
 /// Calls the TTS service to synthesize text into audio bytes.
+#[derive(Debug)]
 pub struct TtsManager {
     config: TtsConfig,
 }
