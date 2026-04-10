@@ -261,6 +261,42 @@ pub struct ServicesConfig {
 }
 
 // ---------------------------------------------------------------------------
+// Cron
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct CronConfig {
+    /// Whether the cron scheduler is active.
+    #[serde(default)]
+    pub enabled: bool,
+    /// How often (in seconds) the scheduler polls for due jobs.
+    #[serde(default = "default_cron_poll_secs")]
+    pub poll_secs: u64,
+    /// SQLite database path (relative to project root).
+    /// Defaults to the same DB as sessions so cron_jobs and cron_runs
+    /// live alongside the rest of OpenAgent's persistent state.
+    #[serde(default = "default_cron_db_path")]
+    pub db_path: String,
+}
+
+fn default_cron_poll_secs() -> u64 {
+    30
+}
+fn default_cron_db_path() -> String {
+    "data/openagent.db".to_string()
+}
+
+impl Default for CronConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            poll_secs: default_cron_poll_secs(),
+            db_path: default_cron_db_path(),
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Top-level config
 // ---------------------------------------------------------------------------
 
@@ -282,6 +318,8 @@ pub struct OpenAgentConfig {
     /// Each sub-key maps to a channel (e.g. `[channels.telegram]`).
     #[serde(default)]
     pub channels: crate::channels::config::ChannelsConfig,
+    #[serde(default)]
+    pub cron: CronConfig,
 }
 
 /// Load `config/openagent.toml` relative to `project_root`, apply env var

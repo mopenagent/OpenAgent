@@ -3,6 +3,7 @@ use mimalloc::MiMalloc;
 static GLOBAL: MiMalloc = MiMalloc;
 
 pub mod agent;
+pub mod cron;
 mod config;
 mod console;
 mod dispatch;
@@ -127,15 +128,36 @@ async fn main() -> Result<()> {
         channels::ChannelHandle::disabled()
     });
 
+    // ---- Cron: init tables and resolve db path ---------------------------------
+    let cron_db_path = project_root
+        .join(&cfg.cron.db_path)
+        .to_string_lossy()
+        .to_string();
+    if cfg.cron.enabled {
+        if let Err(e) = cron::store::init_tables_at(&cron_db_path) {
+            tracing::warn!(error = %e, path = %cron_db_path, "cron.db.init.error — cron disabled");
+        } else {
+            info!(path = %cron_db_path, poll_secs = cfg.cron.poll_secs, "cron.enabled");
+        }
+    }
+
     // ---- Build in-process AgentContext (action catalog + tool router + telemetry) ----
-    let action_catalog = Arc::new(
+    let mut action_catalog =
         ActionCatalog::discover_from_root(&project_root).unwrap_or_else(|e| {
             tracing::warn!(error = %e, "action_catalog.load.error — using empty catalog");
             ActionCatalog::empty()
-        })
-    );
+        });
+    if cfg.cron.enabled {
+        action_catalog.extend_with_builtins(cron::catalog_entries());
+        info!("cron.catalog.extended");
+    }
+    let action_catalog = Arc::new(action_catalog);
     let tool_addresses = action_catalog.tool_address_map();
-    let tool_router = Arc::new(ToolRouter::new(tool_addresses, project_root.clone()));
+    let mut tool_router = ToolRouter::new(tool_addresses, project_root.clone());
+    if cfg.cron.enabled {
+        tool_router = tool_router.with_cron_db(&cron_db_path);
+    }
+    let tool_router = Arc::new(tool_router);
     let agent_tel = Arc::new(
         AgentTelemetry::new(&logs_dir).unwrap_or_else(|e| {
             tracing::warn!(error = %e, "agent telemetry init failed — using no-op");
@@ -158,6 +180,17 @@ async fn main() -> Result<()> {
         tokio::spawn(async move {
             dispatch::run(dispatch_manager, dispatch_guard, dispatch_ctx, dispatch_ch).await;
         });
+    }
+
+    // ---- Cron scheduler (background) ----------------------------------------
+    if cfg.cron.enabled {
+        let cron_db    = cron_db_path.clone();
+        let cron_poll  = cfg.cron.poll_secs;
+        let cron_event = manager.event_sender();
+        tokio::spawn(async move {
+            cron::scheduler::run(cron_db, cron_poll, cron_event).await;
+        });
+        info!("cron.scheduler.spawned");
     }
 
     // ---- Axum control plane (TCP :8080) -------------------------------------
