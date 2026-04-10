@@ -5,7 +5,7 @@
 //!   web.fetch   — reqwest + dom_smoothie extraction (cached 1 hr)
 //!
 //! Environment variables:
-//!   OPENAGENT_LOGS_DIR    — OTEL output dir   (default: /var/log/openagent)
+//!   OPENAGENT_LOGS_DIR    — OTEL output dir   (default: logs/)
 //!   SEARXNG_URL           — SearXNG base URL  (default: http://100.96.81.109:8888)
 
 mod handlers;
@@ -38,7 +38,7 @@ async fn main() -> anyhow::Result<()> {
         .install_default()
         .ok(); // ok() — safe to ignore if already installed
 
-    let logs_dir = env::var("OPENAGENT_LOGS_DIR").unwrap_or_else(|_| "/var/log/openagent".to_string());
+    let logs_dir = env::var("OPENAGENT_LOGS_DIR").unwrap_or_else(|_| "logs".to_string());
 
     let _otel_guard = setup_otel("browser", &logs_dir)
         .inspect_err(|e| eprintln!("{{\"level\":\"WARN\",\"otel\":\"init failed\",\"error\":\"{e}\"}}"))

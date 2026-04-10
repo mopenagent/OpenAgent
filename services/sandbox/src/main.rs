@@ -36,7 +36,7 @@ static GLOBAL: MiMalloc = MiMalloc;
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    let logs_dir = env::var("OPENAGENT_LOGS_DIR").unwrap_or_else(|_| "/var/log/openagent".to_string());
+    let logs_dir = env::var("OPENAGENT_LOGS_DIR").unwrap_or_else(|_| "logs".to_string());
 
     // Initialise all three OTEL pillars: traces, logs, metrics.
     // Writes sandbox-{traces,logs,metrics}-YYYY-MM-DD.jsonl; bridges tracing! macros

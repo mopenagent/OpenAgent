@@ -15,7 +15,7 @@ use std::env;
 use std::time::Instant;
 use tracing::{error, info, info_span};
 
-const DEFAULT_LOGS_DIR: &str = "/var/log/openagent";
+const DEFAULT_LOGS_DIR: &str = "logs";
 
 #[tokio::main]
 async fn main() -> Result<()> {

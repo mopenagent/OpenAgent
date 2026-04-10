@@ -6,7 +6,7 @@ use serde_json::Value;
 pub const DEFAULT_MODEL_PATH: &str = "data/models/kokoro-v1.0.onnx";
 pub const DEFAULT_VOICES_PATH: &str = "data/models/voices-v1.0.bin";
 pub const DEFAULT_ARTIFACTS_DIR: &str = "data/artifacts/tts";
-pub const DEFAULT_LOGS_DIR: &str = "/var/log/openagent";
+pub const DEFAULT_LOGS_DIR: &str = "logs";
 pub const DEFAULT_VOICE: &str = "af_sarah.4+af_nicole.6";
 pub const SAMPLE_RATE: u32 = 24_000;
 

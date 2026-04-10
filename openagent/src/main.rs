@@ -50,7 +50,7 @@ async fn main() -> Result<()> {
     }
 
     // ---- OTEL (traces + logs + metrics) ------------------------------------
-    let logs_dir = env::var("OPENAGENT_LOGS_DIR").unwrap_or_else(|_| "/var/log/openagent".to_string());
+    let logs_dir = env::var("OPENAGENT_LOGS_DIR").unwrap_or_else(|_| "logs".to_string());
     let _otel_guard = observability::otel::setup_otel("openagent", &logs_dir)
         .inspect_err(|e| eprintln!("{{\"level\":\"WARN\",\"message\":\"otel init failed\",\"error\":\"{e}\"}}"))
         .ok();

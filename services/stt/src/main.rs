@@ -5,7 +5,7 @@
 //! # Environment variables
 //!
 //! - `OPENAGENT_STT_MODEL`   — GGML model path (default: `data/models/whisper-ggml-small.bin`)
-//! - `OPENAGENT_LOGS_DIR`    — Directory for OTLP log/trace files (default: `/var/log/openagent`)
+//! - `OPENAGENT_LOGS_DIR`    — Directory for OTLP log/trace files (default: `logs/`)
 //!
 //! # Runtime dependencies
 //!
@@ -41,7 +41,7 @@ use tracing::{info, warn};
 use whisper_rs::{WhisperContext, WhisperContextParameters};
 
 const DEFAULT_MODEL_PATH: &str = "data/models/whisper-ggml-small.bin";
-const DEFAULT_LOGS_DIR: &str = "/var/log/openagent";
+const DEFAULT_LOGS_DIR: &str = "logs";
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {

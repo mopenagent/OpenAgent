@@ -20,7 +20,7 @@ pub const DEFAULT_MEMORY_PATH: &str = "data/memory";
 /// FastEmbed model cache — relative to project root.
 pub const DEFAULT_EMBED_CACHE: &str = "data/models";
 /// Default logs directory — relative to project root.
-pub const DEFAULT_LOGS_DIR: &str = "/var/log/openagent";
+pub const DEFAULT_LOGS_DIR: &str = "logs";
 /// Long-term memory table (semantic recall across sessions).
 pub const MEMORY_TABLE: &str = "memory";
 /// Diary table — one stub row per completed ReAct turn; vectors back-filled at compaction.
