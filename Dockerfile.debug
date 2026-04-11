@@ -1,0 +1,178 @@
+# Dockerfile.debug — OpenAgent full Rust stack (build + run in Linux container)
+#
+# Solves: TTS (espeak-ng) and other services that cannot be compiled natively on
+# macOS. The entire stack is built inside Linux so `make local` works for all
+# services, including tts, without the macOS HFS+ cmake bug.
+#
+# Only ./logs and ./data are mounted from the host — everything else (binaries,
+# config, service manifests, skills, scripts) is baked into the image.
+# This means Claude and the host can see log files and SQLite/artifacts in
+# real time while the container owns the compiled binaries.
+#
+# Why Ubuntu 24.04 (not Debian Bookworm):
+#   The ort crate downloads a prebuilt ONNX Runtime static library (.a) that
+#   references glibc 2.38 symbols (__isoc23_strtol, __isoc23_strtoll, etc.).
+#   Debian Bookworm ships glibc 2.36 — the linker errors on those symbols.
+#   Ubuntu 24.04 (Noble) ships glibc 2.39 which satisfies all requirements.
+#   Both stages use 24.04 so the runtime glibc matches what was linked against.
+#
+# Usage:
+#   docker compose build debug          # build the image (compiles all Rust/Go services)
+#   docker compose up debug             # start jaeger + full stack
+#   docker compose logs -f debug        # stream logs
+#   tail -f logs/tts.log                # watch a specific service on the host
+#
+# Rebuilding after code changes:
+#   docker compose build debug && docker compose up debug
+
+# ---------------------------------------------------------------------------
+# Stage 1 — builder
+#
+# Ubuntu 24.04: glibc 2.39 — compatible with ort's prebuilt ONNX Runtime.
+# Installs Rust via rustup (no official rust:*-noble image exists).
+# ---------------------------------------------------------------------------
+FROM ubuntu:24.04 AS builder
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        build-essential \
+        cmake \
+        pkg-config \
+        libssl-dev \
+        # espeak-ng: required to compile tts (kokoros/espeak-rs-sys builds from source)
+        libespeak-ng-dev \
+        espeak-ng \
+        # sonic + pcaudio: linked by espeak-ng at build time (-lsonic, -lpcaudio)
+        libsonic-dev \
+        libpcaudio-dev \
+        # clang / libclang: required by bindgen (espeak-rs-sys generates FFI bindings at build time)
+        clang \
+        libclang-dev \
+        # git: required by cmake FetchContent (espeak-rs-sys fetches the sonic library at build time)
+        git \
+        # protoc + well-known .proto files (google/protobuf/empty.proto etc.)
+        # protobuf-compiler: the protoc binary
+        # libprotobuf-dev: google/protobuf/*.proto include files (lance, prost-build)
+        protobuf-compiler \
+        libprotobuf-dev \
+        curl \
+        ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install Rust via rustup (pinned to same version as the project requires)
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \
+    | sh -s -- -y --default-toolchain 1.88.0 --profile default
+ENV PATH="/root/.cargo/bin:$PATH"
+
+# Install Go (for the whatsapp service — the only Go service)
+RUN ARCH=$(uname -m) && \
+    case "$ARCH" in \
+        aarch64) GO_ARCH="arm64" ;; \
+        x86_64)  GO_ARCH="amd64" ;; \
+        *) echo "Unsupported arch: $ARCH" && exit 1 ;; \
+    esac && \
+    curl -fsSL "https://go.dev/dl/go1.22.4.linux-${GO_ARCH}.tar.gz" \
+        | tar -C /usr/local -xz
+ENV PATH="/usr/local/go/bin:$PATH"
+
+WORKDIR /build
+
+# Copy source (.dockerignore keeps target/ and other heavy dirs out of context)
+COPY . .
+
+# Build all services + openagent control plane for the current linux arch.
+# TTS (kokoros/espeak-ng) compiles correctly here because this is a Linux
+# container with a case-sensitive filesystem — the macOS HFS+ cmake bug does
+# not apply. ONNX Runtime is downloaded automatically by the ort crate.
+RUN make local
+
+# ---------------------------------------------------------------------------
+# Collect dynamic libraries that services need at runtime.
+# The ort crate (ONNX Runtime) downloads a prebuilt .so during cargo build.
+# We capture it here so the runtime stage can install it into /usr/local/lib.
+# ---------------------------------------------------------------------------
+RUN mkdir -p /runtime-libs && \
+    find /build/services /build/openagent -name "libonnxruntime*.so*" \
+         -exec cp -f {} /runtime-libs/ \; 2>/dev/null || true && \
+    echo "Collected ONNX libs:" && ls /runtime-libs/ || echo "  (none found)"
+
+# Stage service manifests (service.json only — no source code needed at runtime)
+RUN mkdir -p /staging/services && \
+    for svc_dir in /build/services/*/; do \
+        svc=$(basename "$svc_dir"); \
+        [ -f "$svc_dir/service.json" ] || continue; \
+        mkdir -p "/staging/services/$svc"; \
+        cp "$svc_dir/service.json" "/staging/services/$svc/"; \
+    done
+
+# ---------------------------------------------------------------------------
+# Stage 2 — runtime
+#
+# Ubuntu 24.04 (glibc 2.39) — must match builder to satisfy ort's linked symbols.
+# Lean image: only what the processes need at runtime.
+# ---------------------------------------------------------------------------
+FROM ubuntu:24.04
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        # TLS / HTTPS from services (browser fetch, sandbox MSB client, etc.)
+        ca-certificates \
+        libssl3 \
+        # TTS: espeak-ng phoneme data files + shared library.
+        # Required at runtime by kokoros even when the binary is fully compiled.
+        espeak-ng \
+        libespeak-ng1 \
+        # ONNX Runtime / fastembed: OpenMP + C++ stdlib (memory, stt, tts)
+        libgomp1 \
+        libstdc++6 \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install ONNX Runtime shared libraries collected from the build stage
+COPY --from=builder /runtime-libs /usr/local/lib/
+RUN ldconfig
+
+WORKDIR /app
+
+# Compiled Linux binaries
+COPY --from=builder /build/bin /app/bin
+
+# Startup scripts (run as-is from /app)
+COPY services.sh run.sh stop.sh ./
+RUN chmod +x services.sh run.sh stop.sh
+
+# Default config — the host's ./config is NOT mounted, so this is what runs.
+# Edit config/openagent.toml on the host and rebuild the image to apply changes,
+# OR override individual settings via environment variables in docker-compose.yml.
+COPY config/ config/
+
+# Service manifests: openagent binary reads services/*/service.json at startup
+COPY --from=builder /staging/services services/
+
+# Skills knowledge base: read by the agent at inference time
+COPY skills/ skills/
+
+# Container entrypoint
+COPY entrypoint.debug.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+
+# Create runtime directories. These will be shadowed by the host-mounted volumes
+# (./logs and ./data) but pre-creating them ensures they exist if mounts are absent.
+RUN mkdir -p data/artifacts data/models data/run logs
+
+# ---------------------------------------------------------------------------
+# Ports
+#
+# openagent Axum control plane   :8080
+# memory                         :9000
+# browser                        :9001
+# sandbox                        :9002
+# stt                            :9003
+# tts                            :9004
+# validator                      :9005
+# whatsapp                       :9010
+# ---------------------------------------------------------------------------
+EXPOSE 8080 9000 9001 9002 9003 9004 9005 9010
+
+ENTRYPOINT ["/entrypoint.sh"]

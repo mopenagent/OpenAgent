@@ -633,18 +633,11 @@ def setup_otel(
     trace.set_tracer_provider(tracer_provider)
     _providers.append(tracer_provider)
 
-    # -- Logs --
+    # -- Logs (file only — Jaeger does not support OTLP /v1/logs) --
     log_writer = DailyFileWriter(logs_dir, f"{service_name}-logs")
     _writers.append(log_writer)
     logger_provider = LoggerProvider(resource=resource)
     logger_provider.add_log_record_processor(BatchLogRecordProcessor(OTLPJsonLogExporter(log_writer)))
-    if use_otlp:
-        try:
-            logger_provider.add_log_record_processor(
-                BatchLogRecordProcessor(_OTLPLogExporter(endpoint=f"{otlp_endpoint}/v1/logs"))
-            )
-        except Exception as exc:
-            _log.warning("OTLP log exporter init failed — Jaeger logs disabled: %s", exc)
     # Bridge Python logging → OTEL logs
     otel_handler = LoggingHandler(level=logging.NOTSET, logger_provider=logger_provider)
     logging.getLogger().addHandler(otel_handler)

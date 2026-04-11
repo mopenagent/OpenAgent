@@ -1,12 +1,22 @@
 # OpenAgent observability + web UI stack
 #
-# Usage:
-#   docker compose up -d           # start jaeger + web UI
-#   docker compose up -d jaeger    # jaeger only
-#   docker compose logs -f ui      # tail web UI logs
+# Services:
+#   jaeger  — traces/logs/metrics UI (always-on, shared by all modes)
+#   ui      — Python FastAPI admin dashboard (connects to host-side openagent)
+#   debug   — full Rust stack in a container (services + openagent control plane)
 #
-# The Rust openagent runtime runs on the host via ./run.sh (not in Docker).
-# The web UI container connects to it at host.docker.internal:8080.
+# Typical usage:
+#   docker compose up -d           # start jaeger + web UI (host runs openagent via ./run.sh)
+#   docker compose up debug        # start jaeger + full Rust stack in container (debug mode)
+#   docker compose logs -f debug   # tail debug container logs
+#
+# Host-side runtime (ui mode):
+#   The Rust openagent runtime runs on the host via ./run.sh.
+#   The web UI container connects to it at host.docker.internal:8080.
+#
+# Container runtime (debug mode):
+#   Pre-built linux binaries from bin/ are mounted into the container.
+#   Build them first: make all  (requires `cross` + Docker for linux targets)
 #
 # OTEL endpoints (from host):
 #   OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318   (HTTP, default in run.sh)
@@ -81,6 +91,67 @@ services:
       - jaeger
     extra_hosts:
       # Allow the container to reach the host-side openagent runtime
+      - "host.docker.internal:host-gateway"
+
+  # ---------------------------------------------------------------------------
+  # Debug — full Rust stack (services + openagent control plane) in a container
+  #
+  # Use this to run and debug services that can't be built natively on macOS,
+  # such as TTS (espeak-ng dependency skipped by `make local` on darwin).
+  #
+  # Prerequisites:
+  #   make all   # cross-compiles linux binaries into bin/ (needs `cross` + Docker)
+  #
+  # Usage:
+  #   docker compose up debug              # full stack (jaeger + debug)
+  #   docker compose up jaeger debug       # explicit
+  #   docker compose logs -f debug         # tail logs
+  #
+  # openagent Axum API → http://localhost:8080
+  # Service TCP ports  → localhost:9000-9005, 9010
+  # ---------------------------------------------------------------------------
+  debug:
+    container_name: openagent-debug
+    build:
+      context: .
+      dockerfile: Dockerfile.debug
+    ports:
+      # openagent Axum control-plane API
+      - "8080:8080"
+      # MCP-lite service TCP ports (exposed for direct debugging)
+      - "9000:9000"   # memory
+      - "9001:9001"   # browser
+      - "9002:9002"   # sandbox
+      - "9003:9003"   # stt
+      - "9004:9004"   # tts
+      - "9005:9005"   # validator
+      - "9010:9010"   # whatsapp
+    volumes:
+      # Log files: JSONL OTEL traces + per-service .log files.
+      # Written by the container, visible on the host in real time.
+      # `docker compose logs -f debug` streams these to the terminal.
+      # Claude reads ./logs/*.log directly from the host filesystem.
+      - ./logs:/app/logs
+      # Runtime storage: SQLite session DB, ONNX model cache, downloaded artifacts.
+      # Persisted on the host so data survives container restarts.
+      - ./data:/app/data
+      #
+      # Everything else (binaries, config, service.json manifests, skills) is
+      # baked into the image by Dockerfile.debug. To update config or skills,
+      # rebuild: docker compose build debug
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      OTEL_EXPORTER_OTLP_ENDPOINT: "http://jaeger:4318"
+      OPENAGENT_ROOT: "/app"
+      OPENAGENT_LOGS_DIR: "/app/logs"
+    networks:
+      - openagent
+    depends_on:
+      - jaeger
+    # Allow the container to reach host-side processes (e.g. MSB server for sandbox)
+    extra_hosts:
       - "host.docker.internal:host-gateway"
 
 networks:

@@ -1,0 +1,27 @@
+# Build artifacts — never needed in Docker build context
+openagent/target
+services/*/target
+services/sdk-rust/target
+
+# macOS Python virtualenv (platform-specific, not needed in Linux container)
+.venv
+
+# Reference implementations (large, not needed for build or runtime)
+inspire
+
+# Runtime-only directories (mounted as volumes; not baked into image)
+data
+logs
+
+# Pre-built host binaries (image builds its own from source)
+bin
+
+# Editor / OS noise
+.DS_Store
+**/.DS_Store
+*.swp
+*.swo
+
+# Git
+.git
+.gitignore
