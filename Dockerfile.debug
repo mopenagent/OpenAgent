@@ -76,6 +76,19 @@ RUN ARCH=$(uname -m) && \
         | tar -C /usr/local -xz
 ENV PATH="/usr/local/go/bin:$PATH"
 
+# Install microsandbox CLI (msb) — before COPY so this layer is cached independently
+# of source changes. msb server provides the VM-isolated sandbox environment.
+# microsandbox-cli requires rustc ≥ 1.91 (smoltcp dep); the project pins 1.88.0 for
+# service builds. Install stable alongside without changing the default toolchain.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        libdbus-1-dev \
+        libcap-ng-dev \
+        pkg-config \
+    && rm -rf /var/lib/apt/lists/* \
+    && rustup toolchain install stable --no-self-update --profile minimal \
+    && cargo +stable install microsandbox-cli \
+    && rustup toolchain uninstall stable
+
 WORKDIR /build
 
 # Copy source (.dockerignore keeps target/ and other heavy dirs out of context)
@@ -122,12 +135,30 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         libssl3 \
         # TTS: espeak-ng phoneme data files + shared library.
         # Required at runtime by kokoros even when the binary is fully compiled.
+        # On Ubuntu 24.04 the data lands in /usr/lib/<arch>-linux-gnu/espeak-ng-data/.
+        # espeak-rs-sys bakes in the build-time path at compile time; we create a
+        # canonical symlink at /usr/share/espeak-ng-data so ESPEAK_DATA_PATH works
+        # portably on both arm64 and amd64 without arch-specific logic in scripts.
         espeak-ng \
         libespeak-ng1 \
         # ONNX Runtime / fastembed: OpenMP + C++ stdlib (memory, stt, tts)
         libgomp1 \
         libstdc++6 \
     && rm -rf /var/lib/apt/lists/*
+
+# espeak-ng canonical data symlink.
+# Ubuntu 24.04 installs phoneme data under /usr/lib/<arch>-linux-gnu/espeak-ng-data/.
+# Kokoros reads ESPEAK_DATA_PATH at runtime; we point it at a fixed path by symlinking
+# the arch-specific directory to /usr/share/espeak-ng-data so services.sh can inject
+# a single portable value without knowing the target architecture.
+RUN arch=$(uname -m) && \
+    src="/usr/lib/${arch}-linux-gnu/espeak-ng-data" && \
+    if [ -d "$src" ]; then \
+        ln -sf "$src" /usr/share/espeak-ng-data; \
+        echo "espeak-ng data symlinked: $src -> /usr/share/espeak-ng-data"; \
+    else \
+        echo "WARNING: espeak-ng data not found at $src"; \
+    fi
 
 # Install ONNX Runtime shared libraries collected from the build stage
 COPY --from=builder /runtime-libs /usr/local/lib/
@@ -160,6 +191,12 @@ RUN chmod +x /entrypoint.sh
 # Create runtime directories. These will be shadowed by the host-mounted volumes
 # (./logs and ./data) but pre-creating them ensures they exist if mounts are absent.
 RUN mkdir -p data/artifacts data/models data/run logs
+
+# microsandbox CLI + curl — placed last to avoid busting earlier runtime cache layers.
+# curl is used by the entrypoint to poll MSB readiness and pre-warm the Python sandbox image.
+RUN apt-get update && apt-get install -y --no-install-recommends curl \
+    && rm -rf /var/lib/apt/lists/*
+COPY --from=builder /root/.cargo/bin/msb /usr/local/bin/msb
 
 # ---------------------------------------------------------------------------
 # Ports

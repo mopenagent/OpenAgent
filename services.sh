@@ -96,6 +96,20 @@ svc_env_vars() {
       [ -n "${MSB_API_KEY:-}"             ] && echo "MSB_API_KEY=$MSB_API_KEY"
       [ -n "${MSB_MEMORY_MB:-}"           ] && echo "MSB_MEMORY_MB=$MSB_MEMORY_MB"
       ;;
+    tts)
+      # espeak-rs-sys bakes in the build-time phoneme data path at compile time.
+      # ESPEAK_DATA_PATH overrides it so the runtime binary finds the installed data.
+      # /usr/share/espeak-ng-data is a symlink created by the Dockerfile (or dev install).
+      if [ -n "${ESPEAK_DATA_PATH:-}" ]; then
+        echo "ESPEAK_DATA_PATH=$ESPEAK_DATA_PATH"
+      elif [ -d "/usr/share/espeak-ng-data" ]; then
+        echo "ESPEAK_DATA_PATH=/usr/share/espeak-ng-data"
+      else
+        # Fall back: search the arch-specific lib path used by Ubuntu/Debian
+        _espeak_dir="$(find /usr/lib -maxdepth 3 -name 'phontab' -exec dirname {} \; 2>/dev/null | head -1)"
+        [ -n "$_espeak_dir" ] && echo "ESPEAK_DATA_PATH=$_espeak_dir"
+      fi
+      ;;
     whatsapp)
       [ -n "${WHATSAPP_PHONE:-}"          ] && echo "WHATSAPP_PHONE=$WHATSAPP_PHONE"
       ;;

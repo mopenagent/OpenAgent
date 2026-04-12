@@ -1,7 +1,7 @@
 # OpenAgent observability + web UI stack
 #
 # Services:
-#   jaeger  — traces/logs/metrics UI (always-on, shared by all modes)
+#   jaeger  — traces/logs/metrics UI v2 (always-on, shared by all modes)
 #   ui      — Python FastAPI admin dashboard (connects to host-side openagent)
 #   debug   — full Rust stack in a container (services + openagent control plane)
 #
@@ -27,7 +27,7 @@ services:
   # Jaeger — traces, logs, metrics UI
   # ---------------------------------------------------------------------------
   jaeger:
-    image: jaegertracing/all-in-one:1.76.0
+    image: jaegertracing/jaeger:2.6.0
     container_name: openagent-jaeger
     ports:
       # Jaeger UI
@@ -36,20 +36,6 @@ services:
       - "4318:4318"
       # OTLP gRPC receiver
       - "4317:4317"
-      # Zipkin HTTP
-      - "9411:9411"
-      # Jaeger Thrift compact (legacy)
-      - "6831:6831/udp"
-      # Jaeger Thrift binary
-      - "6832:6832/udp"
-      # Jaeger Thrift over HTTP (legacy)
-      - "14268:14268"
-      # Jaeger admin/metrics
-      - "14269:14269"
-      # Jaeger gRPC (legacy)
-      - "14250:14250"
-    environment:
-      COLLECTOR_OTLP_ENABLED: "true"
     networks:
       - openagent
     restart: unless-stopped

@@ -73,6 +73,53 @@ export OPENAGENT_LOGS_DIR="${ROOT}/logs"
 # OTEL endpoint is injected by docker-compose (defaults to jaeger service)
 export OTEL_EXPORTER_OTLP_ENDPOINT="${OTEL_EXPORTER_OTLP_ENDPOINT:-http://jaeger:4318}"
 
+# Microsandbox env — MSB_API_KEY must be non-empty even in --dev mode (Rust client validates).
+# In --dev mode the server accepts any bearer token, so "dev" is a safe placeholder.
+export MSB_API_KEY="${MSB_API_KEY:-dev}"
+export MSB_SERVER_URL="${MSB_SERVER_URL:-http://127.0.0.1:5555}"
+export MSB_MEMORY_MB="${MSB_MEMORY_MB:-512}"
+
+# ---------------------------------------------------------------------------
+# Start microsandbox server (required by the sandbox MCP-lite service)
+# ---------------------------------------------------------------------------
+echo "==> Starting microsandbox server (dev mode)"
+msb server start --dev >> "${ROOT}/logs/msb.log" 2>&1 &
+
+# Poll the JSON-RPC endpoint until the server is ready (up to 30 s).
+# Any valid JSON-RPC response (including error bodies) means the server is up.
+echo -n "     Waiting for microsandbox"
+for _i in $(seq 1 30); do
+    if curl -sf -X POST "${MSB_SERVER_URL}/api/v1/rpc" \
+            -H "Content-Type: application/json" \
+            -H "Authorization: Bearer ${MSB_API_KEY}" \
+            -d '{"jsonrpc":"2.0","method":"sandbox.start","params":{},"id":"hc"}' \
+            2>/dev/null | grep -q '"jsonrpc"'; then
+        echo " ready"
+        break
+    fi
+    sleep 1
+    echo -n "."
+done
+
+# Pre-warm the Python sandbox image so the first agent tool call starts instantly
+# rather than cold-pulling the OCI image. Start then immediately stop a dummy sandbox.
+echo "==> Pre-warming Python sandbox image (microsandbox/python)"
+if curl -sf -X POST "${MSB_SERVER_URL}/api/v1/rpc" \
+        -H "Content-Type: application/json" \
+        -H "Authorization: Bearer ${MSB_API_KEY}" \
+        -d "{\"jsonrpc\":\"2.0\",\"method\":\"sandbox.start\",\"params\":{\"sandbox\":\"prewarm-python\",\"namespace\":\"default\",\"config\":{\"image\":\"microsandbox/python\",\"memory\":${MSB_MEMORY_MB}}},\"id\":\"pw1\"}" \
+        > /dev/null 2>&1; then
+    curl -s -X POST "${MSB_SERVER_URL}/api/v1/rpc" \
+         -H "Content-Type: application/json" \
+         -H "Authorization: Bearer ${MSB_API_KEY}" \
+         -d '{"jsonrpc":"2.0","method":"sandbox.stop","params":{"sandbox":"prewarm-python","namespace":"default"},"id":"pw2"}' \
+         > /dev/null 2>&1 || true
+    echo "     Python image cached"
+else
+    echo "     Warning: pre-warm failed — image will be pulled on first use"
+fi
+echo ""
+
 # ---------------------------------------------------------------------------
 # Start MCP-lite service daemons
 #
@@ -97,13 +144,14 @@ echo ""
 #   tail -f logs/tts.log           → watch a specific service on the host
 #   Claude reads ./logs/*.log      → can inspect any log file directly
 # ---------------------------------------------------------------------------
-for svc in browser memory sandbox stt tts validator whatsapp; do
+for svc in browser memory msb sandbox stt tts validator whatsapp; do
     touch "${ROOT}/logs/${svc}.log" 2>/dev/null || true
 done
 
 tail -F \
     "${ROOT}/logs/browser.log" \
     "${ROOT}/logs/memory.log" \
+    "${ROOT}/logs/msb.log" \
     "${ROOT}/logs/sandbox.log" \
     "${ROOT}/logs/stt.log" \
     "${ROOT}/logs/tts.log" \
