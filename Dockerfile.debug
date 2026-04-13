@@ -91,14 +91,45 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 WORKDIR /build
 
-# Copy source (.dockerignore keeps target/ and other heavy dirs out of context)
-COPY . .
+# Shared build infrastructure — changes here invalidate all service layers.
+COPY Makefile ./
+COPY services/sdk-rust/ services/sdk-rust/
+COPY services/sdk-go/ services/sdk-go/
 
-# Build all services + openagent control plane for the current linux arch.
-# TTS (kokoros/espeak-ng) compiles correctly here because this is a Linux
-# container with a case-sensitive filesystem — the macOS HFS+ cmake bug does
-# not apply. ONNX Runtime is downloaded automatically by the ort crate.
-RUN make local
+# memory — first (heaviest: downloads ONNX Runtime, -j2 parallel limit).
+# Cache this layer first so the expensive model download is only re-run when
+# the memory source actually changes.
+COPY services/memory/ services/memory/
+RUN make local-memory
+
+# tts — espeak-ng; compiles correctly here (Linux, case-sensitive fs)
+COPY services/tts/ services/tts/
+RUN make local-tts
+
+# stt
+COPY services/stt/ services/stt/
+RUN make local-stt
+
+# browser
+COPY services/browser/ services/browser/
+RUN make local-browser
+
+# validator
+COPY services/validator/ services/validator/
+RUN make local-validator
+
+# whatsapp (Go — only Go service)
+COPY services/whatsapp/ services/whatsapp/
+RUN make local-whatsapp
+
+# openagent control plane
+COPY openagent/ openagent/
+RUN make openagent-local
+
+# sandbox — last (runtime depends on msb server; compiled last to protect
+# the long-lived memory/tts/stt cache layers from sandbox churn)
+COPY services/sandbox/ services/sandbox/
+RUN make local-sandbox
 
 # ---------------------------------------------------------------------------
 # Collect dynamic libraries that services need at runtime.

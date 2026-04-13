@@ -53,6 +53,11 @@ func buildServer(rt *waRuntime) *mcplite.Server {
 			},
 		},
 		{
+			Name:        "whatsapp.qr",
+			Description: "Return the current WhatsApp QR code (if awaiting pairing) and connection state.",
+			Params:      map[string]any{"type": "object", "properties": map[string]any{}},
+		},
+		{
 			Name:        "whatsapp.send_media",
 			Description: "Upload and send a local file (image, video, audio, or document) to a WhatsApp chat.",
 			Params: map[string]any{
@@ -82,6 +87,13 @@ func buildServer(rt *waRuntime) *mcplite.Server {
 
 	server := mcplite.NewServer(tools, "ready")
 
+	server.RegisterToolHandler("whatsapp.qr", func(_ context.Context, _ map[string]any) (string, error) {
+		qr := rt.latestQR()
+		return marshalJSON(map[string]any{
+			"qr_text":   qr,
+			"connected": rt.connected.Load(),
+		})
+	})
 	server.RegisterToolHandler("whatsapp.status", func(_ context.Context, _ map[string]any) (string, error) {
 		return marshalJSON(rt.status())
 	})

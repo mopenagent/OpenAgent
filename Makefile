@@ -79,7 +79,8 @@ TTS_SKIP_DARWIN := true
 BIN := bin
 
 .PHONY: all local clean test-go test-rust test-py download-models download-tts-models help openagent openagent-local \
-        $(GO_SERVICES) $(RUST_SERVICES)
+        $(GO_SERVICES) $(RUST_SERVICES) local-whatsapp \
+        $(foreach svc,$(RUST_SERVICES),local-$(svc))
 
 # Default: cross-compile everything (services + openagent control plane)
 all: $(GO_SERVICES) $(RUST_SERVICES) openagent
@@ -143,6 +144,33 @@ endif
 endef
 
 $(foreach svc,$(RUST_SERVICES),$(eval $(call build_rust_service,$(svc))))
+
+# ---------------------------------------------------------------------------
+# Per-service local builds — current host platform only.
+# Used by Dockerfile.debug so each service is a separate RUN layer:
+#   COPY services/memory/ services/memory/
+#   RUN make local-memory
+# Only the changed service and those after it rebuild on change.
+# ---------------------------------------------------------------------------
+
+define build_local_svc
+local-$(1):
+	@echo "==> services/$(1) (Rust, local)"
+	@mkdir -p $(BIN)
+	cd services/$(1) && cargo build --release $(if $(filter $(1),memory),-j2,)
+	cp services/$(1)/target/release/$(1) $(BIN)/$(1)-$(HOST_SUFFIX)
+	@echo "   ✓ $(BIN)/$(1)-$(HOST_SUFFIX)"
+endef
+
+$(foreach svc,$(RUST_SERVICES),$(eval $(call build_local_svc,$(svc))))
+
+local-whatsapp:
+	@echo "==> services/whatsapp (Go, local)"
+	@mkdir -p $(BIN)
+	cd services/whatsapp && \
+	  GOOS=$(HOST_OS) GOARCH=$(HOST_ARCH) go build -ldflags="-s -w" \
+	  -o ../../$(BIN)/whatsapp-$(HOST_SUFFIX) .
+	@echo "   ✓ $(BIN)/whatsapp-$(HOST_SUFFIX)"
 
 # ---------------------------------------------------------------------------
 # Local build — current host platform only (fastest dev loop)

@@ -22,6 +22,14 @@
   },
   "tools": [
     {
+      "name": "whatsapp.qr",
+      "description": "Return the current WhatsApp QR code (qr_text) and connection state (connected). qr_text is empty when already connected or no QR is pending.",
+      "params": {
+        "type": "object",
+        "properties": {}
+      }
+    },
+    {
       "name": "whatsapp.status",
       "description": "Return current WhatsApp service status (running, connected, last_error).",
       "params": {
