@@ -1,7 +1,7 @@
 {
   "name": "memory",
   "address": "0.0.0.0:9000",
-  "description": "Agentic Memory \u2014 LanceDB + FastEmbed. LTS stores summaries, STS stores full conversation chains. Local embeddings (BAAI/bge-small-en-v1.5), no external API calls.",
+  "description": "Agentic Memory \u2014 LanceDB + FastEmbed. Three tables: memory (long-term semantic), diary (per-turn history), knowledge (curated facts). Local embeddings (BAAI/bge-small-en-v1.5), no external API calls.",
   "version": "0.1.0",
   "binary": {
     "linux/arm64": "bin/memory-linux-arm64",
@@ -24,7 +24,7 @@
   "tools": [
     {
       "name": "memory.index",
-      "description": "Index a trace (content + metadata) into LTS (summaries) or STS (full conversation chain). Generates local embedding and inserts into LanceDB.",
+      "description": "Index content into the memory table (long-term semantic store). Generates a local embedding and inserts into LanceDB.",
       "params": {
         "type": "object",
         "properties": {
@@ -39,10 +39,9 @@
           "store": {
             "type": "string",
             "enum": [
-              "ltm",
-              "stm"
+              "memory"
             ],
-            "description": "Store: ltm (long-term memory) or stm (short-term memory)"
+            "description": "Store to write to. Only 'memory' (long-term semantic store) is supported for indexing."
           }
         },
         "required": [
@@ -53,7 +52,7 @@
     },
     {
       "name": "memory.search",
-      "description": "Semantic search over LTS and/or STS. Returns top 5 results as JSON. Uses local embedding.",
+      "description": "Hybrid semantic + keyword search (dense ANN + BM25 RRF). Returns top 5 results as JSON. Uses local embedding.",
       "params": {
         "type": "object",
         "properties": {
@@ -64,11 +63,12 @@
           "store": {
             "type": "string",
             "enum": [
-              "ltm",
-              "stm",
+              "memory",
+              "diary",
+              "knowledge",
               "all"
             ],
-            "description": "Store to search (default: all)"
+            "description": "Table to search: memory (long-term), diary (turn history), knowledge (curated facts), all (default)."
           }
         },
         "required": [
@@ -85,10 +85,11 @@
           "store": {
             "type": "string",
             "enum": [
-              "ltm",
-              "stm"
+              "memory",
+              "diary",
+              "knowledge"
             ],
-            "description": "Store to delete from"
+            "description": "Table to delete from: memory, diary, or knowledge."
           },
           "id": {
             "type": "string",
