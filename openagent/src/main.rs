@@ -182,8 +182,9 @@ async fn main() -> Result<()> {
         let dispatch_guard   = guard_db.clone();
         let dispatch_ctx     = Arc::clone(&agent_ctx);
         let dispatch_ch      = channel_handle.clone();
+        let dispatch_tts     = cfg.middleware.tts.clone();
         tokio::spawn(async move {
-            dispatch::run(dispatch_manager, dispatch_guard, dispatch_ctx, dispatch_ch).await;
+            dispatch::run(dispatch_manager, dispatch_guard, dispatch_ctx, dispatch_ch, dispatch_tts).await;
         });
     }
 

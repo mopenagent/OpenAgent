@@ -221,6 +221,7 @@ enabled = true
 # the tts service. The response JSON gains an `audio_path` field.
 # Requires the tts service to be running.
 enabled  = true
+
 voice    = "af_sarah"    # af_sarah | af_nicole | af_sky | blend e.g. "af_sarah.4+af_nicole.6"
 speed    = 1.0           # speech rate multiplier
 language = "en-us"       # BCP-47 language code

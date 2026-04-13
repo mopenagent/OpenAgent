@@ -18,6 +18,7 @@ use tracing::{debug, error, info, warn};
 
 use crate::agent::handlers::{handle_step, AgentContext};
 use crate::channels::ChannelHandle;
+use crate::config::TtsConfig;
 use crate::guard::GuardDb;
 use crate::service::ServiceManager;
 use crate::guard::scrub;
@@ -33,6 +34,7 @@ pub async fn run(
     guard_db: GuardDb,
     agent_ctx: Arc<AgentContext>,
     channel_handle: ChannelHandle,
+    tts_cfg: TtsConfig,
 ) {
     let semaphore = Arc::new(Semaphore::new(MAX_CONCURRENT));
     let mut event_rx = manager.subscribe_events();
@@ -56,8 +58,26 @@ pub async fn run(
         if event.get("type").and_then(Value::as_str) != Some("event") {
             continue;
         }
-        if event.get("event").and_then(Value::as_str) != Some("message.received") {
-            debug!(event_type = ?event.get("event"), "dispatch.event.ignored");
+        let event_name = event.get("event").and_then(Value::as_str).unwrap_or("");
+
+        // Handle incoming WhatsApp calls: reject + send a TTS voice note back.
+        if event_name == "whatsapp.call.received" {
+            if let Some(data) = event.get("data") {
+                let call_id = data.get("call_id").and_then(Value::as_str).unwrap_or("").to_string();
+                let chat_id = data.get("chat_id").and_then(Value::as_str).unwrap_or("").to_string();
+                if !call_id.is_empty() && !chat_id.is_empty() {
+                    let mgr = Arc::clone(&manager);
+                    let tts = tts_cfg.clone();
+                    tokio::spawn(async move {
+                        handle_call(mgr, tts, call_id, chat_id).await;
+                    });
+                }
+            }
+            continue;
+        }
+
+        if event_name != "message.received" {
+            debug!(event_name, "dispatch.event.ignored");
             continue;
         }
 
@@ -122,9 +142,10 @@ pub async fn run(
         let gdb = guard_db.clone();
         let ctx = Arc::clone(&agent_ctx);
         let ch = channel_handle.clone();
+        let tts = tts_cfg.clone();
 
         tokio::spawn(async move {
-            handle_message(mgr, sem, gdb, ctx, ch, session_id, channel, sender, content_raw, artifact_path).await;
+            handle_message(mgr, sem, gdb, ctx, ch, tts, session_id, channel, sender, content_raw, artifact_path).await;
         });
     }
 }
@@ -142,6 +163,7 @@ async fn handle_message(
     guard_db: GuardDb,
     agent_ctx: Arc<AgentContext>,
     channel_handle: ChannelHandle,
+    tts_cfg: TtsConfig,
     session_id: String,
     channel: String,
     sender: String,
@@ -282,14 +304,67 @@ async fn handle_message(
     let send_result = if platform == "whatsapp" {
         // WhatsApp uses its own MCP-lite tool (Go service) — chat_id extracted from URI.
         let chat_id = channel.trim_start_matches("whatsapp://");
-        manager
-            .call_tool(
-                "whatsapp.send_text",
-                json!({"chat_id": chat_id, "text": response_text}),
-                SEND_TIMEOUT_MS,
-            )
-            .await
-            .map(|_| ())
+
+        // Use TTS only when the user explicitly says "speak" (works for both text and voice notes).
+        // Default for all inputs — including voice notes — is plain text.
+        // Falls back to plain text if synthesis fails or the tts service is unavailable.
+        let wants_tts = tts_cfg.enabled
+            && content.split_whitespace().any(|w| w.eq_ignore_ascii_case("speak"));
+        if wants_tts {
+            let tts_params = json!({
+                "text":     response_text,
+                "voice":    tts_cfg.voice,
+                "speed":    tts_cfg.speed,
+                "language": tts_cfg.language,
+            });
+            match manager.call_tool("tts.synthesize", tts_params, 60_000).await {
+                Ok(payload) => {
+                    let v: Value = serde_json::from_str(&payload).unwrap_or_default();
+                    let audio_path = v.get("path").and_then(Value::as_str).unwrap_or("").to_string();
+                    if audio_path.is_empty() {
+                        warn!(session_id, "dispatch.tts.empty_path — falling back to text");
+                        manager
+                            .call_tool(
+                                "whatsapp.send_text",
+                                json!({"chat_id": chat_id, "text": response_text}),
+                                SEND_TIMEOUT_MS,
+                            )
+                            .await
+                            .map(|_| ())
+                    } else {
+                        info!(session_id, audio_path, "dispatch.tts.synthesized — sending voice note");
+                        manager
+                            .call_tool(
+                                "whatsapp.send_media",
+                                json!({"chat_id": chat_id, "file_path": audio_path}),
+                                SEND_TIMEOUT_MS,
+                            )
+                            .await
+                            .map(|_| ())
+                    }
+                }
+                Err(e) => {
+                    warn!(session_id, error = %e, "dispatch.tts.unavailable — falling back to text");
+                    manager
+                        .call_tool(
+                            "whatsapp.send_text",
+                            json!({"chat_id": chat_id, "text": response_text}),
+                            SEND_TIMEOUT_MS,
+                        )
+                        .await
+                        .map(|_| ())
+                }
+            }
+        } else {
+            manager
+                .call_tool(
+                    "whatsapp.send_text",
+                    json!({"chat_id": chat_id, "text": response_text}),
+                    SEND_TIMEOUT_MS,
+                )
+                .await
+                .map(|_| ())
+        }
     } else {
         // All other platforms go through the in-process ChannelHandle (no TCP hop).
         channel_handle.send(&channel, &response_text).await
@@ -298,4 +373,49 @@ async fn handle_message(
     if let Err(e) = send_result {
         error!(session_id, channel, error = %e, "dispatch.channel.send.error");
     }
+}
+
+/// Handle an incoming WhatsApp voice/video call.
+/// Synthesizes a short "unavailable" voice note via TTS and sends it back,
+/// falling back to a plain text message if TTS is disabled or unavailable.
+async fn handle_call(
+    manager: Arc<ServiceManager>,
+    tts_cfg: TtsConfig,
+    _call_id: String,
+    chat_id: String,
+) {
+    const UNAVAILABLE_MSG: &str =
+        "Sorry, I can't take calls right now. Please send me a voice note or text instead.";
+
+    if tts_cfg.enabled {
+        let tts_params = json!({
+            "text":     UNAVAILABLE_MSG,
+            "voice":    tts_cfg.voice,
+            "speed":    tts_cfg.speed,
+            "language": tts_cfg.language,
+        });
+        if let Ok(payload) = manager.call_tool("tts.synthesize", tts_params, 60_000).await {
+            let v: Value = serde_json::from_str(&payload).unwrap_or_default();
+            let audio_path = v.get("path").and_then(Value::as_str).unwrap_or("").to_string();
+            if !audio_path.is_empty() {
+                let _ = manager
+                    .call_tool(
+                        "whatsapp.send_media",
+                        json!({"chat_id": chat_id, "file_path": audio_path}),
+                        SEND_TIMEOUT_MS,
+                    )
+                    .await;
+                return;
+            }
+        }
+    }
+
+    // TTS disabled or failed — send plain text fallback.
+    let _ = manager
+        .call_tool(
+            "whatsapp.send_text",
+            json!({"chat_id": chat_id, "text": UNAVAILABLE_MSG}),
+            SEND_TIMEOUT_MS,
+        )
+        .await;
 }
