@@ -10,5 +10,27 @@
       "Bash(.venv/bin/pytest app/tests/ -x -q)",
       "WebFetch(domain:docs.microsandbox.dev)"
     ]
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": ".claude/hooks/guard-write.sh"
+          }
+        ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": ".claude/hooks/guard-bash.sh"
+          }
+        ]
+      }
+    ]
   }
 }

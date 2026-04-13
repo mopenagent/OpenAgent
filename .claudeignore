@@ -1,0 +1,88 @@
+# Dependencies
+node_modules/
+.pnpm-store/
+.npm/
+.yarn/
+
+# Python environments & packaging
+__pycache__/
+*.pyc
+.venv/
+venv/
+*.egg-info/
+.eggs/
+*.egg
+
+# Build & generated output
+dist/
+build/
+.next/
+out/
+target/
+coverage/
+htmlcov/
+
+# Logs & caches
+*.log
+logs/
+.cache/
+tmp/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Version control
+.git/
+.svn/
+
+# IDE & editor (local settings — not project source)
+.vscode/
+.idea/
+*.swp
+*~
+
+# Secrets & environment (never feed to context)
+.env
+.env.local
+.env.*.local
+
+# Compiled service binaries (287 MB — arm64/amd64 for linux + darwin)
+bin/
+
+# Runtime data — SQLite DBs, vector stores, artifacts, downloaded models
+# (941 MB; may contain secrets and large binary blobs)
+data/
+
+# Runtime logs (OTEL JSONL traces, metrics, service logs)
+logs/
+
+# Reference implementations — not this project's source (1.1 GB)
+inspire/
+
+# Dependency lock files — thousands of lines of checksums, no code value
+Cargo.lock
+go.sum
+
+# ML model binaries (ONNX, Whisper ggml, Kokoro weights)
+*.onnx
+*.bin
+*.ggml
+*.gguf
+
+# Audio artifacts
+*.wav
+*.mp3
+*.ogg
+*.opus
+*.m4a
+*.flac
+*.webm
+
+# Large binary-ish document formats
+*.csv
+*.xlsx
+*.pdf
+*.zip
+
+# IDE & editor (local settings — not project source)
+theme/
