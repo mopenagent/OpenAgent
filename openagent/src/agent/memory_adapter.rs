@@ -107,7 +107,7 @@ impl MemoryProvider for HybridMemoryAdapter {
 }
 
 async fn recall_ltm(router: &ToolRouter, query: &str, limit: usize) -> Result<Vec<ChatMessage>, LLMError> {
-    let params = json!({ "query": query, "store": "ltm" });
+    let params = json!({ "query": query, "store": "memory" });
 
     let raw = match router.call("memory.search", &params).await {
         Ok(r) => r,
